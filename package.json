@@ -6,19 +6,32 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "jsonserver": "npx json-server --watch ./data/db.json --port 3001"
   },
   "dependencies": {
+    "@types/uuid": "^10.0.0",
+    "autoprefixer": "10.4.20",
+    "axios": "^1.11.0",
+    "d3": "^7.9.0",
+    "next": "15.4.6",
+    "postcss": "^8.5.6",
+    "postcss-import": "^16.1.1",
+    "prop-types": "^15.8.1",
     "react": "19.1.0",
+    "react-contextmenu": "^2.14.0",
     "react-dom": "19.1.0",
-    "next": "15.4.6"
+    "uuid": "^11.1.0",
+    "vis": "^4.21.0-EOL",
+    "vis-timeline": "^8.2.1"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4"
+    "json-server": "^1.0.0-beta.3",
+    "tailwindcss": "3.4.16",
+    "typescript": "^5"
   }
 }

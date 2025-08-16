@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 0, 0, 0;
+    --background-start-rgb: 255, 255, 255;
+    --background-end-rgb: 255, 255, 255;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+/* Form element styling */
+input, select, textarea, button {
+  color: #1f2937; /* gray-800 */
+}
+
+input, select, textarea {
+  background-color: white;
+  border: 1px solid #d1d5db; /* gray-300 */
+  border-radius: 0.375rem; /* rounded-md */
+  padding: 0.5rem 0.75rem; /* p-2 */
+}
+
+/* Better contrast for disabled elements */
+input:disabled, select:disabled, textarea:disabled {
+  color: #6b7280; /* gray-500 */
+  background-color: #f3f4f6; /* gray-100 */
+}
+
+/* Focus styles */
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); /* blue-500 with opacity */
+  border-color: #3b82f6; /* blue-500 */
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background: white;
+    color: black;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .print-container {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Custom node styling */
+.node circle {
+  fill: #d1d5dc; /* blue-500 */
+  stroke: white;
+  stroke-width: 2px;
+}
+
+.node text.node-label {
+  font-size: 16px;
+  fill: #334155; /* gray-700 */
+  font-weight: 500;
+}
+
+.node text.node-age {
+  font-size: 10px;
+  fill: #6b7280; /* gray-500 */
+}
+
+.node-image {
+  object-fit: cover;
+}
+
+.node-name .node-link {
+
+}
+
+.node-title {
+
+}
+
+.node-description {
+  font-family: 'Courier New';
+  font-size: 2rem;
+  overflow-y: hidden;
+  min-height: 100px;  
+}
+
+/* Selected node styling */
+/* .node.selected circle {
+  stroke: #10b981; 
+  stroke-width: 3px;
+} */
+
+/* Relationship line styling */
+.relationship {
+  stroke: #94a3b8; /* slate-400 */
+  stroke-width: 3px;
+}
+
+.relationship[data-type="marriage"] {
+  stroke: #f97316; /* orange-500 */
+  stroke-dasharray: 5,5;
+}
+
+/* Selected node styling */
+.node-circle.selected {
+  stroke: #facc15;
+  stroke-width: 5px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
