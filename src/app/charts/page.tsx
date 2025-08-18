@@ -75,10 +75,11 @@ export default function ChartsPage() {
     let pageId = editingPage?.id;
 
     if (editingPage) {
-      const pageData = editingPage;
-      pageData.title = data.title;
-      pageData.image = data.image;
-      setEditingPage(pageData);
+      setEditingPage((prev:any)=>({
+        ...prev,
+        title: data.title,
+        image: data.image
+      }))
       await updatePage(editingPage);
     } else {
       const pageProps: PageProps = {

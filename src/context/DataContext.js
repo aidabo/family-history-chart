@@ -14,6 +14,7 @@ export const DataProvider = ({ children }) => {
     events: [],
   });
   const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedRelationship, setSelectedRelationship] = useState(null);
 
   const loadPageList = async () => {
     try {
@@ -150,8 +151,6 @@ export const DataProvider = ({ children }) => {
       persons: [...prev.persons, newPerson]
     }));
 
-    console.log("addPerson", JSON.stringify(data.persons));
-
     return newPerson;
   };
 
@@ -165,13 +164,48 @@ export const DataProvider = ({ children }) => {
   };
 
   const deletePerson = (id) => {
-    setData(prev => ({
-      ...prev,
-      persons: prev.persons.filter(p => p.id !== id),
-      relationships: prev.relationships.filter(rel =>
-        rel.source !== id && rel.target !== id
-      )
-    }));
+    setData(prev => {
+      // Find the person being deleted
+      const personToDelete = prev.persons.find(p => p.id === id);
+
+      // If it's a union node (marriage), delete all partner relationships connected to it
+      let relationshipsToKeep = [...prev.relationships];
+      let personsToKeep = [...prev.persons];
+
+      if (personToDelete?.type === 'union') {
+        // Delete all partner relationships connected to this union node
+        relationshipsToKeep = relationshipsToKeep.filter(rel =>
+          !(rel.target === id && rel.type === 'partner')
+        );
+      } else {
+        // If it's a regular person, check if they're part of a marriage
+        const partnerRels = relationshipsToKeep.filter(rel =>
+          rel.source === id && rel.type === 'partner'
+        );
+
+        // For each partner relationship, delete the union node and its relationships
+        partnerRels.forEach(rel => {
+          const unionNodeId = rel.target;
+
+          // Delete the union node
+          personsToKeep = personsToKeep.filter(p => p.id !== unionNodeId);
+
+          // Delete all partner relationships for this union
+          relationshipsToKeep = relationshipsToKeep.filter(r =>
+            !(r.target === unionNodeId && r.type === 'partner')
+          );
+        });
+      }
+
+      // Delete the person and any relationships connected to them
+      return {
+        ...prev,
+        persons: personsToKeep.filter(p => p.id !== id),
+        relationships: relationshipsToKeep.filter(rel =>
+          rel.source !== id && rel.target !== id
+        )
+      };
+    });
   };
 
   const updatePersonPosition = (id, x, y) => {
@@ -184,24 +218,101 @@ export const DataProvider = ({ children }) => {
   };
 
   const addRelationship = (relationship) => {
-    const newRel = {
-      ...relationship,
-      id: `rel_${Date.now()}`
-    };
+    if (relationship.type === 'marriage') {
 
+      // Create union node for marriage
+      const source = data.persons.find(p => p.id == relationship.source);
+      const target = data.persons.find(p => p.id == relationship.target);
+      const name = `(${source.name} - ${target.name})`;
+      const fx = source.fx && target.fx ? (source.fx + target.fx) / 2 : undefined;
+      const fy = source.fy && target.fy ? (source.fy + target.fy) / 2 : undefined;
+      const unionNode = {
+        id: `union_${Date.now()}`,
+        name: name,
+        type: 'union',
+        marriage: {
+          start: relationship.start,
+          end: relationship.end,
+          label: relationship.label
+        },
+        x: 0,
+        y: 0,
+        fx: fx,
+        fy: fy
+      };
+
+      // Create partner relationships
+      const partner1 = {
+        id: `rel_${Date.now()}_1`,
+        source: relationship.source,
+        target: unionNode.id,
+        type: 'partner',
+        label: ''
+      };
+
+      const partner2 = {
+        id: `rel_${Date.now()}_2`,
+        source: relationship.target,
+        target: unionNode.id,
+        type: 'partner',
+        label: ''
+      };
+
+      setData(prev => ({
+        ...prev,
+        persons: [...prev.persons, unionNode],
+        relationships: [...prev.relationships, partner1, partner2]
+      }));
+
+      return unionNode;
+    } else {
+      // For other relationships
+      const newRel = {
+        ...relationship,
+        id: `rel_${Date.now()}`
+      };
+
+      setData(prev => ({
+        ...prev,
+        relationships: [...prev.relationships, newRel]
+      }));
+
+      return newRel;
+    }
+  };
+
+  const updateRelationship = (id, updates) => {
     setData(prev => ({
       ...prev,
-      relationships: [...prev.relationships, newRel]
+      relationships: prev.relationships.map(rel =>
+        rel.id === id ? { ...rel, ...updates } : rel
+      )
     }));
-
-    return newRel;
   };
 
   const deleteRelationship = (id) => {
-    setData(prev => ({
-      ...prev,
-      relationships: prev.relationships.filter(rel => rel.id !== id)
-    }));
+    setData(prev => {
+      const relationshipToDelete = prev.relationships.find(rel => rel.id === id);
+
+      // If deleting a partner relationship, also delete the union node
+      if (relationshipToDelete?.type === 'partner') {
+        const unionNodeId = relationshipToDelete.target;
+
+        return {
+          ...prev,
+          persons: prev.persons.filter(p => p.id !== unionNodeId),
+          relationships: prev.relationships.filter(rel =>
+            rel.id !== id && rel.target !== unionNodeId
+          )
+        };
+      }
+
+      // For other relationships, just delete the single relationship
+      return {
+        ...prev,
+        relationships: prev.relationships.filter(rel => rel.id !== id)
+      };
+    });
   };
 
   return (
@@ -232,10 +343,13 @@ export const DataProvider = ({ children }) => {
 
         // Relationship operations
         addRelationship,
+        updateRelationship,
         deleteRelationship,
 
         selectedNode,
-        setSelectedNode
+        setSelectedNode,
+        selectedRelationship,
+        setSelectedRelationship
       }}
     >
       {children}

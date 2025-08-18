@@ -10,6 +10,7 @@ const DynastyNetwork = () => {
     persons,
     relationships,
     setSelectedNode,
+    setSelectedRelationship,
     selectedNode,
     updatePersonPosition
   } = useDataContext();
@@ -55,7 +56,6 @@ const DynastyNetwork = () => {
       if (containerRef.current) {
         const width = containerRef.current.clientWidth;
         const height = containerRef.current.clientHeight;
-        console.log("dimensions: " + width + ", " + height);
         setDimensions({ width, height });
       }
     };
@@ -94,7 +94,7 @@ const DynastyNetwork = () => {
   }, []);
 
   // MAIN DRAW EFFECT (UPDATED)
-  useEffect(() => {        
+  useEffect(() => {
     if (!svgRef.current || !persons || persons.length === 0 || dimensions.width === 0 || dimensions.height === 0) return;
 
     const svg = d3.select(svgRef.current);
@@ -122,6 +122,18 @@ const DynastyNetwork = () => {
     // Define dot marker for marriage relationships
     defs.append('marker')
       .attr('id', 'marriage-dot')
+      .attr('viewBox', '-4 -4 8 8')
+      .attr('refX', 0)
+      .attr('refY', 0)
+      .attr('markerWidth', 8)
+      .attr('markerHeight', 8)
+      .append('circle')
+      .attr('r', 3)
+      .attr('fill', '#f97316');
+
+    // Define dot marker for partner relationships
+    defs.append('marker')
+      .attr('id', 'partner-dot')
       .attr('viewBox', '-4 -4 8 8')
       .attr('refX', 0)
       .attr('refY', 0)
@@ -163,6 +175,7 @@ const DynastyNetwork = () => {
     svg.on('click', (event) => {
       if (event.target === svg.node()) {
         setSelectedNode(null);
+        setSelectedRelationship(null);
       }
     });
 
@@ -171,7 +184,7 @@ const DynastyNetwork = () => {
       // Make grid larger for better panning experience
       const gridWidth = dimensions.width * 2;
       const gridHeight = dimensions.height * 2;
-      
+
       for (let y = 0; y <= gridHeight; y += gridSize) {
         gridGroup.append('line')
           .attr('x1', 0).attr('y1', y).attr('x2', gridWidth).attr('y2', y)
@@ -192,11 +205,7 @@ const DynastyNetwork = () => {
       const storedPos = nodePositionsRef.current.get(person.id);
       return storedPos ?
         { ...person, x: storedPos.x || posX, y: storedPos.y || posY } :
-        {
-          ...person,
-          x: person.x || posX,
-          y: person.y || posY
-        };
+        { ...person, x: person.x || posX, y: person.y || posY };
     });
 
     const personMap = new Map(nodes.map(p => [p.id, p]));
@@ -206,11 +215,36 @@ const DynastyNetwork = () => {
       target: personMap.get(rel.target)
     })).filter(rel => rel.source && rel.target);
 
+    console.log("relationship", resolvedRelationships);
+
     const simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(resolvedRelationships).id(d => d.id).distance(100))
       .force('charge', d3.forceManyBody().strength(-300))
       .force('x', d3.forceX().strength(0.05))
-      .force('y', d3.forceY().strength(0.05));
+      .force('y', d3.forceY().strength(0.05))
+      // Custom force to position union nodes at midpoint
+      .force('marriage', () => {
+        nodes.forEach(node => {
+          if (node.type === 'union') {
+            // Find partner relationships for this union
+            const partners = resolvedRelationships.filter(
+              r => r.target.id === node.id && r.type === 'partner'
+            );
+
+            if (partners.length === 2) {
+              const [p1, p2] = partners;
+              if (p1.source && p2.source) {
+                // Move towards midpoint but not all the way for smoother animation
+                const midpointX = (p1.source.x + p2.source.x) / 2;
+                const midpointY = (p1.source.y + p2.source.y) / 2;
+
+                node.x = node.x + (midpointX - node.x) * 0.2;
+                node.y = node.y + (midpointY - node.y) * 0.2;
+              }
+            }
+          }
+        });
+      });
 
     simulationRef.current = simulation;
 
@@ -223,7 +257,7 @@ const DynastyNetwork = () => {
       .attr('class', 'node-clip');
 
     clipPaths.append('circle')
-      .attr('r', d => d.nodeSize || 40);
+      .attr('r', d => d.type === 'union' ? 12 : (d.nodeSize || 40));
 
     const link = container.append('g')
       .attr('class', 'links')
@@ -236,15 +270,18 @@ const DynastyNetwork = () => {
       .attr('stroke', d =>
         d.color ||
         (d.type === 'marriage' ? '#f97316' :
-          d.type === 'succession' ? '#10b981' :
-            d.type === 'sibling' ? '#8b5cf6' :
-              '#94a3b8')
+          d.type === 'partner' ? '#f97316' :
+            d.type === 'parent-child' ? '#3b82f6' :
+              d.type === 'succession' ? '#10b981' :
+                d.type === 'sibling' ? '#8b5cf6' :
+                  '#94a3b8')
       )
       .attr('stroke-width', d => d.width ||
         (d.type === 'sibling' ? 1.5 : 2)
       )
       .attr('stroke-dasharray', d => {
         if (d.type === 'marriage') return '5,5';
+        if (d.type === 'partner') return '0';
         return '0';
       })
       .attr('marker-end', d => {
@@ -252,6 +289,7 @@ const DynastyNetwork = () => {
         if (d.type === 'marriage') return 'url(#marriage-dot)';
         if (d.type === 'succession') return 'url(#succession-circle)';
         if (d.type === 'sibling') return 'url(#sibling-square)';
+        if (d.type === 'partner') return 'url(#partner-dot)';
         return null;
       })
       .on('mouseover', function () { d3.select(this).attr('stroke-width', 4); })
@@ -294,6 +332,7 @@ const DynastyNetwork = () => {
           nodePositionsRef.current.set(d.id, { x: finalX, y: finalY });
         } else {
           setSelectedNode(d);
+          setSelectedRelationship(null);
         }
       });
 
@@ -315,14 +354,17 @@ const DynastyNetwork = () => {
         }
       });
 
-    // Add background circle
+    // Add background circle - style union nodes differently
     node.append('circle')
-      .attr('r', d => d.nodeSize || 40)
-      .attr('fill', d => d.gender === 'male' ? '#3b82f6' : '#ec4899')
+      .attr('r', d => d.type === 'union' ? 12 : (d.nodeSize || 40))
+      .attr('fill', d => {
+        if (d.type === 'union') return '#f97316';
+        return d.gender === 'male' ? '#3b82f6' : '#ec4899';
+      })
       .attr('class', d => `node-circle ${selectedNode && selectedNode.id === d.id ? 'selected' : ''}`)
 
-    // Add image with profile link functionality
-    const imageGroup = node.append('g')
+    // Add image only for regular persons
+    const imageGroup = node.filter(d => d.type !== 'union').append('g')
       .attr('class', 'image-group')
       .on('click', function (event, d) {
         event.stopPropagation();
@@ -351,7 +393,7 @@ const DynastyNetwork = () => {
     // Create a group for labels
     const labelGroup = container.append('g').attr('class', 'labels');
 
-    // LABELS - MULTI-LINE WITH STYLING SUPPORT
+    // LABELS - Different for union nodes
     const labels = labelGroup.selectAll('g.node-label')
       .data(nodes)
       .enter()
@@ -360,114 +402,142 @@ const DynastyNetwork = () => {
       .attr('transform', d => `translate(${d.x},${d.y})`)
       .attr('pointer-events', 'none');
 
-    // Calculate vertical offsets based on node size
+    // Handle different label types
     labels.each(function (d) {
       const label = d3.select(this);
-      const nodeSize = d.nodeSize || 40;
+      const nodeSize = d.type === 'union' ? 12 : (d.nodeSize || 40);
       const fontSize = d.labelFontSize || 12;
       const textColor = d.labelColor || '#334155';
-      let verticalOffset = nodeSize + 15; // Start below the node
 
-      // Add name (primary text) above node
-      const nameText = label.append('text')
-        .text(d.name || 'Unknown')
-        .attr('text-anchor', 'middle')
-        .attr('dy', -(nodeSize) - 10)
-        .attr('font-size', fontSize)
-        .attr('fill', textColor)
-        .attr('font-weight', 'bold')
-        .attr('class', d.profileUrl ? 'node-name node-link' : 'node-name')
-        .style('pointer-events', 'auto')
-        .style('cursor', d.profileUrl ? 'pointer' : 'default');
+      if (d.type === 'union') {
+        // Union node label (marriage) with years
+        const label = d3.select(this);
+        const fontSize = d.labelFontSize || 12;
 
-      if (d.profileUrl) {
-        nameText
-          .on('click', function (event) {
-            event.stopPropagation();
-            window.open(d.profileUrl, '_blank');
-          })
-          .append('title')
-          .text('View Profile');
-      }
-
-      // Add title if available above node
-      if (d.title) {
-        label.append('text')
-          .text(d.title)
+        // Create main text element
+        const textElement = label.append('text')
           .attr('text-anchor', 'middle')
-          .attr('dy', -(nodeSize) - 10 + fontSize * 1.5)
-          .attr('font-size', fontSize * 0.9)
-          .attr('fill', textColor)
-          .attr('class', 'node-title');
-      }
+          .attr('dy', 20)
+          .attr('font-size', fontSize)
+          .attr('fill', '#f97316');
 
-      // Add lifespan at bottom of node
-      let lifespan = '';
-      if (d.birth) lifespan += `${d.birth}`;
-      if (d.age) lifespan += ` - (${d.age})`;
+        // Add marriage label
+        textElement.append('tspan')
+          .text(d.marriage?.label || 'Marriage')
+          .attr('x', 0);
 
-      if (lifespan) {
-        label.append('text')
-          .text(lifespan)
+        // Add marriage years if available
+        if (d.marriage?.start || d.marriage?.end) {
+          textElement.append('tspan')
+            .text(`(${d.marriage.start || '?'} - ${d.marriage.end || '?'})`)
+            .attr('x', 0)
+            .attr('dy', '1.2em');
+        }
+      } else {
+        // Regular person label
+        let verticalOffset = nodeSize + 15;
+
+        // Add name above node
+        const nameText = label.append('text')
+          .text(d.name || 'Unknown')
           .attr('text-anchor', 'middle')
-          .attr('dy', verticalOffset)
-          .attr('font-size', fontSize * 0.8)
+          .attr('dy', -(nodeSize) - 10)
+          .attr('font-size', fontSize)
           .attr('fill', textColor)
-          .attr('class', 'node-age');
+          .attr('font-weight', 'bold')
+          .attr('class', d.profileUrl ? 'node-name node-link' : 'node-name')
+          .style('pointer-events', 'auto')
+          .style('cursor', d.profileUrl ? 'pointer' : 'default');
 
-        // Add space after lifespan
-        verticalOffset += fontSize * 0.8 * 1.5;
-      }
+        if (d.profileUrl) {
+          nameText
+            .on('click', function (event) {
+              event.stopPropagation();
+              window.open(d.profileUrl, '_blank');
+            })
+            .append('title')
+            .text('View Profile');
+        }
 
-      // Add description based on position setting
-      if (d.description) {
-        const maxWidth = d.descriptionWidth || nodeSize * 2;
-        const position = d.descriptionPosition || 'below';
+        // Add title if available
+        if (d.title) {
+          label.append('text')
+            .text(d.title)
+            .attr('text-anchor', 'middle')
+            .attr('dy', -(nodeSize) - 10 + fontSize * 1.5)
+            .attr('font-size', fontSize * 0.9)
+            .attr('fill', textColor)
+            .attr('class', 'node-title');
+        }
 
-        if (position === 'below') {
-          // Below position
-          const foreignObj = label.append('foreignObject')
-            .attr('x', -maxWidth / 2)
-            .attr('y', verticalOffset)
-            .attr('width', maxWidth)
-            .attr('height', '100') // Fixed height for now
-            .attr('class', 'node-description overflow-y-auto');
+        // Add lifespan
+        let lifespan = '';
+        if (d.birth) lifespan += `${d.birth}`;
+        if (d.age) lifespan += ` - (${d.age})`;
 
-          const div = foreignObj.append('xhtml:div')
-            .attr('class', 'text-center text-xs break-words leading-tight')
-            .style('color', textColor)
-            .style('font-size', `${fontSize * 0.8}px`)
-            .style('font-family', 'sans-serif');
+        if (lifespan) {
+          label.append('text')
+            .text(lifespan)
+            .attr('text-anchor', 'middle')
+            .attr('dy', verticalOffset)
+            .attr('font-size', fontSize * 0.8)
+            .attr('fill', textColor)
+            .attr('class', 'node-age');
 
-          const lines = d.description.split('\n');
-          lines.forEach(line => {
-            div.append('xhtml:p')
-              .attr('class', 'm-0 p-0')
-              .text(line);
-          });
-        } else {
-          // Right position
-          const xOffset = nodeSize + 20; // Start to the right of the node
+          // Add space after lifespan
+          verticalOffset += fontSize * 0.8 * 1.5;
+        }
 
-          const foreignObj = label.append('foreignObject')
-            .attr('x', xOffset)
-            .attr('y', -nodeSize) // Align with top of node
-            .attr('width', maxWidth)
-            .attr('height', nodeSize * 2) // Height matches node height
-            .attr('class', 'node-description overflow-y-auto');
+        // Add description based on position setting
+        if (d.description) {
+          const maxWidth = d.descriptionWidth || nodeSize * 2;
+          const position = d.descriptionPosition || 'below';
 
-          const div = foreignObj.append('xhtml:div')
-            .attr('class', 'text-left text-xs break-words leading-tight h-full flex items-center')
-            .style('color', textColor)
-            .style('font-size', `${fontSize * 0.8}px`)
-            .style('font-family', 'sans-serif');
+          if (position === 'below') {
+            // Below position
+            const foreignObj = label.append('foreignObject')
+              .attr('x', -maxWidth / 2)
+              .attr('y', verticalOffset)
+              .attr('width', maxWidth)
+              .attr('height', '100') // Fixed height for now
+              .attr('class', 'node-description overflow-y-auto');
 
-          const lines = d.description.split('\n');
-          lines.forEach(line => {
-            div.append('xhtml:p')
-              .attr('class', 'm-0 p-0')
-              .text(line);
-          });
+            const div = foreignObj.append('xhtml:div')
+              .attr('class', 'text-center text-xs break-words leading-tight')
+              .style('color', textColor)
+              .style('font-size', `${fontSize * 0.8}px`)
+              .style('font-family', 'sans-serif');
+
+            const lines = d.description.split('\n');
+            lines.forEach(line => {
+              div.append('xhtml:p')
+                .attr('class', 'm-0 p-0')
+                .text(line);
+            });
+          } else {
+            // Right position
+            const xOffset = nodeSize + 20; // Start to the right of the node
+
+            const foreignObj = label.append('foreignObject')
+              .attr('x', xOffset)
+              .attr('y', -nodeSize)
+              .attr('width', maxWidth)
+              .attr('height', nodeSize * 2)
+              .attr('class', 'node-description overflow-y-auto');
+
+            const div = foreignObj.append('xhtml:div')
+              .attr('class', 'text-left text-xs break-words leading-tight h-full flex items-center')
+              .style('color', textColor)
+              .style('font-size', `${fontSize * 0.8}px`)
+              .style('font-family', 'sans-serif');
+
+            const lines = d.description.split('\n');
+            lines.forEach(line => {
+              div.append('xhtml:p')
+                .attr('class', 'm-0 p-0')
+                .text(line);
+            });
+          }
         }
       }
     });
@@ -479,18 +549,21 @@ const DynastyNetwork = () => {
       .data(resolvedRelationships)
       .enter()
       .append('text')
-      .text(d => d.label || ( // Use custom label if available
+      .text(d => d.type !== 'partner'? d.label || ( // Use custom label if available
         d.type === 'parent-child' ? 'Child' :
           d.type === 'marriage' ? 'Marriage' :
-            d.type === 'succession' ? 'Succession' :
-              d.type === 'sibling' ? 'Sibling' : d.type
-      ))
+            d.type === 'partner' ? '' : //don't show partner label
+              d.type === 'succession' ? 'Succession' :
+                d.type === 'sibling' ? 'Sibling' : d.type
+      ): '') //don't show partner label
       .attr('font-size', 10)
       .attr('fill', d =>
         d.type === 'marriage' ? '#f97316' :
-          d.type === 'succession' ? '#10b981' :
-            d.type === 'sibling' ? '#8b5cf6' :
-              '#4b5563'
+          d.type === 'partner' ? '#f97316' :
+            d.type === 'parent-child' ? '#3b82f6' :
+              d.type === 'succession' ? '#10b981' :
+                d.type === 'sibling' ? '#8b5cf6' :
+                  '#4b5563'
       )
       .attr('pointer-events', 'none')
       .attr('class', 'node-relationship-labels');
@@ -504,32 +577,32 @@ const DynastyNetwork = () => {
           const dx = d.target.x - d.source.x;
           const dy = d.target.y - d.source.y;
           const length = Math.sqrt(dx * dx + dy * dy);
-          const radius = d.source.nodeSize || 40;
+          const radius = d.source.type === 'union' ? 12 : (d.source.nodeSize || 40);
           return snapToGrid(d.source.x + (dx / length) * radius);
         })
         .attr('y1', d => {
           const dx = d.target.x - d.source.x;
           const dy = d.target.y - d.source.y;
           const length = Math.sqrt(dx * dx + dy * dy);
-          const radius = d.source.nodeSize || 40;
+          const radius = d.source.type === 'union' ? 12 : (d.source.nodeSize || 40);
           return snapToGrid(d.source.y + (dy / length) * radius);
         })
         .attr('x2', d => {
           const dx = d.target.x - d.source.x;
           const dy = d.target.y - d.source.y;
           const length = Math.sqrt(dx * dx + dy * dy);
-          const radius = d.target.nodeSize || 40;
+          const radius = d.target.type === 'union' ? 12 : (d.target.nodeSize || 40);
           return snapToGrid(d.target.x - (dx / length) * radius);
         })
         .attr('y2', d => {
           const dx = d.target.x - d.source.x;
           const dy = d.target.y - d.source.y;
           const length = Math.sqrt(dx * dx + dy * dy);
-          const radius = d.target.nodeSize || 40;
+          const radius = d.target.type === 'union' ? 12 : (d.target.nodeSize || 40);
           return snapToGrid(d.target.y - (dy / length) * radius);
         });
 
-      // Position node groups (which contain both circle and image)
+      // Position node groups
       node
         .attr('transform', d => `translate(${snapToGrid(d.x)},${snapToGrid(d.y)})`);
 
@@ -560,7 +633,7 @@ const DynastyNetwork = () => {
       const initialTransform = d3.zoomIdentity
         .translate(dimensions.width / 5, dimensions.height / 5)
         .scale(1.0);
-        
+
       svg.call(zoomBehavior.transform, initialTransform);
       initialZoomApplied.current = true;
     } else {
@@ -591,21 +664,21 @@ const DynastyNetwork = () => {
     <div ref={containerRef} className="border rounded-lg overflow-hidden bg-gray-50 relative w-full h-full">
       {/* Floating zoom controls */}
       <div className="absolute top-2 left-2 z-10 flex flex-col gap-2 bg-white p-2 rounded shadow">
-        <button 
+        <button
           onClick={handleZoomIn}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50 transition-colors"
           aria-label="Zoom In"
         >
           +
         </button>
-        <button 
+        <button
           onClick={handleZoomOut}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50 transition-colors"
           aria-label="Zoom Out"
         >
           -
         </button>
-        <button 
+        <button
           onClick={handleResetZoom}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-50 transition-colors"
           aria-label="Reset Zoom"
@@ -647,7 +720,7 @@ const DynastyNetwork = () => {
           </select>
         </div>
       </div>
-      
+
       <svg
         ref={svgRef}
         width={dimensions.width}

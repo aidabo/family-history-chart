@@ -4,7 +4,7 @@ import DynastyNetwork from "@/components/charts/DynastyNetwork";
 import NodeEditor from "@/components/editor/NodeEditor";
 import RelationshipForm from "@/components/editor/RelationshipForm";
 import ContextMenu from "@/components/ui/ContextMenu";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeftIcon,
@@ -127,6 +127,8 @@ export default function DynastyExplorer() {
     deletePerson,
     deleteRelationship,
     clearPage,
+    selectedRelationship, 
+    setSelectedRelationship
   } = useDataContext();
 
   const [editorOpen, setEditorOpen] = useState(true);
@@ -134,8 +136,50 @@ export default function DynastyExplorer() {
   const [panelWidth, setPanelWidth] = useState(400);
   const [activeTab, setActiveTab] = useState("person");
   const resizeHandleRef = useRef(null);
-
+  
   const navigate = useRouter();
+  
+  // Get display relationships - hide partner relationships and show marriage relationships
+  const displayRelationships = useMemo(() => {
+    const marriageRelationships = new Map();
+    
+    // First, find all marriages and map them to their union nodes
+    relationships.forEach((rel: any) => {
+      if (rel.type === 'partner') {
+        const unionNode = persons.find((p: any) => p.id === rel.target && p.type === 'union');
+        if (unionNode) {
+          if (!marriageRelationships.has(unionNode.id)) {
+            marriageRelationships.set(unionNode.id, {
+              id: unionNode.id,
+              type: 'marriage',
+              source: '', // will be filled below
+              target: '', // will be filled below
+              start: unionNode.marriage?.start || '',
+              end: unionNode.marriage?.end || '',
+              label: unionNode.marriage?.label || 'Marriage',
+              partners: []
+            });
+          }
+          const marriage = marriageRelationships.get(unionNode.id);
+          marriage.partners.push(rel.source);
+        }
+      }
+    });
+    
+    // Now fill in the source and target for the marriage relationships
+    for (const [id, marriage] of marriageRelationships) {
+      if (marriage.partners.length === 2) {
+        marriage.source = marriage.partners[0];
+        marriage.target = marriage.partners[1];
+      }
+    }
+    
+    // Combine non-partner relationships with marriage relationships
+    return  [
+      ...relationships.filter((rel: any) => rel.type !== 'partner'),
+      ...Array.from(marriageRelationships.values())
+    ];
+  }, [relationships, persons]);
 
   // Load the page when component mounts or pageId changes
   useEffect(() => {
@@ -176,6 +220,12 @@ export default function DynastyExplorer() {
     };
   }, [isResizing]);
 
+  useEffect(()=>{
+    if(selectedNode){
+      setActiveTab('person')
+    }
+  }, [selectedNode])
+
   const handleSave = async () => {
     const page = await savePage();
     if (page) {
@@ -214,6 +264,46 @@ export default function DynastyExplorer() {
   const handleBackToList = () => {
     navigate.push("/charts");
   };
+
+  const handleChangeRelationship = (rel: any) => {
+  // If it's a marriage relationship, create a mock relationship with the two partners
+  if (rel.type === 'marriage') {
+    const unionNode = persons.find(p => p.id === rel.id && p.type === 'union');
+    const partnerRels = relationships.filter((r: any) => 
+      r.type === 'partner' && r.target === rel.id
+    );
+    
+    if (partnerRels.length === 2 && unionNode) {
+      setSelectedRelationship({
+        id: unionNode.id,
+        source: partnerRels[0].source,
+        target: partnerRels[1].source,
+        type: 'marriage',
+        start: unionNode.marriage?.start || '',
+        end: unionNode.marriage?.end || '',
+        label: unionNode.marriage?.label || 'Marriage'
+      });
+      console.log("relationship:*******", selectedRelationship);
+      setActiveTab("relationship");
+    }
+  } else {
+    // For other relationships, just pass it directly
+    setSelectedRelationship(rel);
+    setActiveTab("relationship");
+  }
+};
+  
+  // Handle removing a relationship
+  const handleRemoveRelationship = (rel: any) => {
+    if (rel.type === 'marriage') {
+      // For marriage, we need to delete the union node which will delete both partner relationships
+      deletePerson(rel.id);
+    } else {
+      // For other relationships, just delete the relationship
+      deleteRelationship(rel.id);
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-white text-black flex flex-col">
@@ -390,46 +480,59 @@ export default function DynastyExplorer() {
                             Connected relationships:
                           </p>
                           <ul className="mt-2 space-y-1">
-                            {relationships
+                            {displayRelationships
                               .filter(
                                 (rel: any) =>
                                   rel.source === selectedNode.id ||
                                   rel.target === selectedNode.id
                               )
-                              .map((rel: any) => (
-                                <li
-                                  key={rel.id}
-                                  className="flex justify-between items-center py-1 border-b border-gray-100"
-                                >
-                                  <div>
-                                    <span className="font-medium">
-                                      {rel.label ||
-                                        (rel.type === "marriage"
-                                          ? "Married to"
-                                          : rel.type === "parent-child"
-                                          ? "Parent/Child: "
-                                          : rel.type)}
-                                    </span>{" "}
-                                    {rel.source === selectedNode.id
-                                      ? persons.find(
-                                          (p: any) => p.id === rel.target
-                                        )?.name
-                                      : persons.find(
-                                          (p: any) => p.id === rel.source
-                                        )?.name}
-                                  </div>
-                                  <button
-                                    onClick={() => deleteRelationship(rel.id)}
-                                    className="text-red-600 hover:text-red-800 text-xs px-2 py-1 rounded hover:bg-red-50"
+                              .map((rel: any) => {
+                                const otherPersonId = rel.source === selectedNode.id 
+                                  ? rel.target 
+                                  : rel.source;
+                                  
+                                const otherPerson = persons.find((p:any) => p.id === otherPersonId);
+                                
+                                //maybe union with child relation of marriage
+                                //if (otherPerson?.type === 'union') return null; 
+                                
+                                return (
+                                  <li
+                                    key={rel.id}
+                                    className="flex justify-between items-center py-1 border-b border-gray-100"
                                   >
-                                    Remove
-                                  </button>
-                                </li>
-                              ))}
-                            {relationships.filter(
+                                    <div>
+                                      <span className="font-medium">
+                                        {rel.label ||
+                                          (rel.type === "marriage"
+                                            ? "Married to"
+                                            : rel.type === "parent-child"
+                                            ? "Parent/Child: "
+                                            : rel.type)}
+                                      </span>{" "}
+                                      {otherPerson?.name || 'Unknown'}
+                                    </div>
+                                    <div className="flex gap-1">
+                                      <button
+                                        onClick={() => handleChangeRelationship(rel)}
+                                        className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded hover:bg-blue-50"
+                                      >
+                                        Change
+                                      </button>
+                                      <button
+                                        onClick={() => handleRemoveRelationship(rel)}
+                                        className="text-red-600 hover:text-red-800 text-xs px-2 py-1 rounded hover:bg-red-50"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            {displayRelationships.filter(
                               (rel: any) =>
-                                rel.source === selectedNode.id ||
-                                rel.target === selectedNode.id
+                                (rel.source === selectedNode.id || rel.target === selectedNode.id) &&
+                                persons.find((p: any) => p.id === (rel.source === selectedNode.id ? rel.target : rel.source))?.type !== 'union'
                             ).length === 0 && (
                               <li className="text-gray-500 italic py-2">
                                 No relationships
@@ -442,7 +545,10 @@ export default function DynastyExplorer() {
                   )}
                 </div>
               ) : (
-                <RelationshipForm onClose={() => setActiveTab("person")} />
+                <RelationshipForm 
+                  onClose={() => setActiveTab("person")} 
+                  relationship={selectedRelationship}
+                />
               )}
             </div>
           </div>
