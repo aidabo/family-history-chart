@@ -39,13 +39,8 @@ export const DataProvider = ({ children }) => {
           ...pageData
         }));
         setData(pageData.chartProps);
-        return currentPage;
-      } else {
-        if (currentPage?.id && currentPage.id === pageId) {
-          console.log("new page");
-          return currentPage;
-        }
-      }
+        return pageData;
+      } 
     } catch (error) {
       console.error('Data loading error:', error);
       return false;
@@ -79,7 +74,10 @@ export const DataProvider = ({ children }) => {
     try {
       const savedPage = await layoutStore.updatePage(pageProps);
       if (savedPage) {
-        setCurrentPage(savedPage);
+        setCurrentPage(prev => ({
+          ...prev,
+          ...savedPage
+        }));
         setData(savedPage.chartProps);
       }
       return currentPage;
@@ -107,8 +105,12 @@ export const DataProvider = ({ children }) => {
     try {
       const newPage = await layoutStore.insertPage(pageData);
       if (newPage) {
-        setCurrentPage(newPage);
+        setCurrentPage(prev => ({
+          ...prev,
+          ...newPage
+        }));
         setData(newPage.chartProps);
+        return newPage;
       }
       return currentPage;
     } catch (error) {

@@ -160,7 +160,7 @@ const NodeEditor = () => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-800">Age</label>
+          <label className="block text-sm font-medium text-gray-800">Age or End Year</label>
           <input
             type="number"
             name="age"
@@ -168,7 +168,7 @@ const NodeEditor = () => {
             onChange={handleChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-white text-gray-800 p-2"
             min="0"
-            max="2023"
+            max="2025"
           />
         </div>
       </div>
@@ -244,6 +244,7 @@ const NodeEditor = () => {
             name="descriptionWidth"
             min="60"
             max="300"
+            step="5"
             value={form.descriptionWidth}
             onChange={handleChange}
             className="mt-1 block w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
@@ -295,6 +296,7 @@ const NodeEditor = () => {
             name="nodeSize"
             min="20"
             max="80"
+            step="5"
             value={form.nodeSize}
             onChange={handleChange}
             className="mt-1 block w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
@@ -314,15 +316,16 @@ const NodeEditor = () => {
             type="range"
             name="labelFontSize"
             min="8"
-            max="20"
+            max="24"
+            step="4"
             value={form.labelFontSize}
             onChange={handleChange}
             className="mt-1 block w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
           />
           <div className="flex justify-between text-xs text-gray-500 mt-1">
             <span>8px</span>
-            <span>14px</span>
-            <span>20px</span>
+            <span>16px</span>
+            <span>24px</span>
           </div>
         </div>
       </div>
@@ -338,7 +341,7 @@ const NodeEditor = () => {
             value={form.labelColor}
             onChange={handleChange}
             className="w-10 h-10 border-0 rounded cursor-pointer"
-          />
+          />          
           <span className="ml-2 text-sm text-gray-800">{form.labelColor}</span>
         </div>
       </div>

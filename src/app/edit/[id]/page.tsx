@@ -5,7 +5,7 @@ import NodeEditor from "@/components/editor/NodeEditor";
 import RelationshipForm from "@/components/editor/RelationshipForm";
 import ContextMenu from "@/components/ui/ContextMenu";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeftIcon,
   ArrowPathIcon,
@@ -15,6 +15,8 @@ import {
   TrashIcon,
   CloudArrowDownIcon,
   DocumentIcon,
+  EyeIcon,
+  ArrowLeftCircleIcon,
 } from "@heroicons/react/24/outline";
 
 // Updated TooltipButton component
@@ -115,7 +117,13 @@ function StatusButton({
 }
 
 export default function DynastyExplorer() {
-  const params = useParams<{ id: string; mode: string }>();
+  const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const mode = searchParams.get("mode"); // 'edit' or 'view'
+
+  const isViewMode = mode === "view";
+  const isEditMode = !isViewMode;
+  const [showReturnButton, setShowReturnButton] = useState(false);
 
   const {
     persons,
@@ -127,8 +135,8 @@ export default function DynastyExplorer() {
     deletePerson,
     deleteRelationship,
     clearPage,
-    selectedRelationship, 
-    setSelectedRelationship
+    selectedRelationship,
+    setSelectedRelationship,
   } = useDataContext();
 
   const [editorOpen, setEditorOpen] = useState(true);
@@ -136,28 +144,49 @@ export default function DynastyExplorer() {
   const [panelWidth, setPanelWidth] = useState(400);
   const [activeTab, setActiveTab] = useState("person");
   const resizeHandleRef = useRef(null);
-  
   const navigate = useRouter();
-  
+
+  useEffect(() => {
+    if (isViewMode) {
+      // Show return button after a short delay in view mode
+      const timer = setTimeout(() => {
+        setShowReturnButton(true);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else {
+      setShowReturnButton(false);
+    }
+  }, [isViewMode]);
+
+  const handleReturnToEdit = () => {
+    if (currentPage?.id) {
+      const editUrl = `${window.location.origin}/edit/${currentPage.id}`;
+      window.location.href = editUrl;
+    }
+  };
+
   // Get display relationships - hide partner relationships and show marriage relationships
   const displayRelationships = useMemo(() => {
     const marriageRelationships = new Map();
-    
+
     // First, find all marriages and map them to their union nodes
     relationships.forEach((rel: any) => {
-      if (rel.type === 'partner') {
-        const unionNode = persons.find((p: any) => p.id === rel.target && p.type === 'union');
+      if (rel.type === "partner") {
+        const unionNode = persons.find(
+          (p: any) => p.id === rel.target && p.type === "union"
+        );
         if (unionNode) {
           if (!marriageRelationships.has(unionNode.id)) {
             marriageRelationships.set(unionNode.id, {
               id: unionNode.id,
-              type: 'marriage',
-              source: '', // will be filled below
-              target: '', // will be filled below
-              start: unionNode.marriage?.start || '',
-              end: unionNode.marriage?.end || '',
-              label: unionNode.marriage?.label || 'Marriage',
-              partners: []
+              type: "marriage",
+              source: "", // will be filled below
+              target: "", // will be filled below
+              start: unionNode.marriage?.start || "",
+              end: unionNode.marriage?.end || "",
+              label: unionNode.marriage?.label || "Marriage",
+              partners: [],
             });
           }
           const marriage = marriageRelationships.get(unionNode.id);
@@ -165,7 +194,7 @@ export default function DynastyExplorer() {
         }
       }
     });
-    
+
     // Now fill in the source and target for the marriage relationships
     for (const [id, marriage] of marriageRelationships) {
       if (marriage.partners.length === 2) {
@@ -173,11 +202,11 @@ export default function DynastyExplorer() {
         marriage.target = marriage.partners[1];
       }
     }
-    
+
     // Combine non-partner relationships with marriage relationships
-    return  [
-      ...relationships.filter((rel: any) => rel.type !== 'partner'),
-      ...Array.from(marriageRelationships.values())
+    return [
+      ...relationships.filter((rel: any) => rel.type !== "partner"),
+      ...Array.from(marriageRelationships.values()),
     ];
   }, [relationships, persons]);
 
@@ -186,15 +215,13 @@ export default function DynastyExplorer() {
     const load = async () => {
       if (params.id) {
         const pageData = await loadPage(params.id);
-        console.log("loaded page", JSON.stringify(currentPage));
         if (!pageData) {
-          console.error(`Page with ID ${params.id} not found`);
           navigate.push("/charts");
         }
       }
     };
     load();
-  }, []);
+  }, [params.id]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -220,16 +247,24 @@ export default function DynastyExplorer() {
     };
   }, [isResizing]);
 
-  useEffect(()=>{
-    if(selectedNode){
-      setActiveTab('person')
+  useEffect(() => {
+    if (selectedNode) {
+      setActiveTab("person");
     }
-  }, [selectedNode])
+  }, [selectedNode]);
+
+  const handlePreview = () => {
+    if (currentPage?.id) {
+      const previewUrl = `${window.location.origin}/edit/${currentPage.id}/?mode=view`;
+      window.open(previewUrl, "_blank");
+    } else {
+      alert("No page to preview. Please save the page first.");
+    }
+  };
 
   const handleSave = async () => {
     const page = await savePage();
     if (page) {
-      console.log(JSON.stringify(page));
     } else {
       alert("save failed");
     }
@@ -249,7 +284,7 @@ export default function DynastyExplorer() {
       confirm("Are you sure you want to clear all data? This cannot be undone.")
     ) {
       // Implement clear functionality
-      if(currentPage){
+      if (currentPage) {
         clearPage();
       }
       console.log("Clearing all data");
@@ -266,36 +301,38 @@ export default function DynastyExplorer() {
   };
 
   const handleChangeRelationship = (rel: any) => {
-  // If it's a marriage relationship, create a mock relationship with the two partners
-  if (rel.type === 'marriage') {
-    const unionNode = persons.find(p => p.id === rel.id && p.type === 'union');
-    const partnerRels = relationships.filter((r: any) => 
-      r.type === 'partner' && r.target === rel.id
-    );
-    
-    if (partnerRels.length === 2 && unionNode) {
-      setSelectedRelationship({
-        id: unionNode.id,
-        source: partnerRels[0].source,
-        target: partnerRels[1].source,
-        type: 'marriage',
-        start: unionNode.marriage?.start || '',
-        end: unionNode.marriage?.end || '',
-        label: unionNode.marriage?.label || 'Marriage'
-      });
-      console.log("relationship:*******", selectedRelationship);
+    // If it's a marriage relationship, create a mock relationship with the two partners
+    if (rel.type === "marriage") {
+      const unionNode = persons.find(
+        (p) => p.id === rel.id && p.type === "union"
+      );
+      const partnerRels = relationships.filter(
+        (r: any) => r.type === "partner" && r.target === rel.id
+      );
+
+      if (partnerRels.length === 2 && unionNode) {
+        setSelectedRelationship({
+          id: unionNode.id,
+          source: partnerRels[0].source,
+          target: partnerRels[1].source,
+          type: "marriage",
+          start: unionNode.marriage?.start || "",
+          end: unionNode.marriage?.end || "",
+          label: unionNode.marriage?.label || "Marriage",
+        });
+        console.log("relationship:*******", selectedRelationship);
+        setActiveTab("relationship");
+      }
+    } else {
+      // For other relationships, just pass it directly
+      setSelectedRelationship(rel);
       setActiveTab("relationship");
     }
-  } else {
-    // For other relationships, just pass it directly
-    setSelectedRelationship(rel);
-    setActiveTab("relationship");
-  }
-};
-  
+  };
+
   // Handle removing a relationship
   const handleRemoveRelationship = (rel: any) => {
-    if (rel.type === 'marriage') {
+    if (rel.type === "marriage") {
       // For marriage, we need to delete the union node which will delete both partner relationships
       deletePerson(rel.id);
     } else {
@@ -304,92 +341,102 @@ export default function DynastyExplorer() {
     }
   };
 
-
   return (
     <div className="min-h-screen bg-white text-black flex flex-col">
       {/*header*/}
-      <header className="p-4 bg-white shadow relative">
-        <div className="flex flex-col sm:flex-row sm:items-center">
-          {/* Title and Description - Always full width */}
-          <div className="flex-1 mb-3 sm:mb-0">
-            <h1 className="text-2xl font-bold">
-              {currentPage?.title || "Family Timeline"}
-            </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              {currentPage?.description}
-            </p>
+
+      {isEditMode && (
+        <header className="p-4 bg-white shadow relative">
+          <div className="flex flex-col sm:flex-row sm:items-center">
+            {/* Title and Description - Always full width */}
+            <div className="flex-1 mb-3 sm:mb-0">
+              <h1 className="text-2xl font-bold">
+                {currentPage?.title || "Family Timeline"}
+              </h1>
+              <p className="text-sm text-gray-600 mt-1">
+                {currentPage?.description}
+              </p>
+            </div>
+
+            {/* Button Group - Full width on mobile, auto width on desktop */}
+            <div className="flex flex-wrap gap-1 justify-end pr-4">
+              {/* Back to List */}
+              <TooltipButton
+                onClick={handleBackToList}
+                icon={<ArrowLeftIcon className="h-5 w-5" />}
+                tooltip="Back to list"
+                className="bg-gray-200 hover:bg-gray-300"
+              />
+
+              {/* Preview */}
+              <TooltipButton
+                onClick={handlePreview}
+                icon={<EyeIcon className="h-5 w-5" />}
+                tooltip="Preview"
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              />
+
+              {/* Save */}
+              <StatusButton
+                onClick={handleSave}
+                icon={<CloudArrowDownIcon className="h-5 w-5" />}
+                label="Save"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                successMessage="Saved successfully!"
+                errorMessage="Save failed"
+              />
+
+              {/* Reload */}
+              <StatusButton
+                onClick={handleReload}
+                icon={<ArrowPathIcon className="h-5 w-5" />}
+                label="Reload"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                successMessage="Reloaded successfully"
+                errorMessage="Failed to reload"
+              />
+
+              {/* Clear */}
+              <TooltipButton
+                onClick={handleClear}
+                icon={<TrashIcon className="h-5 w-5" />}
+                tooltip="Clear all data"
+                className="bg-red-600 hover:bg-red-700 text-white"
+              />
+
+              {/* Import CSV */}
+              <TooltipButton
+                onClick={handleImportCSV}
+                icon={<DocumentArrowDownIcon className="h-5 w-5" />}
+                tooltip="Import CSV"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              />
+
+              {/* Export PDF */}
+              <TooltipButton
+                onClick={() => window.print()}
+                icon={<DocumentIcon className="h-5 w-5" />}
+                tooltip="Export PDF"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              />
+
+              {/* Toggle Editor */}
+              <TooltipButton
+                onClick={() => setEditorOpen(!editorOpen)}
+                icon={
+                  editorOpen ? (
+                    <ChevronRightIcon className="h-5 w-5" />
+                  ) : (
+                    <ChevronLeftIcon className="h-5 w-5" />
+                  )
+                }
+                tooltip={editorOpen ? "Hide Editor" : "Show Editor"}
+                className="bg-gray-200 hover:bg-gray-300"
+              />
+            </div>
           </div>
-
-          {/* Button Group - Full width on mobile, auto width on desktop */}
-          <div className="flex flex-wrap gap-1 justify-end">
-            {/* Back to List */}
-            <TooltipButton
-              onClick={handleBackToList}
-              icon={<ArrowLeftIcon className="h-5 w-5" />}
-              tooltip="Back to list"
-              className="bg-gray-200 hover:bg-gray-300"
-            />
-
-            {/* Save */}
-            <StatusButton
-              onClick={handleSave}
-              icon={<CloudArrowDownIcon className="h-5 w-5" />}
-              label="Save"
-              className="bg-green-600 hover:bg-green-700 text-white"
-              successMessage="Saved successfully!"
-              errorMessage="Save failed"
-            />
-
-            {/* Reload */}
-            <StatusButton
-              onClick={handleReload}
-              icon={<ArrowPathIcon className="h-5 w-5" />}
-              label="Reload"
-              className="bg-green-600 hover:bg-green-700 text-white"
-              successMessage="Reloaded successfully"
-              errorMessage="Failed to reload"
-            />
-
-            {/* Clear */}
-            <TooltipButton
-              onClick={handleClear}
-              icon={<TrashIcon className="h-5 w-5" />}
-              tooltip="Clear all data"
-              className="bg-red-600 hover:bg-red-700 text-white"
-            />
-
-            {/* Import CSV */}
-            <TooltipButton
-              onClick={handleImportCSV}
-              icon={<DocumentArrowDownIcon className="h-5 w-5" />}
-              tooltip="Import CSV"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            />
-
-            {/* Export PDF */}
-            <TooltipButton
-              onClick={() => window.print()}
-              icon={<DocumentIcon className="h-5 w-5" />}
-              tooltip="Export PDF"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            />
-
-            {/* Toggle Editor */}
-            <TooltipButton
-              onClick={() => setEditorOpen(!editorOpen)}
-              icon={
-                editorOpen ? (
-                  <ChevronRightIcon className="h-5 w-5" />
-                ) : (
-                  <ChevronLeftIcon className="h-5 w-5" />
-                )
-              }
-              tooltip={editorOpen ? "Hide Editor" : "Show Editor"}
-              className="bg-gray-200 hover:bg-gray-300"
-            />
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Main Content Area - Flex container */}
       <div className="flex flex-1 overflow-hidden">
@@ -409,7 +456,7 @@ export default function DynastyExplorer() {
         </div>
 
         {/* Editor Panel - Flex item on the right */}
-        {editorOpen && (
+        {isEditMode && editorOpen && (
           <div
             className="relative flex flex-col h-full bg-white shadow-lg border-l border-gray-200"
             style={{ width: `${panelWidth}px`, minWidth: "300px" }}
@@ -487,15 +534,18 @@ export default function DynastyExplorer() {
                                   rel.target === selectedNode.id
                               )
                               .map((rel: any) => {
-                                const otherPersonId = rel.source === selectedNode.id 
-                                  ? rel.target 
-                                  : rel.source;
-                                  
-                                const otherPerson = persons.find((p:any) => p.id === otherPersonId);
-                                
+                                const otherPersonId =
+                                  rel.source === selectedNode.id
+                                    ? rel.target
+                                    : rel.source;
+
+                                const otherPerson = persons.find(
+                                  (p: any) => p.id === otherPersonId
+                                );
+
                                 //maybe union with child relation of marriage
-                                //if (otherPerson?.type === 'union') return null; 
-                                
+                                //if (otherPerson?.type === 'union') return null;
+
                                 return (
                                   <li
                                     key={rel.id}
@@ -510,17 +560,21 @@ export default function DynastyExplorer() {
                                             ? "Parent/Child: "
                                             : rel.type)}
                                       </span>{" "}
-                                      {otherPerson?.name || 'Unknown'}
+                                      {otherPerson?.name || "Unknown"}
                                     </div>
                                     <div className="flex gap-1">
                                       <button
-                                        onClick={() => handleChangeRelationship(rel)}
+                                        onClick={() =>
+                                          handleChangeRelationship(rel)
+                                        }
                                         className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded hover:bg-blue-50"
                                       >
                                         Change
                                       </button>
                                       <button
-                                        onClick={() => handleRemoveRelationship(rel)}
+                                        onClick={() =>
+                                          handleRemoveRelationship(rel)
+                                        }
                                         className="text-red-600 hover:text-red-800 text-xs px-2 py-1 rounded hover:bg-red-50"
                                       >
                                         Remove
@@ -531,8 +585,15 @@ export default function DynastyExplorer() {
                               })}
                             {displayRelationships.filter(
                               (rel: any) =>
-                                (rel.source === selectedNode.id || rel.target === selectedNode.id) &&
-                                persons.find((p: any) => p.id === (rel.source === selectedNode.id ? rel.target : rel.source))?.type !== 'union'
+                                (rel.source === selectedNode.id ||
+                                  rel.target === selectedNode.id) &&
+                                persons.find(
+                                  (p: any) =>
+                                    p.id ===
+                                    (rel.source === selectedNode.id
+                                      ? rel.target
+                                      : rel.source)
+                                )?.type !== "union"
                             ).length === 0 && (
                               <li className="text-gray-500 italic py-2">
                                 No relationships
@@ -545,8 +606,8 @@ export default function DynastyExplorer() {
                   )}
                 </div>
               ) : (
-                <RelationshipForm 
-                  onClose={() => setActiveTab("person")} 
+                <RelationshipForm
+                  onClose={() => setActiveTab("person")}
                   relationship={selectedRelationship}
                 />
               )}
@@ -554,11 +615,33 @@ export default function DynastyExplorer() {
           </div>
         )}
       </div>
+      {isEditMode && (
+        <ContextMenu
+          onDeletePerson={deletePerson}
+          onDeleteRelationship={deleteRelationship}
+        />
+      )}
 
-      <ContextMenu
-        onDeletePerson={deletePerson}
-        onDeleteRelationship={deleteRelationship}
-      />
+      {isViewMode && (
+        <div className="fixed inset-0 pointer-events-none z-50">
+          <div
+            className={`absolute bottom-8 right-8 pointer-events-auto transition-all duration-500 ${
+              showReturnButton
+                ? "opacity-100 translate-y-0"
+                : "opacity-0 translate-y-4"
+            }`}
+          >
+            <button
+              onClick={handleReturnToEdit}
+              className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all duration-300 transform hover:scale-105 group"
+              title="Return to Edit Mode"
+            >
+              <ArrowLeftCircleIcon className="h-6 w-6 group-hover:animate-bounce" />
+              <span className="text-sm font-medium">Edit Mode</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

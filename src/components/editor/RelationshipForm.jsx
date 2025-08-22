@@ -161,7 +161,7 @@ const RelationshipForm = ({ onClose, relationship }) => {
             required
             disabled={isEditing && form.type === 'partner'} // Disable for partner relationships
           >
-            {persons.map(person => (
+            {persons.filter(person=>(form.type === 'marriage' || form.type === 'sibling')? person.type !== 'union' : true).map(person => (
               <option key={person.id} value={person.id}>
                 {person.name}
               </option>
@@ -181,7 +181,7 @@ const RelationshipForm = ({ onClose, relationship }) => {
             required
             disabled={isEditing && form.type === 'partner'} // Disable for partner relationships
           >
-            {persons.map(person => (
+            {persons.filter(person=>(form.type === 'marriage' || form.type === 'sibling')? person.type !== 'union' : true).map(person => (
               <option key={person.id} value={person.id}>
                 {person.name}
               </option>
