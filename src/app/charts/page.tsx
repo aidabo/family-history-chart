@@ -10,10 +10,10 @@ import {
   TrashIcon,
   PencilSquareIcon,
 } from "@heroicons/react/24/outline";
-import { PageInfoDialog } from "@/components/utils/PageInfoDialog";
+import { PageInfoDialog } from "@/components/charts/PageInfoDialog";
 import { v4 as uuidv4 } from "uuid";
 
-export default function ChartsPage() {
+export default function ChartPageList() {
   const [pages, setPages] = useState<PageProps[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
