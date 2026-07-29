@@ -1,37 +1,48 @@
 {
-  "name": "dynasty-history",
-  "version": "0.1.0",
-  "private": true,
+  "name": "dynasty-history-chart",
+  "version": "1.0.0",
+  "private": false,
+  "main": "dist/dynasty-history-chart.umd.js",
+  "module": "dist/dynasty-history-chart.es.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/dynasty-history-chart.es.js",
+      "require": "./dist/dynasty-history-chart.umd.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "jsonserver": "npx json-server --watch ./data/db.json --port 3001"
+    "dev": "concurrently \"vite\" \"yarn jsonserver\"",
+    "build": "vite build --mode lib",
+    "build:demo": "vite build",
+    "preview": "vite preview",
+    "jsonserver": "npx json-server --watch ./data/db.json --port 3005",
+    "lint": "eslint src"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@types/uuid": "^10.0.0",
-    "autoprefixer": "10.4.20",
     "axios": "^1.11.0",
     "d3": "^7.9.0",
-    "next": "15.4.6",
-    "postcss": "^8.5.6",
-    "postcss-import": "^16.1.1",
     "prop-types": "^15.8.1",
     "react": "19.1.0",
-    "react-contextmenu": "^2.14.0",
     "react-dom": "19.1.0",
-    "uuid": "^11.1.0",
-    "vis": "^4.21.0-EOL",
-    "vis-timeline": "^8.2.1"
+    "react-router-dom": "^6.28.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/d3": "^7.4.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "json-server": "^1.0.0-beta.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "json-server": "1.0.0-beta.3",
     "tailwindcss": "3.4.16",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^6.0.7",
+    "vite-plugin-dts": "^4.3.0"
   }
 }

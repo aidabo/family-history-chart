@@ -1,0 +1,364 @@
+'use client'
+import { createContext, useState, useContext, useMemo, ReactNode } from 'react'
+import { createLayoutStore } from '@/services/layoutStore'
+import { Episode, PageProps, PersonNode, Relationship } from '@/types/charts'
+
+interface DataState {
+  dynasties: any[]
+  persons: PersonNode[]
+  relationships: Relationship[]
+  episodes: Episode[]
+  events: any[]
+}
+
+interface DataContextValue extends DataState {
+  currentPage: PageProps | null
+  loading: boolean
+  setCurrentPage: (page: PageProps | null) => void
+  loadPageList: () => Promise<PageProps[] | false>
+  loadPage: (id: string) => Promise<PageProps | false>
+  savePage: () => Promise<PageProps | false>
+  insertPage: (data: PageProps) => Promise<PageProps | false>
+  updatePage: (data: PageProps) => Promise<PageProps | false>
+  deletePage: (id: string) => Promise<boolean>
+  clearPage: () => void
+  addPerson: (person: Partial<PersonNode>) => PersonNode
+  updatePerson: (id: string, updates: Partial<PersonNode>) => void
+  deletePerson: (id: string) => void
+  dissolveUnion: (unionId: string) => void
+  updatePersonPosition: (id: string, x: number, y: number) => void
+  updatePersonsBatch: (positions: Record<string, { x: number; y: number }>) => void
+  addRelationship: (rel: Partial<Relationship>) => Relationship | undefined
+  updateRelationship: (id: string, updates: Partial<Relationship>) => void
+  deleteRelationship: (id: string) => void
+  addEpisode: (ep: Omit<Episode, 'id'>) => Episode
+  updateEpisode: (id: string, updates: Partial<Episode>) => void
+  deleteEpisode: (id: string) => void
+  selectedNode: PersonNode | null
+  setSelectedNode: (node: PersonNode | null) => void
+  selectedRelationship: Relationship | null
+  setSelectedRelationship: (rel: Relationship | null) => void
+  uploadFile?: (file: File) => Promise<string>
+}
+
+const DataContext = createContext<DataContextValue | null>(null)
+
+interface DataProviderProps {
+  children: ReactNode
+  apiBaseUrl?: string
+  uploadFile?: (file: File) => Promise<string>
+}
+
+// Short unique suffix (uuid-based, falls back to random). Kept short for readability.
+let __idSeq = 0
+const shortId = (): string => {
+  const rnd =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().replace(/-/g, '')
+      : Math.random().toString(36).slice(2)
+  return (rnd + (__idSeq++).toString(36)).slice(0, 8)
+}
+// DOM-safe slug from a name (used in SVG ids like clip-<id>): keep letters/digits/CJK, drop the rest
+const slug = (name?: string): string =>
+  (name ?? '').trim().replace(/[\s#()<>"'`.,/\\:;{}[\]|?&=+%]/g, '').slice(0, 24)
+// Readable + unique: "<name>_<shortid>" for persons; "<prefix>_<shortid>" otherwise
+const personId = (name?: string) => `${slug(name) || 'p'}_${shortId()}`
+const uid = (prefix: string) => `${prefix}_${shortId()}`
+
+export function DataProvider({ children, apiBaseUrl = '/api/charts', uploadFile }: DataProviderProps) {
+  const store = useMemo(() => createLayoutStore(apiBaseUrl), [apiBaseUrl])
+
+  const [currentPage, setCurrentPage] = useState<PageProps | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState<DataState>({
+    dynasties: [],
+    persons: [],
+    relationships: [],
+    episodes: [],
+    events: [],
+  })
+  const [selectedNode, setSelectedNode] = useState<PersonNode | null>(null)
+  const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null)
+
+  const loadPageList = async () => {
+    setLoading(true)
+    try {
+      return await store.getPageList()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadPage = async (pageId: string) => {
+    setLoading(true)
+    try {
+      const page = await store.getPageById(pageId)
+      if (page) {
+        setCurrentPage(page)
+        setData({ episodes: [], ...page.chartProps })
+      }
+      return page
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const savePage = async () => {
+    if (!currentPage?.id) return false
+    const pageData = { ...currentPage, chartProps: data }
+    const saved = await store.savePage(pageData)
+    if (saved) {
+      setCurrentPage(saved)
+      setData(saved.chartProps)
+    }
+    return saved
+  }
+
+  const insertPage = async (pageData: PageProps) => {
+    const newPage = await store.insertPage(pageData)
+    if (newPage) {
+      setCurrentPage(newPage)
+      setData(newPage.chartProps)
+    }
+    return newPage
+  }
+
+  const updatePage = async (pageProps: PageProps) => {
+    const saved = await store.updatePage(pageProps)
+    if (saved) {
+      setCurrentPage((prev) => ({ ...prev!, ...saved }))
+    }
+    return saved
+  }
+
+  const deletePage = async (pageId: string) => {
+    const ok = await store.deletePage(pageId)
+    if (ok) {
+      setCurrentPage(null)
+      setData({ dynasties: [], persons: [], relationships: [], episodes: [], events: [] })
+    }
+    return ok
+  }
+
+  const clearPage = () => {
+    const empty: DataState = { dynasties: [], persons: [], relationships: [], episodes: [], events: [] }
+    setData(empty)
+    if (currentPage) setCurrentPage({ ...currentPage, chartProps: empty })
+  }
+
+  const addPerson = (person: Partial<PersonNode>): PersonNode => {
+    const last = data.persons.filter((p) => p.fx != null && p.fy != null).at(-1)
+    const autoX = last ? (last.fx ?? 400) + 90 : 400
+    const autoY = last ? (last.fy ?? 300) + 90 : 300
+    const newPerson: PersonNode = {
+      name: 'New Person',
+      shape: 'circle',
+      nodeSize: 40,
+      ...person,
+      id: personId(person.type === 'union' ? 'union' : person.name),
+      fx: person.fx != null ? person.fx : autoX,
+      fy: person.fy != null ? person.fy : autoY,
+      x:  person.x  != null ? person.x  : autoX,
+      y:  person.y  != null ? person.y  : autoY,
+    }
+    setData((prev) => ({ ...prev, persons: [...prev.persons, newPerson] }))
+    return newPerson
+  }
+
+  const updatePerson = (id: string, updates: Partial<PersonNode>) => {
+    setData((prev) => ({
+      ...prev,
+      persons: prev.persons.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+    }))
+    setSelectedNode((prev) => (prev?.id === id ? { ...prev, ...updates } : prev))
+  }
+
+  // Dissolve a union: remove the union node + its partner edges, restore a direct
+  // edge between the two partners, and reconnect the union's children to BOTH partners.
+  const dissolveUnion = (unionId: string) => {
+    setData((prev) => {
+      const union = prev.persons.find((p) => p.id === unionId)
+      if (!union || union.type !== 'union') return prev
+
+      const partnerRels = prev.relationships.filter((r) => r.type === 'partner' && r.target === unionId)
+      const partnerIds = partnerRels.map((r) => r.source)
+      const childRels = prev.relationships.filter((r) => r.type === 'parent-child' && r.source === unionId)
+      const childIds = childRels.map((r) => r.target)
+
+      const stamp = Date.now()
+      const newRels: Relationship[] = []
+
+      // Restore direct edge between the (first two) partners
+      const relType = union.marriage?.type ?? 'marriage'
+      if (partnerIds.length >= 2) {
+        newRels.push({
+          id: `rel_${stamp}_d0`,
+          source: partnerIds[0],
+          target: partnerIds[1],
+          type: relType,
+          label: union.marriage?.label,
+          start: union.marriage?.start,
+          end: union.marriage?.end,
+        })
+      }
+      // Reconnect each child to every partner as parent-child
+      let k = 1
+      for (const childId of childIds) {
+        for (const partnerId of partnerIds) {
+          newRels.push({ id: `rel_${stamp}_d${k++}`, source: partnerId, target: childId, type: 'parent-child' })
+        }
+      }
+
+      return {
+        ...prev,
+        persons: prev.persons.filter((p) => p.id !== unionId),
+        relationships: [
+          ...prev.relationships.filter((r) => r.source !== unionId && r.target !== unionId),
+          ...newRels,
+        ],
+      }
+    })
+    setSelectedNode((prev) => (prev?.id === unionId ? null : prev))
+  }
+
+  const deletePerson = (id: string) => {
+    setData((prev) => {
+      const person = prev.persons.find((p) => p.id === id)
+      let rels = [...prev.relationships]
+      let people = [...prev.persons]
+
+      if (person?.type === 'union') {
+        rels = rels.filter((r) => !(r.target === id && r.type === 'partner'))
+      } else {
+        // Remove union nodes for marriages involving this person
+        const partnerRels = rels.filter((r) => r.source === id && r.type === 'partner')
+        partnerRels.forEach((r) => {
+          people = people.filter((p) => p.id !== r.target)
+          rels = rels.filter((rel) => !(rel.target === r.target && rel.type === 'partner'))
+        })
+      }
+
+      return {
+        ...prev,
+        persons: people.filter((p) => p.id !== id),
+        relationships: rels.filter((r) => r.source !== id && r.target !== id),
+      }
+    })
+    setSelectedNode((prev) => (prev?.id === id ? null : prev))
+  }
+
+  const updatePersonPosition = (id: string, x: number, y: number) => {
+    setData((prev) => ({
+      ...prev,
+      persons: prev.persons.map((p) => (p.id === id ? { ...p, x, y, fx: x, fy: y } : p)),
+    }))
+  }
+
+  const updatePersonsBatch = (positions: Record<string, { x: number; y: number }>) => {
+    setData((prev) => ({
+      ...prev,
+      persons: prev.persons.map((p) => {
+        const pos = positions[p.id]
+        return pos ? { ...p, x: pos.x, y: pos.y, fx: pos.x, fy: pos.y } : p
+      }),
+    }))
+  }
+
+  const addRelationship = (rel: Partial<Relationship>): Relationship | undefined => {
+    // Union nodes are created explicitly via the dialog/EdgeCard checkbox, not auto-created here.
+    const newRel: Relationship = {
+      source: '',
+      target: '',
+      type: 'parent-child',
+      ...rel,
+      id: uid('rel'),
+    }
+    setData((prev) => ({ ...prev, relationships: [...prev.relationships, newRel] }))
+    return newRel
+  }
+
+  const updateRelationship = (id: string, updates: Partial<Relationship>) => {
+    setData((prev) => ({
+      ...prev,
+      relationships: prev.relationships.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+    }))
+    setSelectedRelationship((prev) => (prev?.id === id ? { ...prev, ...updates } : prev))
+  }
+
+  const deleteRelationship = (id: string) => {
+    setData((prev) => {
+      const rel = prev.relationships.find((r) => r.id === id)
+      if (rel?.type === 'partner') {
+        const unionId = rel.target
+        return {
+          ...prev,
+          persons: prev.persons.filter((p) => p.id !== unionId),
+          relationships: prev.relationships.filter(
+            (r) => r.id !== id && r.target !== unionId
+          ),
+        }
+      }
+      return { ...prev, relationships: prev.relationships.filter((r) => r.id !== id) }
+    })
+  }
+
+  const addEpisode = (ep: Omit<Episode, 'id'>): Episode => {
+    const newEp: Episode = { ...ep, id: uid('ep') }
+    setData((prev) => ({ ...prev, episodes: [...prev.episodes, newEp] }))
+    return newEp
+  }
+
+  const updateEpisode = (id: string, updates: Partial<Episode>) => {
+    setData((prev) => ({
+      ...prev,
+      episodes: prev.episodes.map((e) => (e.id === id ? { ...e, ...updates } : e)),
+    }))
+  }
+
+  const deleteEpisode = (id: string) => {
+    setData((prev) => ({ ...prev, episodes: prev.episodes.filter((e) => e.id !== id) }))
+  }
+
+  return (
+    <DataContext.Provider
+      value={{
+        ...data,
+        currentPage,
+        loading,
+        setCurrentPage,
+        loadPageList,
+        loadPage,
+        savePage,
+        insertPage,
+        updatePage,
+        deletePage,
+        clearPage,
+        addPerson,
+        updatePerson,
+        deletePerson,
+        dissolveUnion,
+        updatePersonPosition,
+        updatePersonsBatch,
+        addRelationship,
+        updateRelationship,
+        deleteRelationship,
+        addEpisode,
+        updateEpisode,
+        deleteEpisode,
+        selectedNode,
+        setSelectedNode,
+        selectedRelationship,
+        setSelectedRelationship,
+        uploadFile,
+      }}
+    >
+      {children}
+    </DataContext.Provider>
+  )
+}
+
+export function useDataContext() {
+  const ctx = useContext(DataContext)
+  if (!ctx) throw new Error('useDataContext must be used within DataProvider')
+  return ctx
+}
