@@ -1,5 +1,5 @@
 {
-  "name": "dynasty-history-chart",
+  "name": "@ghost-next/family-chart",
   "version": "1.0.0",
   "private": false,
   "main": "dist/dynasty-history-chart.umd.js",
@@ -7,17 +7,19 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/dynasty-history-chart.es.js",
       "require": "./dist/dynasty-history-chart.umd.js"
     },
-    "./style.css": "./dist/style.css"
+    "./style.css": "./dist/family-chart.css",
+    "./styles": "./dist/family-chart.css"
   },
   "scripts": {
     "dev": "concurrently \"vite\" \"yarn jsonserver\"",
     "build": "vite build --mode lib",
     "build:demo": "vite build",
     "preview": "vite preview",
-    "jsonserver": "npx json-server --watch ./data/db.json --port 3005",
+    "jsonserver": "npx json-server --watch ./data/db.json --port 3195",
     "lint": "eslint src"
   },
   "dependencies": {
@@ -26,8 +28,8 @@
     "axios": "^1.11.0",
     "d3": "^7.9.0",
     "prop-types": "^15.8.1",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "uuid": "^11.1.0"
   },
@@ -35,8 +37,8 @@
     "@tailwindcss/postcss": "^4",
     "@types/d3": "^7.4.3",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
     "json-server": "1.0.0-beta.3",

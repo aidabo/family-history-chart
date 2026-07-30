@@ -1,7 +1,10 @@
 'use client'
 import { createContext, useState, useContext, useMemo, ReactNode } from 'react'
-import { createLayoutStore } from '@/services/layoutStore'
+import { createLayoutStore, LayoutStore } from '@/services/layoutStore'
 import { Episode, PageProps, PersonNode, Relationship } from '@/types/charts'
+
+// Injectable translate function; when a host supplies one, the library uses it, else identity.
+export type TranslateFn = (key: string, fallback?: string) => string
 
 interface DataState {
   dynasties: any[]
@@ -17,7 +20,7 @@ interface DataContextValue extends DataState {
   setCurrentPage: (page: PageProps | null) => void
   loadPageList: () => Promise<PageProps[] | false>
   loadPage: (id: string) => Promise<PageProps | false>
-  savePage: () => Promise<PageProps | false>
+  savePage: (patch?: { thumbnail?: string }) => Promise<PageProps | false>
   insertPage: (data: PageProps) => Promise<PageProps | false>
   updatePage: (data: PageProps) => Promise<PageProps | false>
   deletePage: (id: string) => Promise<boolean>
@@ -39,6 +42,9 @@ interface DataContextValue extends DataState {
   selectedRelationship: Relationship | null
   setSelectedRelationship: (rel: Relationship | null) => void
   uploadFile?: (file: File) => Promise<string>
+  uploadThumbnail?: (chartId: string, blob: Blob) => Promise<string>
+  t: TranslateFn
+  locale: string
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -47,6 +53,11 @@ interface DataProviderProps {
   children: ReactNode
   apiBaseUrl?: string
   uploadFile?: (file: File) => Promise<string>
+  uploadThumbnail?: (chartId: string, blob: Blob) => Promise<string>
+  // Host injection points (all optional — the library stays standalone without them):
+  store?: LayoutStore              // replaces the built-in REST layoutStore (e.g. host social_charts API)
+  t?: TranslateFn                  // host translate; defaults to identity (returns fallback ?? key)
+  locale?: string                  // host locale; defaults to 'ja'
 }
 
 // Short unique suffix (uuid-based, falls back to random). Kept short for readability.
@@ -65,8 +76,19 @@ const slug = (name?: string): string =>
 const personId = (name?: string) => `${slug(name) || 'p'}_${shortId()}`
 const uid = (prefix: string) => `${prefix}_${shortId()}`
 
-export function DataProvider({ children, apiBaseUrl = '/api/charts', uploadFile }: DataProviderProps) {
-  const store = useMemo(() => createLayoutStore(apiBaseUrl), [apiBaseUrl])
+export function DataProvider({
+  children, apiBaseUrl = '/api/charts', uploadFile, uploadThumbnail,
+  store: providedStore, t: providedT, locale = 'ja',
+}: DataProviderProps) {
+  // Host-provided store wins; otherwise fall back to the built-in REST layoutStore.
+  const store = useMemo(
+    () => providedStore ?? createLayoutStore(apiBaseUrl),
+    [providedStore, apiBaseUrl],
+  )
+  const t = useMemo<TranslateFn>(
+    () => providedT ?? ((key, fallback) => fallback ?? key),
+    [providedT],
+  )
 
   const [currentPage, setCurrentPage] = useState<PageProps | null>(null)
   const [loading, setLoading] = useState(false)
@@ -103,9 +125,9 @@ export function DataProvider({ children, apiBaseUrl = '/api/charts', uploadFile 
     }
   }
 
-  const savePage = async () => {
+  const savePage = async (patch?: { thumbnail?: string }) => {
     if (!currentPage?.id) return false
-    const pageData = { ...currentPage, chartProps: data }
+    const pageData = { ...currentPage, ...patch, chartProps: data }
     const saved = await store.savePage(pageData)
     if (saved) {
       setCurrentPage(saved)
@@ -350,6 +372,9 @@ export function DataProvider({ children, apiBaseUrl = '/api/charts', uploadFile 
         selectedRelationship,
         setSelectedRelationship,
         uploadFile,
+        uploadThumbnail,
+        t,
+        locale,
       }}
     >
       {children}

@@ -101,6 +101,9 @@ export interface PageProps {
   title: string
   description?: string
   image?: string
+  status?: 'published' | 'draft'
+  category?: string
+  thumbnail?: string
   created_at?: Date
   options?: any
   chartProps: ChartProps

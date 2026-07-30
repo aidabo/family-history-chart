@@ -1,0 +1,6 @@
+/* Self-contained styles shipped with the @ghost-next/family-chart library.
+   The host app's Tailwind does not scan node_modules, so the library compiles
+   its own Tailwind layers here and exports the result as ./style.css. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
