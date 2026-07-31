@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import * as d3 from 'd3'
 import type { PersonNode, Relationship } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
@@ -19,6 +19,10 @@ interface DynastyNetworkProps {
   onPositionChange: (id: string, x: number, y: number) => void
   onBatchPositionChange: (positions: Record<string, { x: number; y: number }>) => void
   onNodeUpdate?: (id: string, updates: Partial<PersonNode>) => void
+  initialTransform?: { k: number; x: number; y: number } | null   // restore saved zoom/pan
+  background?: string          // canvas background color
+  backgroundImage?: string     // background image layered over the color
+  backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
 }
 
 type SimNode = PersonNode & {
@@ -219,7 +223,20 @@ function connectedComponent(startId: string, links: SimLink[]): string[] {
 
 // ── component ─────────────────────────────────────────────────────────────────
 
-export default function DynastyNetwork({
+export interface DynastyNetworkHandle {
+  /** Add a person at the current viewport center (in content coordinates). */
+  addPersonAtCenter: () => void
+  /** Current zoom/pan transform, for persisting page view state. */
+  getViewport: () => { k: number; x: number; y: number }
+  /** Animate zoom to the given scale k, keeping the viewport center fixed in content space. */
+  setZoom: (k: number) => void
+  /** Fit all content into the viewport (same as the ↺ toolbar button). */
+  fitToContent: () => void
+  /** Visible content rect in content coordinates: the area currently shown in the viewport. */
+  getVisibleRect: () => { x: number; y: number; w: number; h: number }
+}
+
+const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(function DynastyNetwork({
   persons,
   relationships,
   selectedNodeId,
@@ -233,7 +250,11 @@ export default function DynastyNetwork({
   onPositionChange,
   onBatchPositionChange,
   onNodeUpdate,
-}: DynastyNetworkProps) {
+  initialTransform,
+  background,
+  backgroundImage,
+  backgroundOpacity,
+}: DynastyNetworkProps, ref) {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null)
@@ -287,6 +308,48 @@ export default function DynastyNetwork({
       d3.select(svgRef.current).transition().duration(250).call(zoomRef.current.transform, t)
     }
   }, [dimensions, computeFit])
+
+  // Expose imperative handle — declared after computeFit so it can reference it.
+  useImperativeHandle(ref, () => ({
+    addPersonAtCenter: () => {
+      const t = currentTransform.current
+      const k = t.k || 1
+      const cx = (dimensions.width / 2 - t.x) / k
+      const cy = (dimensions.height / 2 - t.y) / k
+      onAddPerson(cx, cy)
+    },
+    getViewport: () => {
+      const t = currentTransform.current
+      return { k: t.k, x: t.x, y: t.y }
+    },
+    setZoom: (k: number) => {
+      if (!svgRef.current || !zoomRef.current) return
+      const t = currentTransform.current
+      // Keep the same content point at the viewport center
+      const cx = (dimensions.width / 2 - t.x) / t.k
+      const cy = (dimensions.height / 2 - t.y) / t.k
+      const newT = d3.zoomIdentity
+        .translate(dimensions.width / 2 - cx * k, dimensions.height / 2 - cy * k)
+        .scale(k)
+      d3.select(svgRef.current).transition().duration(250).call(zoomRef.current.transform, newT)
+      currentTransform.current = newT
+    },
+    fitToContent: () => {
+      if (!svgRef.current || !zoomRef.current) return
+      const t = computeFit(dimensions.width, dimensions.height)
+      d3.select(svgRef.current).transition().duration(250).call(zoomRef.current.transform, t)
+      currentTransform.current = t
+    },
+    getVisibleRect: () => {
+      const t = currentTransform.current
+      return {
+        x: -t.x / t.k,
+        y: -t.y / t.k,
+        w: dimensions.width / t.k,
+        h: dimensions.height / t.k,
+      }
+    },
+  }), [dimensions, onAddPerson, computeFit])
 
   const handleAutoLayout = useCallback(() => {
     if (!simulationRef.current) return
@@ -407,17 +470,54 @@ export default function DynastyNetwork({
         }
       })
 
-    // Grid
+    // Grid + drawing board — a bounded "paper" that always contains the content
+    // plus a margin, so the drawing area reads clearly. The board grows with the
+    // content (recomputed each tick from the node bounding box), so nodes moved
+    // toward the edge are never cut off — the board simply expands to include them.
+    const BOARD_MARGIN = 16   // blank margin between the grid area and the board border
+    const GRID_PAD = 40       // grid extends a little past the outermost nodes
     if (showGrid) {
-      const gw = dimensions.width * 2; const gh = dimensions.height * 2
-      const grid = container.append('g').attr('class', 'grid')
-      for (let y = 0; y <= gh; y += gridSize)
-        grid.append('line').attr('x1', 0).attr('y1', y).attr('x2', gw).attr('y2', y)
-          .attr('stroke', '#e5e7eb').attr('stroke-width', 0.5)
-      for (let x = 0; x <= gw; x += gridSize)
-        grid.append('line').attr('x1', x).attr('y1', 0).attr('x2', x).attr('y2', gh)
-          .attr('stroke', '#e5e7eb').attr('stroke-width', 0.5)
+      const pattern = defs.append('pattern')
+        .attr('id', 'family-chart-grid')
+        .attr('patternUnits', 'userSpaceOnUse')
+        .attr('width', gridSize).attr('height', gridSize)
+      pattern.append('path')
+        .attr('d', `M ${gridSize} 0 L 0 0 0 ${gridSize}`)
+        .attr('fill', 'none').attr('stroke', '#e5e7eb').attr('stroke-width', 0.5)
     }
+    // Border first (behind), grid fill on top; both inside the zoom container so
+    // they pan/zoom with the content. Nodes/edges are appended later → drawn above.
+    const boardBorder = container.append('rect').attr('class', 'board-border')
+      .attr('fill', 'none').attr('stroke', '#cbd5e1').attr('stroke-width', 1)
+      .attr('rx', 6).attr('vector-effect', 'non-scaling-stroke')
+      .style('pointer-events', 'none')
+    const gridBg = showGrid
+      ? container.append('rect').attr('class', 'grid-bg')
+          .attr('fill', 'url(#family-chart-grid)').style('pointer-events', 'none')
+      : null
+    const updateBoard = () => {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const n of nodes) {
+        const r = getNodeRadius(n) + GRID_PAD
+        if (n.x - r < minX) minX = n.x - r
+        if (n.y - r < minY) minY = n.y - r
+        if (n.x + r > maxX) maxX = n.x + r
+        if (n.y + r > maxY) maxY = n.y + r
+      }
+      if (!Number.isFinite(minX)) return
+      // Snap the grid area to the grid step so the pattern lines meet the edges cleanly.
+      minX = Math.floor(minX / gridSize) * gridSize
+      minY = Math.floor(minY / gridSize) * gridSize
+      maxX = Math.ceil(maxX / gridSize) * gridSize
+      maxY = Math.ceil(maxY / gridSize) * gridSize
+      gridBg?.attr('x', minX).attr('y', minY)
+        .attr('width', maxX - minX).attr('height', maxY - minY)
+      boardBorder
+        .attr('x', minX - BOARD_MARGIN).attr('y', minY - BOARD_MARGIN)
+        .attr('width', maxX - minX + BOARD_MARGIN * 2)
+        .attr('height', maxY - minY + BOARD_MARGIN * 2)
+    }
+    updateBoard()
 
     // Simulation
     const simulation = d3.forceSimulation<SimNode, SimLink>(nodes)
@@ -1250,6 +1350,7 @@ export default function DynastyNetwork({
 
     // Tick
     simulation.on('tick', () => {
+      updateBoard()
       linkSel.attr('d', buildLinkPath)
 
       nodeSel.attr('transform', d => `translate(${snapToGrid(d.x)},${snapToGrid(d.y)})`)
@@ -1326,7 +1427,10 @@ export default function DynastyNetwork({
     })
 
     if (!initialZoomApplied.current) {
-      const t = computeFit(dimensions.width, dimensions.height)
+      // Restore the saved zoom/pan if the page has one; otherwise fit-to-content.
+      const t = initialTransform && Number.isFinite(initialTransform.k)
+        ? d3.zoomIdentity.translate(initialTransform.x, initialTransform.y).scale(initialTransform.k)
+        : computeFit(dimensions.width, dimensions.height)
       svg.call(zoom.transform, t)
       currentTransform.current = t
       initialZoomApplied.current = true
@@ -1353,7 +1457,7 @@ export default function DynastyNetwork({
     }
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
     onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange,
-    onBatchPositionChange, onNodeUpdate, computeFit])
+    onBatchPositionChange, onNodeUpdate, computeFit, initialTransform, background])
 
   // Update selection rings without full redraw
   useEffect(() => {
@@ -1381,6 +1485,21 @@ export default function DynastyNetwork({
 
   return (
     <div ref={containerRef} className="relative w-full h-full border rounded-lg overflow-hidden bg-gray-50">
+      {/* Background layer — behind the SVG. Its own opacity fades the color+image
+          without affecting the chart drawn on top. */}
+      {(background || backgroundImage) && (
+        <div
+          className="absolute inset-0 z-0 pointer-events-none"
+          style={{
+            backgroundColor: background || undefined,
+            backgroundImage: backgroundImage ? `url("${backgroundImage}")` : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            opacity: backgroundOpacity ?? 1,
+          }}
+        />
+      )}
       <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 bg-white p-2 rounded shadow">
         <button onClick={handleZoomIn}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50"
@@ -1414,7 +1533,9 @@ export default function DynastyNetwork({
       </div>
 
       <svg ref={svgRef} width={dimensions.width} height={dimensions.height}
-        className="cursor-move" />
+        className="cursor-move relative z-[1]" />
     </div>
   )
-}
+})
+
+export default DynastyNetwork

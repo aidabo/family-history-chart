@@ -88,12 +88,24 @@ export interface Relationship {
   end?: string
 }
 
+export interface ChartViewport {
+  k: number   // zoom scale
+  x: number   // pan translate x
+  y: number   // pan translate y
+}
+
 export interface ChartProps {
   dynasties: any[]
   persons: PersonNode[]
   relationships: Relationship[]
   episodes: Episode[]
   events: any[]
+  // Persisted page-level view state (restored on next load) + canvas background.
+  viewport?: ChartViewport
+  background?: string        // CSS color for the canvas background
+  backgroundImage?: string   // image URL / data-URI layered over the background color
+  backgroundOpacity?: number // 0..1 opacity applied to the color+image layer (default 1)
+  dpi?: number               // thumbnail/print DPI override for this page
 }
 
 export interface PageProps {

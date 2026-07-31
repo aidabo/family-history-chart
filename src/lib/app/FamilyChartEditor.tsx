@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useDataContext } from '@/context/DataContext'
-import DynastyNetwork from '@/components/canvas/DynastyNetwork'
+import DynastyNetwork, { DynastyNetworkHandle } from '@/components/canvas/DynastyNetwork'
 import { NodeCard } from '@/components/canvas/NodeCard'
 import { EdgeCard } from '@/components/editors/EdgeCard'
 import { UnionCard } from '@/components/editors/UnionCard'
 import { RelationshipTypeDialog } from '@/components/editors/RelationshipTypeDialog'
+import ChartSettingsDialog from '@/app/ChartSettingsDialog'
 import { PersonNode, Relationship } from '@/types/charts'
 import {
   ArrowLeftIcon,
@@ -17,48 +18,115 @@ import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
   PrinterIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline'
 
 // Generate a PNG thumbnail blob from a chart SVG element.
-// Mirrors the PDF export's bbox-reframe approach. Returns null on any failure,
-// including tainted-canvas errors from external <image> hrefs.
-async function generateThumbnailBlob(svgEl: SVGSVGElement): Promise<Blob | null> {
+// When opts.viewBox is provided, the thumbnail captures the CURRENT VISIBLE viewport
+// (fills the A4 canvas via "xMidYMid slice", cropping if needed — large charts show
+// a readable part rather than everything shrunk). Without viewBox, falls back to the
+// full-content bbox approach. Returns null on any failure, including tainted-canvas
+// errors from external <image> hrefs.
+// Load a (cross-origin, CORS-enabled) image and convert it to a data: URL via a
+// canvas — no fetch, no Blob. Requires the image host to send CORS headers so the
+// canvas isn't tainted; returns null (leaving a silhouette) if it can't be read.
+const XLINK = 'http://www.w3.org/1999/xlink'
+function imageUrlToDataUrl(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = img.naturalWidth
+        c.height = img.naturalHeight
+        const cx = c.getContext('2d')
+        if (!cx) { resolve(null); return }
+        cx.drawImage(img, 0, 0)
+        resolve(c.toDataURL('image/png'))
+      } catch {
+        resolve(null) // tainted (CORS missing) → skip, keep silhouette
+      }
+    }
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+// SVG rasterized via <img src="data:svg…"> won't load external hrefs, so person
+// photos vanish and every node shows the same silhouette. Convert each external
+// <image> to a data: URL (canvas, not blob) so the SVG is self-contained.
+async function inlineSvgImages(svg: SVGSVGElement): Promise<void> {
+  const images = Array.from(svg.querySelectorAll('image'))
+  await Promise.all(
+    images.map(async (im) => {
+      const href = im.getAttribute('href') || im.getAttributeNS(XLINK, 'href')
+      if (!href || href.startsWith('data:')) return
+      const dataUrl = await imageUrlToDataUrl(href)
+      if (dataUrl) {
+        im.setAttribute('href', dataUrl)
+        im.removeAttributeNS(XLINK, 'href')
+      }
+    }),
+  )
+}
+
+async function generateThumbnailBlob(
+  svgEl: SVGSVGElement,
+  opts?: { dpi?: number; background?: string; viewBox?: { x: number; y: number; w: number; h: number } },
+): Promise<Blob | null> {
   const clone = svgEl.cloneNode(true) as SVGSVGElement
-  const containerG = svgEl.querySelector('.zoom-container') as SVGGElement | null
   const cloneContainer = clone.querySelector('.zoom-container') as SVGGElement | null
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  if (containerG) {
-    containerG.querySelectorAll(':scope > g').forEach((g) => {
-      if ((g as SVGGElement).classList.contains('grid')) return
-      try {
-        const b = (g as SVGGElement).getBBox()
-        if (b.width === 0 && b.height === 0) return
-        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y)
-        maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height)
-      } catch { /* getBBox may throw for empty/unrendered groups */ }
-    })
+  if (opts?.viewBox) {
+    // Capture the currently-visible viewport rect in content coordinates.
+    const { x, y, w, h } = opts.viewBox
+    clone.setAttribute('viewBox', `${x} ${y} ${w} ${h}`)
+    // "slice" fills the A4 canvas, cropping to the A4 aspect — shows a readable
+    // section of large charts instead of shrinking everything to fit.
+    clone.setAttribute('preserveAspectRatio', 'xMidYMid slice')
+    if (cloneContainer) cloneContainer.removeAttribute('transform')
+    cloneContainer?.querySelector(':scope > .grid-bg')?.remove()
+    cloneContainer?.querySelector(':scope > .board-border')?.remove()
+  } else {
+    // Fallback: reframe to the full content bounding box.
+    const containerG = svgEl.querySelector('.zoom-container') as SVGGElement | null
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    if (containerG) {
+      containerG.querySelectorAll(':scope > g').forEach((g) => {
+        if ((g as SVGGElement).classList.contains('grid')) return
+        try {
+          const b = (g as SVGGElement).getBBox()
+          if (b.width === 0 && b.height === 0) return
+          minX = Math.min(minX, b.x); minY = Math.min(minY, b.y)
+          maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height)
+        } catch { /* getBBox may throw for empty/unrendered groups */ }
+      })
+    }
+    if (!Number.isFinite(minX)) return null
+    const m = 20
+    clone.setAttribute('viewBox', `${minX - m} ${minY - m} ${(maxX - minX) + m * 2} ${(maxY - minY) + m * 2}`)
+    clone.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+    if (cloneContainer) cloneContainer.removeAttribute('transform')
+    cloneContainer?.querySelector(':scope > .grid-bg')?.remove()
+    cloneContainer?.querySelector(':scope > .board-border')?.remove()
   }
 
-  if (!Number.isFinite(minX)) return null
+  // A4 landscape (297×210mm) rasterized at the given DPI (default 150).
+  // 150 DPI → 1754×1240; raise DPI for sharper output.
+  const dpi = opts?.dpi && opts.dpi > 0 ? opts.dpi : 150
+  const width = Math.round((297 / 25.4) * dpi)
+  const height = Math.round((210 / 25.4) * dpi)
+  // Supersample: rasterize the SVG at SS× the output size, then high-quality
+  // downscale. SVG <image> (person photos) are otherwise decoded at their on-screen
+  // size — soft when the viewport crop is scaled up. Decoding at 2× then shrinking
+  // samples the source photos at higher resolution → sharper faces. Output stays A4@DPI.
+  const SS = 2
+  clone.setAttribute('width', String(width * SS))
+  clone.setAttribute('height', String(height * SS))
 
-  const m = 20
-  const vx = minX - m, vy = minY - m
-  const vw = (maxX - minX) + m * 2
-  const vh = (maxY - minY) + m * 2
-
-  clone.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`)
-  clone.setAttribute('preserveAspectRatio', 'xMidYMid meet')
-  if (cloneContainer) cloneContainer.removeAttribute('transform')
-  clone.querySelector('.zoom-container > .grid')?.remove()
-
-  // Cap at 600px wide, preserving aspect ratio
-  const maxWidth = 600
-  const aspect = vw > 0 ? vh / vw : 1
-  const width = Math.round(Math.min(maxWidth, vw))
-  const height = Math.round(width * aspect)
-  clone.setAttribute('width', String(width))
-  clone.setAttribute('height', String(height))
+  // Inline external person photos (canvas→dataURL) so they render during rasterization.
+  await inlineSvgImages(clone)
 
   const svgStr = new XMLSerializer().serializeToString(clone)
   // base64-encode safely for non-ASCII SVG content (CJK labels, etc.)
@@ -74,6 +142,15 @@ async function generateThumbnailBlob(svgEl: SVGSVGElement): Promise<Blob | null>
       const ctx = canvas.getContext('2d')
       if (!ctx) { resolve(null); return }
       try {
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        // Use the page's configured background (solid color) if any; else white paper.
+        const bg = opts?.background && !/url\(/i.test(opts.background) && opts.background !== 'transparent'
+          ? opts.background
+          : '#ffffff'
+        ctx.fillStyle = bg
+        ctx.fillRect(0, 0, width, height)
+        // img intrinsic size is SS×; drawing into the A4 canvas downscales it.
         ctx.drawImage(img, 0, 0, width, height)
         canvas.toBlob((blob) => resolve(blob), 'image/png')
       } catch {
@@ -132,12 +209,24 @@ export default function FamilyChartEditor({
     clearPage,
     uploadFile,
     uploadThumbnail,
+    background,
+    backgroundImage,
+    backgroundOpacity,
+    viewport,
+    setBackground,
+    setBackgroundImage,
+    setBackgroundOpacity,
+    dpi,
+    setDpi,
+    thumbnailDpi,
   } = useDataContext()
 
   const [nodeCardPos, setNodeCardPos] = useState({ x: 200, y: 100 })
   const [edgeCardPos, setEdgeCardPos] = useState({ x: 400, y: 200 })
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsZoom, setSettingsZoom] = useState(1)
 
   // Connect mode state
   const [connectState, setConnectState] = useState<{
@@ -158,6 +247,7 @@ export default function FamilyChartEditor({
 
   const containerRef = useRef<HTMLDivElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const netRef = useRef<DynastyNetworkHandle>(null)
 
   useEffect(() => {
     if (id) {
@@ -300,7 +390,13 @@ export default function FamilyChartEditor({
       try {
         const svgEl = containerRef.current?.querySelector('svg') as SVGSVGElement | null
         if (svgEl) {
-          const blob = await generateThumbnailBlob(svgEl)
+          // Capture the currently-visible viewport rect; fall back to bbox if unavailable.
+          const visibleRect = netRef.current?.getVisibleRect()
+          const blob = await generateThumbnailBlob(svgEl, {
+            dpi: dpi ?? thumbnailDpi,
+            background,
+            ...(visibleRect ? { viewBox: visibleRect } : {}),
+          })
           if (blob) {
             const url = await uploadThumbnail(currentPage.id, blob)
             if (url) thumbnailPatch = { thumbnail: url }
@@ -311,7 +407,13 @@ export default function FamilyChartEditor({
       }
     }
 
-    const result = await savePage(thumbnailPatch)
+    // Persist the current zoom/pan so the page reloads at the same view.
+    const vp = netRef.current?.getViewport()
+    const result = await savePage({
+      ...thumbnailPatch,
+      ...(vp ? { viewport: vp } : {}),
+      ...(dpi !== undefined ? { dpi } : {}),
+    })
     setSaveMsg(result ? 'Saved!' : 'Save failed')
     setSaving(false)
     setTimeout(() => setSaveMsg(null), 2500)
@@ -411,9 +513,37 @@ export default function FamilyChartEditor({
       clone.setAttribute('preserveAspectRatio', 'xMidYMid meet')
       clone.removeAttribute('width')
       clone.removeAttribute('height')
-      // Drop the pan/zoom transform and the grid so the print shows only the framed content.
+      // Drop the pan/zoom transform and the grid/board so the print shows only the framed content.
       if (cloneContainer) cloneContainer.removeAttribute('transform')
-      clone.querySelector('.zoom-container > .grid')?.remove()
+      cloneContainer?.querySelector(':scope > .grid-bg')?.remove()
+      cloneContainer?.querySelector(':scope > .board-border')?.remove()
+
+      // The on-screen background is a DOM layer behind the SVG, so it isn't part of
+      // the clone. Re-create it inside the printed SVG as a rect (color) + image,
+      // sized to the printed frame, so PDF output matches the canvas background.
+      if (background || backgroundImage) {
+        const NS = 'http://www.w3.org/2000/svg'
+        const bgGroup = document.createElementNS(NS, 'g')
+        bgGroup.setAttribute('opacity', String(backgroundOpacity ?? 1))
+        if (background) {
+          const rect = document.createElementNS(NS, 'rect')
+          rect.setAttribute('x', String(vx)); rect.setAttribute('y', String(vy))
+          rect.setAttribute('width', String(vw)); rect.setAttribute('height', String(vh))
+          rect.setAttribute('fill', background)
+          bgGroup.appendChild(rect)
+        }
+        if (backgroundImage) {
+          const img = document.createElementNS(NS, 'image')
+          img.setAttribute('href', backgroundImage)
+          img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', backgroundImage)
+          img.setAttribute('x', String(vx)); img.setAttribute('y', String(vy))
+          img.setAttribute('width', String(vw)); img.setAttribute('height', String(vh))
+          img.setAttribute('preserveAspectRatio', 'xMidYMid slice') // cover
+          bgGroup.appendChild(img)
+        }
+        if (cloneContainer) clone.insertBefore(bgGroup, cloneContainer)
+        else clone.insertBefore(bgGroup, clone.firstChild)
+      }
     }
 
     const svgStr = new XMLSerializer().serializeToString(clone)
@@ -446,7 +576,7 @@ export default function FamilyChartEditor({
     } else {
       URL.revokeObjectURL(url)
     }
-  }, [currentPage])
+  }, [currentPage, background, backgroundImage, backgroundOpacity])
 
   const handleRelConfirm = (relData: Partial<Relationship>, useUnionNode: boolean) => {
     if (!pendingConnect) return
@@ -510,10 +640,10 @@ export default function FamilyChartEditor({
     <div className="w-full h-full flex flex-col overflow-hidden bg-gray-50">
       {/* Top toolbar */}
       {!isViewMode && (
-        <header className="flex items-center gap-2 px-4 py-2 bg-white border-b border-gray-200 shadow-sm z-20 flex-shrink-0">
+        <header className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 bg-white border-b border-gray-200 shadow-sm z-20 flex-shrink-0">
           <button
             onClick={() => onBack()}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+            className="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
             title="Back to list"
           >
             <ArrowLeftIcon className="h-5 w-5" />
@@ -526,59 +656,71 @@ export default function FamilyChartEditor({
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-60"
+            title="Save"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-60"
           >
             {saving ? (
               <ArrowPathIcon className="h-4 w-4 animate-spin" />
             ) : (
               <CloudArrowDownIcon className="h-4 w-4" />
             )}
-            {saveMsg ?? 'Save'}
+            <span className="hidden md:inline">{saveMsg ?? 'Save'}</span>
           </button>
           <button
             onClick={() => setPreviewing(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"
             title="Preview (check the result, then return to editing)"
           >
             <EyeIcon className="h-4 w-4" />
-            Preview
+            <span className="hidden md:inline">Preview</span>
           </button>
           <button
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
             title="Export as JSON"
           >
             <ArrowDownTrayIcon className="h-4 w-4" />
-            Export
+            <span className="hidden md:inline">Export</span>
           </button>
           <button
             onClick={() => importInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
             title="Import JSON (see docs/import-schema.md)"
           >
             <ArrowUpTrayIcon className="h-4 w-4" />
-            Import
+            <span className="hidden md:inline">Import</span>
+          </button>
+          <button
+            onClick={() => {
+              setSettingsZoom(netRef.current?.getViewport().k ?? 1)
+              setSettingsOpen(true)
+            }}
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
+            title="設定（背景・DPI・ビューポート）"
+          >
+            <Cog6ToothIcon className="h-4 w-4" />
+            <span className="hidden md:inline">設定</span>
           </button>
           <button
             onClick={handlePdfExport}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
             title="Print / Export as PDF"
           >
             <PrinterIcon className="h-4 w-4" />
-            PDF
+            <span className="hidden md:inline">PDF</span>
           </button>
           <button
             onClick={handleReload}
             disabled={reloading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200 disabled:opacity-60"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200 disabled:opacity-60"
             title="再読み込み（保存済みの内容に戻す）"
           >
             <ArrowPathIcon className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} />
-            Reload
+            <span className="hidden md:inline">Reload</span>
           </button>
           <button
             onClick={handleClear}
-            className="p-2 rounded-lg text-red-500 hover:bg-red-50"
+            className="p-1.5 md:p-2 rounded-lg text-red-500 hover:bg-red-50 flex-shrink-0"
             title="Clear all"
           >
             <TrashIcon className="h-5 w-5" />
@@ -596,6 +738,11 @@ export default function FamilyChartEditor({
       {/* Canvas area */}
       <div ref={containerRef} className="flex-1 relative overflow-hidden">
         <DynastyNetwork
+          ref={netRef}
+          initialTransform={viewport ?? null}
+          background={background}
+          backgroundImage={backgroundImage}
+          backgroundOpacity={backgroundOpacity}
           persons={persons}
           relationships={relationships}
           selectedNodeId={selectedNode?.id ?? null}
@@ -685,7 +832,7 @@ export default function FamilyChartEditor({
         {/* Add person FAB */}
         {!isViewMode && (
           <button
-            onClick={() => handleAddPerson(300, 300)}
+            onClick={() => netRef.current?.addPersonAtCenter()}
             className="absolute bottom-6 left-6 z-20 w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
             title="Add person (or double-click canvas)"
           >
@@ -717,6 +864,27 @@ export default function FamilyChartEditor({
           />
         )}
       </div>
+
+      {/* Settings dialog — portal-level (fixed), outside canvas div */}
+      <ChartSettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        background={background}
+        onBackgroundChange={setBackground}
+        backgroundImage={backgroundImage}
+        onBackgroundImageChange={setBackgroundImage}
+        backgroundOpacity={backgroundOpacity ?? 1}
+        onBackgroundOpacityChange={setBackgroundOpacity}
+        uploadFile={uploadFile}
+        dpi={dpi ?? thumbnailDpi ?? 150}
+        onDpiChange={setDpi}
+        zoom={settingsZoom}
+        onZoomChange={(k) => {
+          setSettingsZoom(k)
+          netRef.current?.setZoom(k)
+        }}
+        onFit={() => netRef.current?.fitToContent()}
+      />
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 import { createContext, useState, useContext, useMemo, ReactNode } from 'react'
 import { createLayoutStore, LayoutStore } from '@/services/layoutStore'
-import { Episode, PageProps, PersonNode, Relationship } from '@/types/charts'
+import { ChartViewport, Episode, PageProps, PersonNode, Relationship } from '@/types/charts'
 
 // Injectable translate function; when a host supplies one, the library uses it, else identity.
 export type TranslateFn = (key: string, fallback?: string) => string
@@ -12,6 +12,12 @@ interface DataState {
   relationships: Relationship[]
   episodes: Episode[]
   events: any[]
+  // Page-level view state + canvas background, persisted inside chartProps.
+  viewport?: ChartViewport
+  background?: string
+  backgroundImage?: string
+  backgroundOpacity?: number
+  dpi?: number
 }
 
 interface DataContextValue extends DataState {
@@ -20,11 +26,20 @@ interface DataContextValue extends DataState {
   setCurrentPage: (page: PageProps | null) => void
   loadPageList: () => Promise<PageProps[] | false>
   loadPage: (id: string) => Promise<PageProps | false>
-  savePage: (patch?: { thumbnail?: string }) => Promise<PageProps | false>
+  savePage: (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; dpi?: number }) => Promise<PageProps | false>
   insertPage: (data: PageProps) => Promise<PageProps | false>
   updatePage: (data: PageProps) => Promise<PageProps | false>
   deletePage: (id: string) => Promise<boolean>
   clearPage: () => void
+  background?: string
+  backgroundImage?: string
+  backgroundOpacity?: number
+  viewport?: ChartViewport
+  dpi?: number
+  setBackground: (bg: string) => void
+  setBackgroundImage: (url: string) => void
+  setBackgroundOpacity: (n: number) => void
+  setDpi: (n: number) => void
   addPerson: (person: Partial<PersonNode>) => PersonNode
   updatePerson: (id: string, updates: Partial<PersonNode>) => void
   deletePerson: (id: string) => void
@@ -43,6 +58,7 @@ interface DataContextValue extends DataState {
   setSelectedRelationship: (rel: Relationship | null) => void
   uploadFile?: (file: File) => Promise<string>
   uploadThumbnail?: (chartId: string, blob: Blob) => Promise<string>
+  thumbnailDpi?: number
   t: TranslateFn
   locale: string
 }
@@ -54,6 +70,7 @@ interface DataProviderProps {
   apiBaseUrl?: string
   uploadFile?: (file: File) => Promise<string>
   uploadThumbnail?: (chartId: string, blob: Blob) => Promise<string>
+  thumbnailDpi?: number             // A4-landscape thumbnail DPI (default 150; host may set via env)
   // Host injection points (all optional — the library stays standalone without them):
   store?: LayoutStore              // replaces the built-in REST layoutStore (e.g. host social_charts API)
   t?: TranslateFn                  // host translate; defaults to identity (returns fallback ?? key)
@@ -77,7 +94,7 @@ const personId = (name?: string) => `${slug(name) || 'p'}_${shortId()}`
 const uid = (prefix: string) => `${prefix}_${shortId()}`
 
 export function DataProvider({
-  children, apiBaseUrl = '/api/charts', uploadFile, uploadThumbnail,
+  children, apiBaseUrl = '/api/charts', uploadFile, uploadThumbnail, thumbnailDpi = 150,
   store: providedStore, t: providedT, locale = 'ja',
 }: DataProviderProps) {
   // Host-provided store wins; otherwise fall back to the built-in REST layoutStore.
@@ -125,13 +142,26 @@ export function DataProvider({
     }
   }
 
-  const savePage = async (patch?: { thumbnail?: string }) => {
+  const savePage = async (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; dpi?: number }) => {
     if (!currentPage?.id) return false
-    const pageData = { ...currentPage, ...patch, chartProps: data }
+    // thumbnail is a page-level column; viewport/background/dpi live inside chartProps.
+    const chartProps = {
+      ...data,
+      ...(patch?.viewport !== undefined ? { viewport: patch.viewport } : {}),
+      ...(patch?.background !== undefined ? { background: patch.background } : {}),
+      ...(patch?.backgroundImage !== undefined ? { backgroundImage: patch.backgroundImage } : {}),
+      ...(patch?.backgroundOpacity !== undefined ? { backgroundOpacity: patch.backgroundOpacity } : {}),
+      ...(patch?.dpi !== undefined ? { dpi: patch.dpi } : {}),
+    }
+    const pageData = {
+      ...currentPage,
+      ...(patch?.thumbnail !== undefined ? { thumbnail: patch.thumbnail } : {}),
+      chartProps,
+    }
     const saved = await store.savePage(pageData)
     if (saved) {
       setCurrentPage(saved)
-      setData(saved.chartProps)
+      setData({ episodes: [], ...saved.chartProps })
     }
     return saved
   }
@@ -166,6 +196,22 @@ export function DataProvider({
     const empty: DataState = { dynasties: [], persons: [], relationships: [], episodes: [], events: [] }
     setData(empty)
     if (currentPage) setCurrentPage({ ...currentPage, chartProps: empty })
+  }
+
+  const setBackground = (bg: string) => {
+    setData((prev) => ({ ...prev, background: bg }))
+  }
+
+  const setBackgroundImage = (url: string) => {
+    setData((prev) => ({ ...prev, backgroundImage: url }))
+  }
+
+  const setBackgroundOpacity = (n: number) => {
+    setData((prev) => ({ ...prev, backgroundOpacity: n }))
+  }
+
+  const setDpi = (n: number) => {
+    setData((prev) => ({ ...prev, dpi: n }))
   }
 
   const addPerson = (person: Partial<PersonNode>): PersonNode => {
@@ -355,6 +401,15 @@ export function DataProvider({
         updatePage,
         deletePage,
         clearPage,
+        background: data.background,
+        backgroundImage: data.backgroundImage,
+        backgroundOpacity: data.backgroundOpacity,
+        viewport: data.viewport,
+        dpi: data.dpi,
+        setBackground,
+        setBackgroundImage,
+        setBackgroundOpacity,
+        setDpi,
         addPerson,
         updatePerson,
         deletePerson,
@@ -373,6 +428,7 @@ export function DataProvider({
         setSelectedRelationship,
         uploadFile,
         uploadThumbnail,
+        thumbnailDpi,
         t,
         locale,
       }}
