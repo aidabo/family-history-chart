@@ -1,7 +1,7 @@
 'use client'
 import { createContext, useState, useContext, useMemo, ReactNode } from 'react'
 import { createLayoutStore, LayoutStore } from '@/services/layoutStore'
-import { ChartViewport, Episode, PageProps, PersonNode, Relationship } from '@/types/charts'
+import { ChartViewport, Episode, PageProps, PersonNode, Relationship, VerticalTextMode } from '@/types/charts'
 
 // Injectable translate function; when a host supplies one, the library uses it, else identity.
 export type TranslateFn = (key: string, fallback?: string) => string
@@ -17,6 +17,7 @@ interface DataState {
   background?: string
   backgroundImage?: string
   backgroundOpacity?: number
+  verticalText?: VerticalTextMode
   dpi?: number
 }
 
@@ -26,7 +27,7 @@ interface DataContextValue extends DataState {
   setCurrentPage: (page: PageProps | null) => void
   loadPageList: () => Promise<PageProps[] | false>
   loadPage: (id: string) => Promise<PageProps | false>
-  savePage: (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; dpi?: number }) => Promise<PageProps | false>
+  savePage: (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; verticalText?: VerticalTextMode; dpi?: number }) => Promise<PageProps | false>
   insertPage: (data: PageProps) => Promise<PageProps | false>
   updatePage: (data: PageProps) => Promise<PageProps | false>
   deletePage: (id: string) => Promise<boolean>
@@ -34,11 +35,13 @@ interface DataContextValue extends DataState {
   background?: string
   backgroundImage?: string
   backgroundOpacity?: number
+  verticalText?: VerticalTextMode
   viewport?: ChartViewport
   dpi?: number
   setBackground: (bg: string) => void
   setBackgroundImage: (url: string) => void
   setBackgroundOpacity: (n: number) => void
+  setVerticalText: (m: VerticalTextMode) => void
   setDpi: (n: number) => void
   addPerson: (person: Partial<PersonNode>) => PersonNode
   updatePerson: (id: string, updates: Partial<PersonNode>) => void
@@ -142,7 +145,7 @@ export function DataProvider({
     }
   }
 
-  const savePage = async (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; dpi?: number }) => {
+  const savePage = async (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; verticalText?: VerticalTextMode; dpi?: number }) => {
     if (!currentPage?.id) return false
     // thumbnail is a page-level column; viewport/background/dpi live inside chartProps.
     const chartProps = {
@@ -151,6 +154,7 @@ export function DataProvider({
       ...(patch?.background !== undefined ? { background: patch.background } : {}),
       ...(patch?.backgroundImage !== undefined ? { backgroundImage: patch.backgroundImage } : {}),
       ...(patch?.backgroundOpacity !== undefined ? { backgroundOpacity: patch.backgroundOpacity } : {}),
+      ...(patch?.verticalText !== undefined ? { verticalText: patch.verticalText } : {}),
       ...(patch?.dpi !== undefined ? { dpi: patch.dpi } : {}),
     }
     const pageData = {
@@ -208,6 +212,10 @@ export function DataProvider({
 
   const setBackgroundOpacity = (n: number) => {
     setData((prev) => ({ ...prev, backgroundOpacity: n }))
+  }
+
+  const setVerticalText = (m: VerticalTextMode) => {
+    setData((prev) => ({ ...prev, verticalText: m }))
   }
 
   const setDpi = (n: number) => {
@@ -404,11 +412,13 @@ export function DataProvider({
         background: data.background,
         backgroundImage: data.backgroundImage,
         backgroundOpacity: data.backgroundOpacity,
+        verticalText: data.verticalText,
         viewport: data.viewport,
         dpi: data.dpi,
         setBackground,
         setBackgroundImage,
         setBackgroundOpacity,
+        setVerticalText,
         setDpi,
         addPerson,
         updatePerson,

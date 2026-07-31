@@ -13,6 +13,10 @@ export type RelationType =
 
 export type EpisodeType = 'event' | 'article' | 'episode' | 'note'
 
+// Vertical writing (縦書き) for CJK aesthetics.
+// Chart-level: 'off' (horizontal), 'cjk' (auto — vertical only for Japanese/Chinese text), 'on' (all vertical).
+export type VerticalTextMode = 'off' | 'cjk' | 'on'
+
 export interface Episode {
   id: string
   personId: string
@@ -50,6 +54,7 @@ export interface PersonNode {
   labelColor?: string
   labelFontSize?: number
   labelBold?: boolean        // name font weight (default bold)
+  vertical?: 'on' | 'off'    // per-node vertical-writing override (undefined = inherit chart mode)
   fontFamily?: string
   // Label display
   labelPosition?: 'above' | 'below' | 'left' | 'right' | 'inside'
@@ -60,8 +65,10 @@ export interface PersonNode {
   // Description display
   descriptionOffsetX?: number   // free drag offset from node center
   descriptionOffsetY?: number
+  descriptionHeight?: number     // box height (vertical writing: user-controlled, columns wrap at this height)
   descriptionBgColor?: string
   descriptionBgShape?: 'rect' | 'pill'
+  descriptionBorder?: boolean   // show a frame/border around the description box
   // Band-specific (dynasty era)
   bandWidth?: number
   bandHeight?: number
@@ -105,6 +112,7 @@ export interface ChartProps {
   background?: string        // CSS color for the canvas background
   backgroundImage?: string   // image URL / data-URI layered over the background color
   backgroundOpacity?: number // 0..1 opacity applied to the color+image layer (default 1)
+  verticalText?: VerticalTextMode  // chart-wide vertical writing mode (default 'off')
   dpi?: number               // thumbnail/print DPI override for this page
 }
 

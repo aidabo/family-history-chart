@@ -67,7 +67,19 @@ export function DescriptionSection({ node, onChange }: Props) {
           onChange={(e) => onChange({ descriptionWidth: Number(e.target.value) })}
           className="w-full"
         />
+        <p className="text-[11px] text-gray-400 mt-0.5">画面上の青ハンドルでも調整可（横書き＝右端で幅、縦書き＝下端で高さ）。枠は文字にフィットします。</p>
       </div>
+
+      {/* Frame (border) toggle */}
+      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={!!node.descriptionBorder}
+          onChange={(e) => onChange({ descriptionBorder: e.target.checked })}
+          className="accent-blue-600"
+        />
+        枠を表示
+      </label>
 
       {/* Description background */}
       <div>

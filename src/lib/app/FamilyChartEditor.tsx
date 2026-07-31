@@ -212,10 +212,12 @@ export default function FamilyChartEditor({
     background,
     backgroundImage,
     backgroundOpacity,
+    verticalText,
     viewport,
     setBackground,
     setBackgroundImage,
     setBackgroundOpacity,
+    setVerticalText,
     dpi,
     setDpi,
     thumbnailDpi,
@@ -743,6 +745,7 @@ export default function FamilyChartEditor({
           background={background}
           backgroundImage={backgroundImage}
           backgroundOpacity={backgroundOpacity}
+          verticalText={verticalText}
           persons={persons}
           relationships={relationships}
           selectedNodeId={selectedNode?.id ?? null}
@@ -876,6 +879,8 @@ export default function FamilyChartEditor({
         backgroundOpacity={backgroundOpacity ?? 1}
         onBackgroundOpacityChange={setBackgroundOpacity}
         uploadFile={uploadFile}
+        verticalText={verticalText ?? 'off'}
+        onVerticalTextChange={setVerticalText}
         dpi={dpi ?? thumbnailDpi ?? 150}
         onDpiChange={setDpi}
         zoom={settingsZoom}

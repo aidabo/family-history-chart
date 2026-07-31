@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import * as d3 from 'd3'
-import type { PersonNode, Relationship } from '@/types/charts'
+import type { PersonNode, Relationship, VerticalTextMode } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 
@@ -23,6 +23,7 @@ interface DynastyNetworkProps {
   background?: string          // canvas background color
   backgroundImage?: string     // background image layered over the color
   backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
+  verticalText?: VerticalTextMode  // chart-wide vertical writing mode (default 'off')
 }
 
 type SimNode = PersonNode & {
@@ -254,6 +255,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   background,
   backgroundImage,
   backgroundOpacity,
+  verticalText,
 }: DynastyNetworkProps, ref) {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -680,9 +682,27 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .call(drag)
 
     // Centered name drawn ON the shape (all shapes). halfW = half-width used for the readable band.
+    // ── Vertical writing (縦書き) helpers ────────────────────────────────────────
+    // CJK detection covers Hiragana, Katakana (incl. halfwidth), and Han (Japanese
+    // kanji + Chinese hanzi) so 'cjk' auto-mode triggers on Japanese/Chinese text.
+    const CJK_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/
+    const isCJK = (t?: string) => !!t && CJK_RE.test(t)
+    const resolveVertical = (d: SimNode, text?: string): boolean => {
+      if (d.vertical === 'on') return true
+      if (d.vertical === 'off') return false
+      if (verticalText === 'on') return true
+      if (verticalText === 'cjk') return isCJK(text)
+      return false
+    }
+    // Apply vertical-rl writing mode (inline styles so it survives thumbnail/PDF rasterization).
+    const applyVertical = (sel: d3.Selection<any, unknown, null, undefined>) => {
+      sel.style('writing-mode', 'vertical-rl').style('text-orientation', 'mixed')
+    }
+
     const drawCenteredName = (g: d3.Selection<SVGGElement, unknown, null, undefined>, d: SimNode, halfW: number) => {
       const fsz = d.labelFontSize || 12
       const weight = d.labelBold === false ? 'normal' : 'bold'
+      const vert = resolveVertical(d, d.name)
       const nameG = g.append('g').attr('class', 'node-inline-label').attr('pointer-events', 'none')
       // Background is transparent by default; a band is drawn only when Label Background is set.
       if (d.labelBgShape && d.labelBgColor) {
@@ -692,8 +712,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           .attr('fill', d.labelBgColor).attr('opacity', 0.85)
       }
       // A subtle halo keeps the text readable over images / any fill without an opaque background.
-      nameG.append('text')
-        .attr('text-anchor', 'middle').attr('dy', '0.35em')
+      const nameText = nameG.append('text')
+        .attr('text-anchor', 'middle')
+        .attr(vert ? 'dominant-baseline' : 'dy', vert ? 'central' : '0.35em')
         .attr('font-size', fsz).attr('font-weight', weight)
         .attr('fill', d.labelColor || '#fff')
         .attr('font-family', d.fontFamily || 'sans-serif')
@@ -702,6 +723,56 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         .style('stroke-width', d.image ? '3px' : '2px')
         .style('stroke-linejoin', 'round')
         .text(d.name || 'Unknown')
+      if (vert) applyVertical(nameText)
+    }
+
+    // Labels rendered BELOW a shape (decorative / portrait). Horizontal: name/title/
+    // lifespan stacked downward. Vertical: adjacent top-aligned columns, right→left
+    // (name, then title, then lifespan) for a traditional 縦書き look.
+    const drawBelowLabels = (
+      g: d3.Selection<SVGGElement, unknown, null, undefined>, d: SimNode,
+      shapeBottom: number, fs: number, tc: string, ff: string, weight: string,
+    ) => {
+      let lifespan = ''
+      if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
+      else if (d.birth) lifespan = d.birth
+      else if (d.age) lifespan = d.age
+      const vName = resolveVertical(d, d.name)
+      const vTitle = d.title ? resolveVertical(d, d.title) : false
+      if (vName || vTitle) {
+        const gap = fs * 1.35
+        const top = shapeBottom + 4
+        let col = 0
+        const addCol = (text: string, size: number, w?: string) => {
+          const t = g.append('text').attr('class', 'node-inline-label')
+            .attr('text-anchor', 'start').attr('x', -col * gap).attr('y', top)
+            .attr('font-size', size).attr('fill', tc).attr('font-family', ff)
+            .attr('pointer-events', 'none').text(text)
+          if (w) t.attr('font-weight', w)
+          applyVertical(t)
+          col++
+        }
+        addCol(d.name || 'Unknown', fs, weight)
+        if (d.title) addCol(d.title, fs * 0.8)
+        if (lifespan) addCol(lifespan, fs * 0.75)
+      } else {
+        let ly = shapeBottom + fs + 4
+        g.append('text').attr('class', 'node-inline-label').attr('text-anchor', 'middle').attr('y', ly)
+          .attr('font-size', fs).attr('font-weight', weight).attr('fill', tc).attr('font-family', ff)
+          .attr('pointer-events', 'none').text(d.name || 'Unknown')
+        ly += fs * 1.3
+        if (d.title) {
+          g.append('text').attr('text-anchor', 'middle').attr('y', ly)
+            .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
+            .attr('pointer-events', 'none').text(d.title)
+          ly += fs * 1.1
+        }
+        if (lifespan) {
+          g.append('text').attr('text-anchor', 'middle').attr('y', ly)
+            .attr('font-size', fs * 0.75).attr('fill', tc).attr('font-family', ff)
+            .attr('pointer-events', 'none').text(lifespan)
+        }
+      }
     }
 
     // Draw shapes + selection rings + port handles
@@ -757,26 +828,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const tc = d.labelColor || '#3d3226'
         const ff = d.fontFamily || 'serif'
         const weight = d.labelBold === false ? 'normal' : 'bold'
-        let ly = h / 2 + fs + 8
-        g.append('text').attr('class', 'node-inline-label').attr('text-anchor', 'middle').attr('y', ly)
-          .attr('font-size', fs).attr('font-weight', weight).attr('fill', tc).attr('font-family', ff)
-          .attr('pointer-events', 'none').text(d.name || 'Unknown')
-        ly += fs * 1.3
-        if (d.title) {
-          g.append('text').attr('text-anchor', 'middle').attr('y', ly)
-            .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
-            .attr('pointer-events', 'none').text(d.title)
-          ly += fs * 1.1
-        }
-        let lifespan = ''
-        if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
-        else if (d.birth) lifespan = d.birth
-        else if (d.age) lifespan = d.age
-        if (lifespan) {
-          g.append('text').attr('text-anchor', 'middle').attr('y', ly)
-            .attr('font-size', fs * 0.75).attr('fill', tc).attr('font-family', ff)
-            .attr('pointer-events', 'none').text(lifespan)
-        }
+        drawBelowLabels(g as any, d, h / 2, fs, tc, ff, weight)
       } else if (isPortraitShape(d.shape)) {
         // Circular portrait: photo fills a circle, themed ornamental frame on top, name below.
         const pm = portraitMeta(d.shape)
@@ -808,26 +860,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const tc = d.labelColor || '#334155'
         const ff = d.fontFamily || 'sans-serif'
         const weight = d.labelBold === false ? 'normal' : 'bold'
-        let ly = s + fs + 10
-        g.append('text').attr('class', 'node-inline-label').attr('text-anchor', 'middle').attr('y', ly)
-          .attr('font-size', fs).attr('font-weight', weight).attr('fill', tc).attr('font-family', ff)
-          .attr('pointer-events', 'none').text(d.name || 'Unknown')
-        ly += fs * 1.3
-        if (d.title) {
-          g.append('text').attr('text-anchor', 'middle').attr('y', ly)
-            .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
-            .attr('pointer-events', 'none').text(d.title)
-          ly += fs * 1.1
-        }
-        let lifespan = ''
-        if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
-        else if (d.birth) lifespan = d.birth
-        else if (d.age) lifespan = d.age
-        if (lifespan) {
-          g.append('text').attr('text-anchor', 'middle').attr('y', ly)
-            .attr('font-size', fs * 0.75).attr('fill', tc).attr('font-family', ff)
-            .attr('pointer-events', 'none').text(lifespan)
-        }
+        drawBelowLabels(g as any, d, s, fs, tc, ff, weight)
       } else if (shape === 'union') {
         g.append('circle').attr('class', 'selection-ring')
           .attr('r', 18).attr('fill', 'none').attr('stroke', '#fff').attr('stroke-width', 3)
@@ -1146,9 +1179,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const off = lblOffMap.get(d.id) ?? { x: 0, y: 0 }
         const newOff = { x: off.x + event.dx, y: off.y + event.dy }
         lblOffMap.set(d.id, newOff)
-        const parentG = this.parentNode as SVGGElement
-        d3.select(parentG).attr('transform',
-          `translate(${snapToGrid(d.x + newOff.x)},${snapToGrid(d.y + newOff.y)})`)
+        // Move the dragged group itself (like the description drag) — the parent
+        // .node-label follows the node via tick, so there's no transform fight → no blink.
+        d3.select(this).attr('transform', `translate(${newOff.x},${newOff.y})`)
       })
       .on('end', function(_, d) {
         d3.select(this).style('cursor', 'grab')
@@ -1173,6 +1206,75 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         d3.select(this).style('cursor', 'grab')
         const off = descOffMap.get(d.id)!
         onNodeUpdate?.(d.id, { descriptionOffsetX: off.x, descriptionOffsetY: off.y })
+      })
+
+    // Size the description box + frame to the ACTUAL text (no blank rows/columns).
+    // Horizontal: width is user-controlled (wrap width), height auto-fits content.
+    // Vertical:   height is user-controlled (column length), width auto-fits content.
+    const fitDescBox = (gNode: SVGGElement, d: SimNode, overrideW?: number, overrideH?: number) => {
+      const self = d3.select(gNode)
+      const foSel = self.select<SVGForeignObjectElement>('foreignObject')
+      const foEl = foSel.node()
+      if (!foEl) return
+      const divEl = foEl.querySelector('div') as HTMLElement | null
+      if (!divEl) return
+      const vDesc = resolveVertical(d, d.description)
+      const s = d.nodeSize || 40
+      const W = overrideW ?? d.descriptionWidth ?? Math.max(s * 2, 160)
+      const H = overrideH ?? d.descriptionHeight ?? 200
+      let cw: number, ch: number
+      try {
+        if (vDesc) {
+          foSel.attr('height', H).attr('width', 4000) // temp wide so all columns lay out
+          cw = Math.max(20, Math.min(4000, Math.ceil(divEl.scrollWidth)))
+          ch = H
+        } else {
+          foSel.attr('width', W).attr('height', 4000) // temp tall so all lines lay out
+          ch = Math.max(20, Math.min(4000, Math.ceil(divEl.scrollHeight)))
+          cw = W
+        }
+      } catch { return }
+      foSel.attr('width', cw).attr('height', ch).attr('x', -cw / 2).attr('y', -ch / 2)
+      const p = 5
+      self.selectAll<SVGRectElement, unknown>('.desc-bg-rect, .desc-border-rect')
+        .attr('x', -cw / 2 - p).attr('y', -ch / 2 - p)
+        .attr('width', cw + 2 * p).attr('height', ch + 2 * p)
+      const handle = self.select('.desc-resize')
+      if (vDesc) handle.attr('x', -4).attr('y', ch / 2 - 4).style('cursor', 'ns-resize')
+      else handle.attr('x', cw / 2 - 4).attr('y', -4).style('cursor', 'ew-resize')
+    }
+
+    // ── Description resize: horizontal → width, vertical → height (drag the handle) ─
+    // While dragging, resize the box PLAINLY (no content auto-fit — that would fight
+    // the drag). Auto-fit the frame to the text only on release. descResizingId keeps
+    // the tick loop from re-fitting the box mid-drag.
+    let descResizingId: string | null = null
+    const descResizeDrag = d3.drag<SVGRectElement, SimNode>()
+      .on('start', function(event, d) { event.sourceEvent.stopPropagation(); descResizingId = d.id })
+      .on('drag', function(event, d) {
+        const g = this.parentNode as SVGGElement
+        const self = d3.select(g)
+        const foSel = self.select<SVGForeignObjectElement>('foreignObject')
+        if (foSel.empty()) return
+        const vDesc = resolveVertical(d, d.description)
+        let cw = +foSel.attr('width'), ch = +foSel.attr('height')
+        if (vDesc) ch = Math.max(60, Math.min(800, ch + event.dy * 2))
+        else cw = Math.max(80, Math.min(600, cw + event.dx * 2))
+        foSel.attr('width', cw).attr('height', ch).attr('x', -cw / 2).attr('y', -ch / 2)
+        const p = 5
+        self.selectAll<SVGRectElement, unknown>('.desc-bg-rect, .desc-border-rect')
+          .attr('x', -cw / 2 - p).attr('y', -ch / 2 - p).attr('width', cw + 2 * p).attr('height', ch + 2 * p)
+        const handle = self.select('.desc-resize')
+        if (vDesc) handle.attr('x', -4).attr('y', ch / 2 - 4)
+        else handle.attr('x', cw / 2 - 4).attr('y', -4)
+      })
+      .on('end', function(_, d) {
+        descResizingId = null
+        const g = this.parentNode as SVGGElement
+        const foSel = d3.select(g).select<SVGForeignObjectElement>('foreignObject')
+        if (resolveVertical(d, d.description)) onNodeUpdate?.(d.id, { descriptionHeight: Math.round(+foSel.attr('height')) })
+        else onNodeUpdate?.(d.id, { descriptionWidth: Math.round(+foSel.attr('width')) })
+        fitDescBox(g, d) // snap the frame to the text now that resizing is done
       })
 
     // ── Labels ──────────────────────────────────────────────────────────────────
@@ -1232,7 +1334,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
 
       // circle/diamond/hexagon/ellipse: name is centered ON the shape;
       // the draggable outside label carries title + lifespan (if any).
+      const lblOff0 = lblOffMap.get(d.id) ?? { x: 0, y: 0 }
       const nameLabelG = label.append('g').attr('class', 'name-label-g')
+        .attr('transform', `translate(${lblOff0.x},${lblOff0.y})`)
         .style('pointer-events', 'all').style('cursor', 'grab')
         .call(lblDrag as any)
 
@@ -1243,28 +1347,52 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           .attr('fill', d.labelBgColor).attr('opacity', 0.85)
       }
 
-      let lineY = 0
-      if (d.title) {
-        const t = nameLabelG.append('text').text(d.title)
-          .attr('text-anchor', 'middle').attr('y', lineY).attr('dominant-baseline', 'central')
-          .attr('font-size', fs * 0.9).attr('fill', tc).attr('font-family', ff)
+      let lifespan = ''
+      if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
+      else if (d.birth) lifespan = d.birth
+      else if (d.age) lifespan = d.age
+
+      const openProfile = (t: d3.Selection<SVGTextElement, unknown, null, undefined>) => {
         if (d.profileUrl) {
           t.style('cursor', 'pointer').on('click', (event: MouseEvent) => {
             event.stopPropagation()
             window.open(d.profileUrl, '_blank')
           })
         }
-        lineY += fs * 1.3
       }
 
-      let lifespan = ''
-      if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
-      else if (d.birth) lifespan = d.birth
-      else if (d.age) lifespan = d.age
-      if (lifespan) {
-        nameLabelG.append('text').text(lifespan)
-          .attr('text-anchor', 'middle').attr('y', lineY).attr('dominant-baseline', 'central')
-          .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
+      if (resolveVertical(d, d.title) || (lifespan && resolveVertical(d, d.name))) {
+        // Vertical: title + lifespan as adjacent columns (right→left), each centered
+        // on y=0, so they no longer cross when stacked as horizontal lines would.
+        const gap = fs * 1.4
+        let col = 0
+        if (d.title) {
+          const t = nameLabelG.append('text').text(d.title)
+            .attr('text-anchor', 'middle').attr('x', -col * gap).attr('dominant-baseline', 'central')
+            .attr('font-size', fs * 0.9).attr('fill', tc).attr('font-family', ff)
+          applyVertical(t); openProfile(t); col++
+        }
+        if (lifespan) {
+          const l = nameLabelG.append('text').text(lifespan)
+            .attr('text-anchor', 'middle').attr('x', -col * gap).attr('dominant-baseline', 'central')
+            .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
+          applyVertical(l)
+        }
+      } else {
+        // Horizontal: stack title then lifespan downward.
+        let lineY = 0
+        if (d.title) {
+          const t = nameLabelG.append('text').text(d.title)
+            .attr('text-anchor', 'middle').attr('y', lineY).attr('dominant-baseline', 'central')
+            .attr('font-size', fs * 0.9).attr('fill', tc).attr('font-family', ff)
+          openProfile(t)
+          lineY += fs * 1.3
+        }
+        if (lifespan) {
+          nameLabelG.append('text').text(lifespan)
+            .attr('text-anchor', 'middle').attr('y', lineY).attr('dominant-baseline', 'central')
+            .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
+        }
       }
     })
 
@@ -1278,10 +1406,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
 
     descSel.each(function(d) {
       const descG = d3.select(this)
-      const s = d.nodeSize || 40
       const fs = d.labelFontSize || 12
       const tc = d.labelColor || '#334155'
-      const maxW = d.descriptionWidth || Math.max(s * 2, 160)
+      const vDesc = resolveVertical(d, d.description)
 
       if (d.descriptionBgShape && d.descriptionBgColor) {
         descG.append('rect').attr('class', 'desc-bg-rect')
@@ -1289,14 +1416,36 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           .attr('ry', d.descriptionBgShape === 'pill' ? 999 : 4)
           .attr('fill', d.descriptionBgColor).attr('opacity', 0.85)
       }
+      // Optional frame (border), tight to the text (sized in fitDescBox).
+      if (d.descriptionBorder) {
+        descG.append('rect').attr('class', 'desc-border-rect')
+          .attr('rx', d.descriptionBgShape === 'pill' ? 999 : 4)
+          .attr('ry', d.descriptionBgShape === 'pill' ? 999 : 4)
+          .attr('fill', 'none').attr('stroke', d.descriptionBgColor || '#94a3b8').attr('stroke-width', 1)
+      }
 
-      descG.append('foreignObject')
-        .attr('x', -maxW / 2).attr('y', -fs * 0.5).attr('width', maxW).attr('height', 100)
+      // foreignObject is sized by fitDescBox (below + each tick) to fit the text.
+      const descDiv = descG.append('foreignObject')
+        .attr('x', 0).attr('y', 0).attr('width', 10).attr('height', 10)
         .append('xhtml:div')
-        .style('color', tc).style('font-size', `${fs * 0.8}px`).style('font-family', 'sans-serif')
-        .style('text-align', 'center').style('word-break', 'break-word').style('line-height', '1.2')
-        .style('user-select', 'none')
-        .text(d.description!)
+        .style('color', tc).style('font-size', `${fs * 0.8}px`).style('font-family', d.fontFamily || 'sans-serif')
+        .style('box-sizing', 'border-box').style('word-break', 'break-word').style('user-select', 'none')
+      if (vDesc) {
+        descDiv.style('writing-mode', 'vertical-rl').style('text-orientation', 'mixed')
+          .style('height', '100%').style('line-height', '1.6').style('text-align', 'start')
+      } else {
+        descDiv.style('text-align', 'center').style('line-height', '1.2')
+      }
+      descDiv.text(d.description!)
+
+      // Resize handle (position/orientation set by fitDescBox: right edge = horizontal
+      // width, bottom edge = vertical height). Drag to resize directly on-canvas.
+      descG.append('rect').attr('class', 'desc-resize')
+        .attr('width', 8).attr('height', 8).attr('rx', 2)
+        .attr('fill', '#3b82f6').attr('opacity', 0.55)
+        .call(descResizeDrag as any)
+
+      fitDescBox(this, d) // initial fit
     })
 
     const EDGE_LABEL: Record<string, string> = {
@@ -1354,10 +1503,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       linkSel.attr('d', buildLinkPath)
 
       nodeSel.attr('transform', d => `translate(${snapToGrid(d.x)},${snapToGrid(d.y)})`)
-      labelSel.attr('transform', d => {
-        const off = lblOffMap.get(d.id) ?? { x: 0, y: 0 }
-        return `translate(${snapToGrid(d.x + off.x)},${snapToGrid(d.y + off.y)})`
-      })
+      // Parent .node-label follows the node; the inner .name-label-g carries the
+      // drag offset via its own transform (set at creation / during drag).
+      labelSel.attr('transform', d => `translate(${snapToGrid(d.x)},${snapToGrid(d.y)})`)
       descSel.attr('transform', d => {
         const off = descOffMap.get(d.id) ?? { x: 0, y: 0 }
         return `translate(${snapToGrid(d.x + off.x)},${snapToGrid(d.y + off.y)})`
@@ -1377,19 +1525,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         } catch (_) {}
       })
 
-      // Fit description bg rects
-      descSel.each(function() {
-        const bgRect = d3.select(this).select<SVGRectElement>('.desc-bg-rect')
-        if (bgRect.empty()) return
-        const foEl = d3.select(this).select<SVGForeignObjectElement>('foreignObject').node()
-        if (!foEl) return
-        try {
-          const b = foEl.getBBox()
-          const p = 5
-          bgRect.attr('x', b.x - p).attr('y', b.y - p)
-            .attr('width', b.width + p * 2).attr('height', b.height + p * 2)
-        } catch (_) {}
-      })
+      // Fit description box + bg/border to the actual text (skip the one being resized).
+      descSel.each(function(dd) { if (dd.id !== descResizingId) fitDescBox(this, dd) })
 
       linkLabelSel
         .attr('x', d => {
@@ -1457,7 +1594,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
     onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange,
-    onBatchPositionChange, onNodeUpdate, computeFit, initialTransform, background])
+    onBatchPositionChange, onNodeUpdate, computeFit, initialTransform, background, verticalText])
 
   // Update selection rings without full redraw
   useEffect(() => {

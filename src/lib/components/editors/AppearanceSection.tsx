@@ -115,6 +115,32 @@ export function AppearanceSection({ node, onChange }: Props) {
         />
       </div>
 
+      {/* Vertical writing (縦書き) override */}
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">縦書き（縦書き）</label>
+        <div className="grid grid-cols-3 gap-1">
+          {([
+            [undefined, '継承'],
+            ['on', '縦'],
+            ['off', '横'],
+          ] as [('on' | 'off' | undefined), string][]).map(([val, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onChange({ vertical: val })}
+              className={`text-xs py-1 rounded border transition-colors ${
+                node.vertical === val
+                  ? 'bg-blue-500 text-white border-blue-500'
+                  : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-400 mt-0.5">継承＝チャートの設定に従う</p>
+      </div>
+
       {/* Label position picker */}
       <div>
         <div className="flex items-center justify-between mb-1">

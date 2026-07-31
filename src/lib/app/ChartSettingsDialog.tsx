@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
+import { VerticalTextMode } from '@/types/charts'
 
 interface ChartSettingsDialogProps {
   open: boolean
@@ -11,6 +12,8 @@ interface ChartSettingsDialogProps {
   backgroundOpacity: number
   onBackgroundOpacityChange: (n: number) => void
   uploadFile?: (file: File) => Promise<string>
+  verticalText: VerticalTextMode
+  onVerticalTextChange: (m: VerticalTextMode) => void
   dpi: number
   onDpiChange: (dpi: number) => void
   zoom: number
@@ -28,6 +31,8 @@ export default function ChartSettingsDialog({
   backgroundOpacity,
   onBackgroundOpacityChange,
   uploadFile,
+  verticalText,
+  onVerticalTextChange,
   dpi,
   onDpiChange,
   zoom,
@@ -212,6 +217,32 @@ export default function ChartSettingsDialog({
           >
             全体にフィット
           </button>
+        </section>
+
+        {/* ④ 縦書き */}
+        <section className="mt-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">④ 縦書き（縦書き）</h3>
+          <div className="flex flex-col gap-1.5">
+            {([
+              ['off', '横書き（既定）'],
+              ['cjk', '縦書き：日本語・中国語のみ自動'],
+              ['on', '縦書き：すべて'],
+            ] as [VerticalTextMode, string][]).map(([val, label]) => (
+              <label key={val} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="verticalText"
+                  checked={verticalText === val}
+                  onChange={() => onVerticalTextChange(val)}
+                  className="accent-blue-600"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            name・title・説明に適用。ノード個別に上書きも可能です（各人物の Appearance）。
+          </p>
         </section>
       </div>
     </div>
