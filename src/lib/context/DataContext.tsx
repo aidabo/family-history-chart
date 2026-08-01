@@ -44,6 +44,7 @@ interface DataContextValue extends DataState {
   setVerticalText: (m: VerticalTextMode) => void
   setDpi: (n: number) => void
   addPerson: (person: Partial<PersonNode>) => PersonNode
+  addNote: (x?: number, y?: number) => PersonNode
   updatePerson: (id: string, updates: Partial<PersonNode>) => void
   deletePerson: (id: string) => void
   dissolveUnion: (unionId: string) => void
@@ -222,6 +223,23 @@ export function DataProvider({
 
   const setDpi = (n: number) => {
     setData((prev) => ({ ...prev, dpi: n }))
+  }
+
+  // Free-standing annotation/note (reuses the description text-box machinery).
+  const addNote = (x?: number, y?: number): PersonNode => {
+    const px = x ?? 400
+    const py = y ?? 300
+    const note: PersonNode = {
+      id: uid('note'),
+      type: 'note',
+      name: '',
+      description: 'メモ',
+      noteShape: 'sticky',
+      descriptionWidth: 180,
+      x: px, y: py, fx: px, fy: py,
+    }
+    setData((prev) => ({ ...prev, persons: [...prev.persons, note] }))
+    return note
   }
 
   const addPerson = (person: Partial<PersonNode>): PersonNode => {
@@ -423,6 +441,7 @@ export function DataProvider({
         setVerticalText,
         setDpi,
         addPerson,
+        addNote,
         updatePerson,
         deletePerson,
         dissolveUnion,

@@ -37,9 +37,16 @@ export interface Episode {
   type?: EpisodeType
 }
 
+// Free-standing annotation/note styles ("各風").
+export type NoteShape =
+  | 'plain' | 'sticky' | 'bubble' | 'card' | 'banner'
+  // manga-style frame silhouettes (parametric paths that resize with the text)
+  | 'oval' | 'cloud' | 'burst'
+
 export interface PersonNode {
   id: string
-  type?: 'person' | 'union'
+  type?: 'person' | 'union' | 'note'
+  noteShape?: NoteShape   // visual style for a type:'note' box
   name: string
   title?: string
   gender?: 'male' | 'female' | 'other'
@@ -88,6 +95,7 @@ export interface PersonNode {
   descriptionHeight?: number     // box height (vertical writing: user-controlled, columns wrap at this height)
   descriptionBgColor?: string
   descriptionBgShape?: 'rect' | 'pill'
+  descriptionBgOpacity?: number  // 0..1 opacity of the description/note background (default 0.9)
   descriptionBorder?: boolean   // show a frame/border around the description box
   descriptionAlign?: 'left' | 'center' | 'right'  // text alignment (default center)
   descriptionRotation?: number   // rotate the description box (degrees)

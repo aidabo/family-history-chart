@@ -24,6 +24,7 @@ import {
   Bars3BottomLeftIcon,
   Bars3Icon,
   Bars3BottomRightIcon,
+  DocumentPlusIcon,
 } from '@heroicons/react/24/outline'
 
 // Generate a PNG thumbnail blob from a chart SVG element.
@@ -206,6 +207,10 @@ function InlineEditOverlay({
   const [scaleX, setScaleX] = useState((isDesc ? node?.descriptionScaleX : node?.labelScaleX) ?? 1)
   const [scaleY, setScaleY] = useState((isDesc ? node?.descriptionScaleY : node?.labelScaleY) ?? 1)
   const [picker, setPicker] = useState<null | 'text' | 'bg' | 'deform'>(null)
+  const isNote = node?.type === 'note'
+  const [noteShape, setNoteShape] = useState(node?.noteShape ?? 'sticky')
+  const [vertOn, setVertOn] = useState(node?.vertical === 'on')
+  const [bgOpacity, setBgOpacity] = useState(node?.descriptionBgOpacity ?? 0.95)
 
   useEffect(() => { const el = inputRef.current; if (el) { el.focus(); el.select?.() } }, [])
 
@@ -248,11 +253,21 @@ function InlineEditOverlay({
   const flipV = () => { const s = -scaleY; setScaleY(s); persistTf(rot, scaleX, s, skew) }
   const resetTf = () => { setRot(0); setSkew(0); setScaleX(1); setScaleY(1); persistTf(0, 1, 1, 0) }
   const setAlignment = (a: TextAlign) => { setAlign(a); onSettings({ descriptionAlign: a }) }
+  const toggleVertical = () => { const v = vertOn ? 'off' : 'on'; setVertOn(!vertOn); onSettings({ vertical: v }) }
+  const changeBgOpacity = (o: number) => { setBgOpacity(o); onSettings({ descriptionBgOpacity: o }) }
 
+  // Match the editor background to the committed look: color WITH its opacity (rgba),
+  // keeping the text fully opaque.
+  const toRgba = (hex: string, a: number) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+    if (!m) return hex
+    const n = parseInt(m[1], 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+  }
   const inputStyle: React.CSSProperties = {
     position: 'absolute', left: req.left, top: req.top, width: req.width, height: req.height,
     fontSize: req.fontSize, color, fontFamily: font, fontWeight: bold ? 700 : 400,
-    textAlign: align, background: bg || '#ffffff',
+    textAlign: align, background: bg ? toRgba(bg, bgOpacity) : '#ffffff',
     border: '1px solid #3b82f6', borderRadius: 3, padding: '1px 3px', outline: 'none', resize: 'none', zIndex: 50,
   }
   const tbTop = Math.max(0, req.top - 40)
@@ -273,6 +288,7 @@ function InlineEditOverlay({
         <span className="w-5 text-center text-xs text-gray-600">{size}</span>
         {btn(false, () => setSizeBy(1), 'フォント大', <span className="font-bold">A+</span>)}
         {btn(bold, toggleBold, '太字', <span className="font-bold">B</span>)}
+        {btn(vertOn, toggleVertical, '縦書き（この項目のみ）', <span className="text-xs">縦</span>)}
         <button type="button" title="文字色" onMouseDown={(e) => e.preventDefault()}
           onClick={() => setPicker(picker === 'text' ? null : 'text')}
           className="flex h-7 w-7 items-center justify-center rounded hover:bg-gray-100">
@@ -282,6 +298,24 @@ function InlineEditOverlay({
           onClick={() => setPicker(picker === 'bg' ? null : 'bg')}
           className="h-6 w-6 rounded border border-gray-300" style={{ background: bg || '#fff' }} />
         <div className="w-28"><FontSelector value={font} onChange={pickFont} /></div>
+        {isNote && (
+          <select
+            title="メモの形（各風）"
+            value={noteShape}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => { const v = e.target.value as typeof noteShape; setNoteShape(v); onSettings({ noteShape: v }) }}
+            className="rounded border border-gray-300 px-1 py-0.5 text-xs"
+          >
+            <option value="plain">無地</option>
+            <option value="sticky">付箋</option>
+            <option value="bubble">吹き出し</option>
+            <option value="oval">楕円</option>
+            <option value="cloud">雲（思考）</option>
+            <option value="burst">集中（強調）</option>
+            <option value="card">カード</option>
+            <option value="banner">バナー</option>
+          </select>
+        )}
         {isDesc && <>
           {btn(align === 'left', () => setAlignment('left'), '左揃え', <Bars3BottomLeftIcon className="h-4 w-4" />)}
           {btn(align === 'center', () => setAlignment('center'), '中央', <Bars3Icon className="h-4 w-4" />)}
@@ -298,8 +332,17 @@ function InlineEditOverlay({
         </div>
       )}
       {picker === 'bg' && (
-        <div className="absolute z-[52]" style={{ left: req.left, top: tbTop + 34 }}>
-          <ColorPickerPopover value={bg} onChange={pickBg} onClose={() => setPicker(null)} />
+        <div className="absolute z-[52]" style={{ left: req.left, top: tbTop + 34 }} onMouseDown={(e) => e.stopPropagation()}>
+          <ColorPickerPopover value={bg} onChange={pickBg} onClose={() => setPicker(null)}>
+            {isDesc && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-gray-600">透明度</span>
+                <input type="range" min={0} max={1} step={0.05} value={bgOpacity}
+                  onChange={(e) => changeBgOpacity(Number(e.target.value))} className="flex-1 accent-blue-600" />
+                <span className="w-8 text-right text-[10px] text-gray-600">{Math.round(bgOpacity * 100)}%</span>
+              </div>
+            )}
+          </ColorPickerPopover>
         </div>
       )}
       {picker === 'deform' && (
@@ -363,6 +406,7 @@ export default function FamilyChartEditor({
     loadPage,
     savePage,
     addPerson,
+    addNote,
     updatePerson,
     deletePerson,
     dissolveUnion,
@@ -537,6 +581,18 @@ export default function FamilyChartEditor({
     },
     [isViewMode, addPerson, setSelectedNode]
   )
+
+  const handleAddNote = useCallback(() => {
+    if (isViewMode) return
+    const vp = netRef.current?.getViewport()
+    const el = containerRef.current
+    if (vp && el) {
+      const k = vp.k || 1
+      addNote((el.clientWidth / 2 - vp.x) / k, (el.clientHeight / 2 - vp.y) / k)
+    } else {
+      addNote()
+    }
+  }, [isViewMode, addNote])
 
   const handleExport = () => {
     if (!currentPage) return
@@ -1051,6 +1107,18 @@ export default function FamilyChartEditor({
             title="Add person (or double-click canvas)"
           >
             <PlusIcon className="h-6 w-6" />
+          </button>
+        )}
+
+        {/* Add note FAB (free-standing annotation) */}
+        {!isViewMode && (
+          <button
+            onClick={handleAddNote}
+            className="absolute bottom-20 left-6 z-20 h-12 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow-lg flex items-center gap-1 text-sm transition-colors"
+            title="メモ（注釈）を追加"
+          >
+            <DocumentPlusIcon className="h-5 w-5" />
+            <span className="fc-tb-label">メモ</span>
           </button>
         )}
 

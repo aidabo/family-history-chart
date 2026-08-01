@@ -14,6 +14,7 @@ type ColorPickerPopoverProps = {
   onClose?: () => void
   className?: string
   style?: React.CSSProperties
+  children?: React.ReactNode   // extra controls rendered inside the panel (so they're not "outside")
 }
 
 const isHexColor = (value: string) => /^#[0-9a-f]{6}$/i.test(value)
@@ -25,6 +26,7 @@ export const ColorPickerPopover = ({
   onClose,
   className = '',
   style,
+  children,
 }: ColorPickerPopoverProps) => {
   const popoverRef = useRef<HTMLDivElement>(null)
   const colorValue = value ?? ''
@@ -115,6 +117,7 @@ export const ColorPickerPopover = ({
       >
         Reset to no color
       </button>
+      {children}
     </div>
   )
 }

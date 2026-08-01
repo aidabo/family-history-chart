@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import * as d3 from 'd3'
-import type { PersonNode, Relationship, VerticalTextMode } from '@/types/charts'
+import type { PersonNode, Relationship, VerticalTextMode, NoteShape } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 
@@ -15,6 +15,36 @@ function textStyleOf(d: PersonNode, field: 'name' | 'title' | 'description') {
     font: s?.fontFamily ?? d.fontFamily,
     bold: s?.bold ?? (d.labelBold !== false),
   }
+}
+
+// Parametric manga-style frame silhouettes, centred at (0,0), fitting an rx×ry ellipse.
+function isFrameShape(s?: NoteShape) { return s === 'oval' || s === 'cloud' || s === 'burst' }
+function framePath(shape: NoteShape | undefined, rx: number, ry: number): string {
+  if (shape === 'burst') {
+    const spikes = 18, inner = 0.80, outer = 1.14
+    let d = ''
+    for (let i = 0; i < spikes * 2; i++) {
+      const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2
+      const rr = i % 2 ? inner : outer
+      d += (i ? 'L' : 'M') + (Math.cos(a) * rx * rr).toFixed(1) + ',' + (Math.sin(a) * ry * rr).toFixed(1) + ' '
+    }
+    return d + 'Z'
+  }
+  if (shape === 'cloud') {
+    const bumps = 11
+    const pts: [number, number][] = []
+    for (let i = 0; i < bumps; i++) { const a = (i / bumps) * Math.PI * 2 - Math.PI / 2; pts.push([Math.cos(a) * rx * 0.9, Math.sin(a) * ry * 0.9]) }
+    let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)} `
+    for (let i = 0; i < bumps; i++) {
+      const p2 = pts[(i + 1) % bumps]
+      const mx = (pts[i][0] + p2[0]) / 2, my = (pts[i][1] + p2[1]) / 2
+      const ca = Math.atan2(my, mx)
+      d += `Q${(mx + Math.cos(ca) * rx * 0.28).toFixed(1)},${(my + Math.sin(ca) * ry * 0.28).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)} `
+    }
+    return d + 'Z'
+  }
+  // oval (default frame): ellipse via two arcs
+  return `M${rx.toFixed(1)},0 A${rx.toFixed(1)},${ry.toFixed(1)} 0 1 0 ${(-rx).toFixed(1)},0 A${rx.toFixed(1)},${ry.toFixed(1)} 0 1 0 ${rx.toFixed(1)},0 Z`
 }
 
 // Build a combined affine transform for a rotatable/deformable label box.
@@ -473,7 +503,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const fallX = dimensions.width / 5
     const fallY = dimensions.height / 5
 
-    const nodes: SimNode[] = persons.map(p => {
+    // Notes (type:'note') are free-standing text boxes — not part of the graph
+    // (no simulation, links, name or shape). They render in their own layer.
+    const noteData = persons.filter(p => p.type === 'note')
+    const graphPersons = persons.filter(p => p.type !== 'note')
+
+    const nodes: SimNode[] = graphPersons.map(p => {
       const s = nodePositionsRef.current.get(p.id)
       return { ...p, x: s?.x ?? p.x ?? fallX, y: s?.y ?? p.y ?? fallY }
     })
@@ -1424,6 +1459,25 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       self.selectAll<SVGRectElement, unknown>('.desc-bg-rect, .desc-border-rect')
         .attr('x', -cw / 2 - p).attr('y', -ch / 2 - p)
         .attr('width', cw + 2 * p).attr('height', ch + 2 * p)
+      // Speech-bubble tail: a downward triangle at the bottom-left of the box.
+      const tail = self.select('.note-tail')
+      if (!tail.empty()) {
+        const yb = ch / 2 + p - 1
+        const bx = -cw / 2 + Math.min(cw * 0.35, 60)
+        tail.attr('points', `${bx - 11},${yb} ${bx + 11},${yb} ${bx - 3},${yb + 15}`)
+      }
+      // Manga frame silhouette: size the ellipse so the text RECTANGLE fits fully inside
+      // (a rectangle inscribed in an ellipse needs semi-axes ≈ √2× its half-extents; burst
+      // spikes/cloud bumps pull the inner edge in, so divide by that inner fraction).
+      const framep = self.select('.desc-bg-path')
+      if (!framep.empty()) {
+        const shape = (d as PersonNode).noteShape
+        const inner = shape === 'burst' ? 0.80 : shape === 'cloud' ? 0.9 : 1
+        const pad = 12
+        const rx = (cw / 2) * Math.SQRT2 / inner + pad
+        const ry = (ch / 2) * Math.SQRT2 / inner + pad
+        framep.attr('d', framePath(shape, rx, ry))
+      }
       const handle = self.select('.desc-resize')
       if (vDesc) handle.attr('x', -4).attr('y', ch / 2 - 4).style('cursor', 'ns-resize')
       else handle.attr('x', cw / 2 - 4).attr('y', -4).style('cursor', 'ew-resize')
@@ -1612,7 +1666,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         inner.append('rect').attr('class', 'desc-bg-rect')
           .attr('rx', d.descriptionBgShape === 'pill' ? 999 : 4)
           .attr('ry', d.descriptionBgShape === 'pill' ? 999 : 4)
-          .attr('fill', d.descriptionBgColor).attr('opacity', 0.85)
+          .attr('fill', d.descriptionBgColor).attr('opacity', d.descriptionBgOpacity ?? 0.85)
       }
       // Optional frame (border), tight to the text (sized in fitDescBox).
       if (d.descriptionBorder) {
@@ -1647,6 +1701,98 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         .call(descResizeDrag as any)
 
       fitDescBox(this, d) // initial fit
+    })
+
+    // ── Free-standing notes (type:'note') — reuse the description text-box machinery ──
+    const notePreset = (shape?: NoteShape): { bg: string; border: boolean; rx: number } => {
+      switch (shape) {
+        case 'sticky': return { bg: '#fef9c3', border: false, rx: 4 }
+        case 'bubble': return { bg: '#ffffff', border: true, rx: 16 }
+        case 'card':   return { bg: '#ffffff', border: true, rx: 6 }
+        case 'banner': return { bg: '#e0e7ff', border: false, rx: 2 }
+        default:       return { bg: '', border: false, rx: 4 } // plain
+      }
+    }
+    let noteMoved = false
+    let lastTapNote: { id: string; t: number } | null = null
+    const noteDrag = d3.drag<SVGGElement, PersonNode>()
+      .on('start', function(event) { event.sourceEvent.stopPropagation(); noteMoved = false; d3.select(this).style('cursor', 'grabbing') })
+      .on('drag', function(event, d) {
+        noteMoved = true
+        d.x = (d.x ?? 0) + event.dx; d.y = (d.y ?? 0) + event.dy
+        d3.select(this).attr('transform', `translate(${snapToGrid(d.x)},${snapToGrid(d.y)})`)
+      })
+      .on('end', function(_, d) {
+        d3.select(this).style('cursor', 'grab')
+        if (noteMoved) {
+          cbRef.current.onPositionChange(d.id, d.x ?? 0, d.y ?? 0)
+        } else if (editable && cbRef.current.onInlineEdit) {
+          const now = Date.now()
+          if (lastTapNote && lastTapNote.id === d.id && now - lastTapNote.t < DBL_MS) {
+            lastTapNote = null
+            openEditFromEl((this as SVGGElement).querySelector('foreignObject'), d as unknown as SimNode, 'description')
+          } else {
+            lastTapNote = { id: d.id, t: now }
+          }
+        }
+      })
+
+    const noteLayer = container.append('g').attr('class', 'note-layer')
+    const noteSel = noteLayer.selectAll<SVGGElement, PersonNode>('g.note-g')
+      .data(noteData).enter()
+      .append('g').attr('class', 'desc-g note-g')
+      .attr('transform', d => `translate(${snapToGrid(d.x ?? 400)},${snapToGrid(d.y ?? 300)})`)
+      .style('pointer-events', 'all').style('cursor', 'grab')
+      .call(noteDrag as any)
+
+    noteSel.each(function(d) {
+      const g = d3.select(this)
+      const preset = notePreset(d.noteShape)
+      const bg = d.descriptionBgColor || preset.bg
+      const showBorder = d.descriptionBorder || preset.border
+      const nd = d as unknown as SimNode
+      const dst = textStyleOf(d, 'description')
+      const vDesc = resolveVertical(nd, d.description)
+      const inner = g.append('g').attr('class', 'desc-inner')
+      const innerTf = boxTransform(d.descriptionRotation, d.descriptionScaleX, d.descriptionScaleY, d.descriptionSkewX)
+      if (innerTf) inner.attr('transform', innerTf)
+      const bgOpacity = d.descriptionBgOpacity ?? 0.95
+      if (isFrameShape(d.noteShape)) {
+        // Manga-style frame silhouette (path regenerated in fitDescBox to fit the text).
+        inner.append('path').attr('class', 'desc-bg-path')
+          .attr('fill', d.descriptionBgColor || '#ffffff').attr('opacity', bgOpacity)
+          .attr('stroke', d.descriptionBorder === false ? 'none' : '#1f2937').attr('stroke-width', 1.5)
+      } else if (bg) {
+        // Speech-bubble tail (吹き出し) — a triangle below the box, sized in fitDescBox.
+        if (d.noteShape === 'bubble') {
+          inner.append('polygon').attr('class', 'note-tail').attr('fill', bg).attr('opacity', bgOpacity)
+        }
+        inner.append('rect').attr('class', 'desc-bg-rect')
+          .attr('rx', preset.rx).attr('ry', preset.rx).attr('fill', bg).attr('opacity', bgOpacity)
+      }
+      if (showBorder && !isFrameShape(d.noteShape)) {
+        inner.append('rect').attr('class', 'desc-border-rect')
+          .attr('rx', preset.rx).attr('ry', preset.rx)
+          .attr('fill', 'none').attr('stroke', d.descriptionBgColor || '#94a3b8').attr('stroke-width', 1)
+      }
+      const div = inner.append('foreignObject').attr('x', 0).attr('y', 0).attr('width', 10).attr('height', 10)
+        .append('xhtml:div')
+        .style('color', dst.color || '#1f2937').style('font-size', `${dst.size || 14}px`)
+        .style('font-family', dst.font || 'sans-serif').style('font-weight', dst.bold ? 'bold' : 'normal')
+        .style('box-sizing', 'border-box').style('word-break', 'break-word')
+        .style('white-space', 'pre-wrap').style('user-select', 'none')
+      const align = d.descriptionAlign ?? 'center'
+      if (vDesc) {
+        div.style('writing-mode', 'vertical-rl').style('text-orientation', 'mixed')
+          .style('height', '100%').style('line-height', '1.6').style('text-align', align)
+      } else {
+        div.style('text-align', align).style('line-height', '1.3')
+      }
+      div.text(d.description || '')
+      inner.append('rect').attr('class', 'desc-resize')
+        .attr('width', 8).attr('height', 8).attr('rx', 2).attr('fill', '#3b82f6').attr('opacity', 0.55)
+        .call(descResizeDrag as any)
+      fitDescBox(this, d as unknown as SimNode)
     })
 
     const EDGE_LABEL: Record<string, string> = {
