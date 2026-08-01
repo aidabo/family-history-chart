@@ -769,6 +769,25 @@ function computeSingleLayout(
     }
   }
 
+  // Horizontal zigzag for vertical "spine" runs: a generation row holding a single
+  // person (a lone succession heir, no spouse/siblings on that row) is nudged left/right
+  // by row parity, so a long straight vertical chain (e.g. the shogun succession) reads
+  // as a gentle left–right zigzag instead of a cramped single column. Tidy view only.
+  if (mode === 'tidy') {
+    const rowsById = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = Math.round((rowValue.get(id) ?? 0))
+      ;(rowsById.get(r) || rowsById.set(r, []).get(r)!).push(id)
+    }
+    const DX = col * 0.6
+    for (const [r, ids] of rowsById) {
+      const people = ids.filter(id => !isUnion(g.nodeMap.get(id)!))
+      if (people.length !== 1) continue           // only lone-heir rows
+      const off = (Math.abs(r) % 2 === 0 ? -1 : 1) * DX
+      for (const id of ids) px.set(id, (px.get(id) ?? 0) + off)
+    }
+  }
+
   // Center the whole thing on centerX.
   const xs = [...px.values()]
   const mid = (Math.min(...xs) + Math.max(...xs)) / 2
