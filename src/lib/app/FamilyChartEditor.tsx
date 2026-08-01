@@ -631,7 +631,7 @@ export default function FamilyChartEditor({
     let thumbnailPatch: { thumbnail?: string } = {}
     if (uploadThumbnail && currentPage?.id) {
       try {
-        const svgEl = containerRef.current?.querySelector('svg') as SVGSVGElement | null
+        const svgEl = containerRef.current?.querySelector('svg.fc-canvas-svg') as SVGSVGElement | null
         if (svgEl) {
           // Capture the currently-visible viewport rect; fall back to bbox if unavailable.
           const visibleRect = netRef.current?.getVisibleRect()
@@ -738,7 +738,7 @@ export default function FamilyChartEditor({
   }, [mergeGraph])
 
   const handlePdfExport = useCallback(() => {
-    const svgEl = containerRef.current?.querySelector('svg') as SVGSVGElement | null
+    const svgEl = containerRef.current?.querySelector('svg.fc-canvas-svg') as SVGSVGElement | null
     if (!svgEl) return
 
     // Clone the SVG and reframe it to the content's bounding box so it fits & centers on the page.
