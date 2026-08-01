@@ -4,6 +4,8 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
+import { computeFamilyLayout, pickAutoMode, type LayoutMode } from '@/utils/familyLayout'
+import { UsersIcon } from '@heroicons/react/24/outline'
 
 // Resolve a field's text style: per-field override (nameStyle/titleStyle/descriptionStyle)
 // falling back to the node-level defaults (labelColor/labelFontSize/fontFamily/labelBold).
@@ -177,6 +179,73 @@ function getNodeRadius(d: SimNode): number {
   }
 }
 
+// Organic "relationship map" layout: a d3 force simulation run to a settled state.
+// forceCollide guarantees no overlaps; charge repulsion + link attraction pull the
+// most-connected people (multiple hubs allowed) toward the centre and push weakly
+// connected ones to the edge; couples/parent-child sit close via short, strong links.
+// Runs synchronously on throw-away copies so the live simulation is untouched.
+function forceLayoutPositions(nodes: SimNode[], links: SimLink[]): Record<string, { x: number; y: number }> {
+  const radiusById = new Map(nodes.map(n => [n.id, getNodeRadius(n)]))
+  const work = nodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y }))
+  const byId = new Map(work.map(n => [n.id, n]))
+  const wlinks = links
+    .map(l => ({ source: l.source.id, target: l.target.id, type: l.type }))
+    .filter(l => byId.has(l.source) && byId.has(l.target))
+
+  // Union → partner ids (captured before forceLink rewrites source/target to objects).
+  const unionPartners = new Map<string, string[]>()
+  for (const l of wlinks) if (l.type === 'partner') {
+    const a = unionPartners.get(l.target) || []; a.push(l.source); unionPartners.set(l.target, a)
+  }
+
+  const sim = d3.forceSimulation(work as unknown as d3.SimulationNodeDatum[])
+    .force('link', d3.forceLink(wlinks as unknown as d3.SimulationLinkDatum<d3.SimulationNodeDatum>[])
+      .id((d: d3.SimulationNodeDatum) => (d as unknown as { id: string }).id)
+      .distance((l) => { const t = (l as unknown as { type?: string }).type; return t === 'partner' ? 95 : t === 'parent-child' ? 150 : 220 })
+      .strength((l) => { const t = (l as unknown as { type?: string }).type; return t === 'partner' ? 1 : t === 'parent-child' ? 0.5 : 0.15 }))
+    // Strong, long-range repulsion so nodes spread far apart; collide guarantees the
+    // hard no-overlap constraint (radius = node radius + generous padding).
+    .force('charge', d3.forceManyBody().strength(-1400).distanceMax(2000))
+    .force('collide', d3.forceCollide<d3.SimulationNodeDatum>().radius((d) => (radiusById.get((d as unknown as { id: string }).id) ?? 40) + 30).iterations(4).strength(1))
+    .force('x', d3.forceX(600).strength(0.02))
+    .force('y', d3.forceY(400).strength(0.02))
+    .force('marriage', () => {
+      for (const n of work) {
+        if (n.type !== 'union') continue
+        const ps = (unionPartners.get(n.id) || []).map(id => byId.get(id)).filter(Boolean) as Array<{ x: number; y: number }>
+        if (ps.length === 2) { n.x += ((ps[0].x + ps[1].x) / 2 - n.x) * 0.35; n.y += ((ps[0].y + ps[1].y) / 2 - n.y) * 0.35 }
+      }
+    })
+    .stop()
+
+  for (let i = 0; i < 500; i++) sim.tick()
+
+  const positions: Record<string, { x: number; y: number }> = {}
+  for (const n of work) positions[n.id] = { x: n.x, y: n.y }
+  return positions
+}
+
+// Timeline finisher: keep each node on its birth-year row (strong y anchor = the main
+// time axis) while forceCollide removes overlaps — pushing nodes apart mostly
+// horizontally. x is only loosely anchored to the family-grouped base, so the
+// horizontal axis reads as "roughly placed", never overlapping.
+function relaxTimelinePositions(nodes: SimNode[], base: Record<string, { x: number; y: number }>): Record<string, { x: number; y: number }> {
+  const radiusById = new Map(nodes.map(n => [n.id, getNodeRadius(n)]))
+  const work = nodes.map(n => ({ id: n.id, x: base[n.id]?.x ?? n.x, y: base[n.id]?.y ?? n.y }))
+  const tx = new Map(work.map(n => [n.id, n.x]))
+  const ty = new Map(work.map(n => [n.id, n.y]))
+  const idOf = (d: d3.SimulationNodeDatum) => (d as unknown as { id: string }).id
+  const sim = d3.forceSimulation(work as unknown as d3.SimulationNodeDatum[])
+    .force('collide', d3.forceCollide<d3.SimulationNodeDatum>().radius((d) => (radiusById.get(idOf(d)) ?? 40) + 16).iterations(4).strength(1))
+    .force('y', d3.forceY<d3.SimulationNodeDatum>((d) => ty.get(idOf(d)) ?? 0).strength(0.9))
+    .force('x', d3.forceX<d3.SimulationNodeDatum>((d) => tx.get(idOf(d)) ?? 0).strength(0.05))
+    .stop()
+  for (let i = 0; i < 300; i++) sim.tick()
+  const positions: Record<string, { x: number; y: number }> = {}
+  for (const n of work) positions[n.id] = { x: n.x, y: n.y }
+  return positions
+}
+
 function getPortPositions(d: SimNode): Array<{ x: number; y: number }> {
   if (d.type === 'union') {
     return [{ x: 0, y: -17 }, { x: 0, y: 17 }, { x: 17, y: 0 }, { x: -17, y: 0 }]
@@ -209,63 +278,6 @@ function getPortPositions(d: SimNode): Array<{ x: number; y: number }> {
     default:   // circle, diamond, hexagon, star, shield, seal
       return [{ x: 0, y: -s - 5 }, { x: 0, y: s + 5 }, { x: s + 5, y: 0 }, { x: -s - 5, y: 0 }]
   }
-}
-
-function computeFamilyLayout(
-  nodes: SimNode[],
-  links: SimLink[],
-  centerX = 600,
-): Record<string, { x: number; y: number }> {
-  const pcLinks = links.filter(l => l.type === 'parent-child')
-  const childIds = new Set(pcLinks.map(l => l.target.id))
-  const childrenMap = new Map<string, string[]>()
-  for (const l of pcLinks) {
-    if (!childrenMap.has(l.source.id)) childrenMap.set(l.source.id, [])
-    childrenMap.get(l.source.id)!.push(l.target.id)
-  }
-
-  const genMap = new Map<string, number>()
-  const roots = nodes.filter(n => n.type !== 'union' && !childIds.has(n.id))
-  const queue: Array<{ id: string; gen: number }> = roots.map(r => ({ id: r.id, gen: 0 }))
-  while (queue.length) {
-    const { id, gen } = queue.shift()!
-    if (genMap.has(id)) continue
-    genMap.set(id, gen)
-    for (const cid of (childrenMap.get(id) || [])) queue.push({ id: cid, gen: gen + 1 })
-  }
-  for (const n of nodes) {
-    if (!genMap.has(n.id) && n.type !== 'union') genMap.set(n.id, 0)
-  }
-
-  const genGroups = new Map<number, string[]>()
-  for (const [id, gen] of genMap) {
-    if (!genGroups.has(gen)) genGroups.set(gen, [])
-    genGroups.get(gen)!.push(id)
-  }
-
-  const nodeMap = new Map(nodes.map(n => [n.id, n]))
-  const positions: Record<string, { x: number; y: number }> = {}
-
-  for (const [gen, ids] of genGroups) {
-    const sorted = [...ids].sort((a, b) => (nodeMap.get(a)?.x || 0) - (nodeMap.get(b)?.x || 0))
-    const genY = gen * 160 + 100
-    sorted.forEach((id, i) => {
-      positions[id] = { x: centerX + (i - (sorted.length - 1) / 2) * 150, y: genY }
-    })
-  }
-
-  const partnerLinks = links.filter(l => l.type === 'partner')
-  for (const n of nodes) {
-    if (n.type === 'union') {
-      const partners = partnerLinks.filter(l => l.target.id === n.id)
-      if (partners.length === 2) {
-        const pos1 = positions[partners[0].source.id] || { x: partners[0].source.x, y: partners[0].source.y }
-        const pos2 = positions[partners[1].source.id] || { x: partners[1].source.x, y: partners[1].source.y }
-        positions[n.id] = { x: (pos1.x + pos2.x) / 2, y: (pos1.y + pos2.y) / 2 }
-      }
-    }
-  }
-  return positions
 }
 
 // All node ids in the same connected cluster as startId (edges treated as undirected)
@@ -348,6 +360,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [gridSize, setGridSize] = useState(20)
   const [showGrid, setShowGrid] = useState(true)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -429,16 +442,33 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     },
   }), [dimensions, onAddPerson, computeFit])
 
-  const handleAutoLayout = useCallback(() => {
+  const runAutoLayout = useCallback((mode: LayoutMode) => {
     if (!simulationRef.current) return
-    const positions = computeFamilyLayout(nodesRef.current, linksRef.current)
+    const nodes = nodesRef.current.map(n => ({ id: n.id, type: n.type, gender: n.gender, birth: n.birth, death: n.death, name: n.name }))
+    const links = linksRef.current.map(l => ({ source: l.source.id, target: l.target.id, type: l.type, label: l.label }))
+    const resolved = mode === 'auto' ? pickAutoMode(nodes, links) : mode
+    let positions: Record<string, { x: number; y: number }>
+    if (resolved === 'force') {
+      positions = forceLayoutPositions(nodesRef.current, linksRef.current)
+    } else {
+      positions = computeFamilyLayout(nodes, links, { mode: resolved }).positions
+      // Timeline: keep the year axis (y) but resolve any overlaps via collision.
+      if (resolved === 'timeline') positions = relaxTimelinePositions(nodesRef.current, positions)
+    }
     cbRef.current.onBatchPositionChange(positions)
     for (const n of nodesRef.current) {
       const pos = positions[n.id]
       if (pos) { n.x = pos.x; n.y = pos.y; n.fx = pos.x; n.fy = pos.y }
     }
     simulationRef.current.alpha(0.3).restart()
-  }, [onBatchPositionChange])
+    // Fit the freshly-arranged tree into view.
+    if (svgRef.current && zoomRef.current) {
+      const t = computeFit(dimensions.width, dimensions.height)
+      d3.select(svgRef.current).transition().duration(400).call(zoomRef.current.transform, t)
+    }
+  }, [onBatchPositionChange, computeFit, dimensions])
+
+  const handleAutoLayout = useCallback(() => runAutoLayout(layoutMode), [runAutoLayout, layoutMode])
 
   useEffect(() => {
     const el = containerRef.current
@@ -508,9 +538,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const noteData = persons.filter(p => p.type === 'note')
     const graphPersons = persons.filter(p => p.type !== 'note')
 
+    // Nodes with an explicit saved position are pinned (fx/fy) so the force layout
+    // never re-scatters them — this preserves a computed Auto Layout (and dragged
+    // positions) across re-renders. Only brand-new, unpositioned nodes are left free
+    // for the force simulation to spread out.
     const nodes: SimNode[] = graphPersons.map(p => {
       const s = nodePositionsRef.current.get(p.id)
-      return { ...p, x: s?.x ?? p.x ?? fallX, y: s?.y ?? p.y ?? fallY }
+      const px = s?.x ?? p.x, py = s?.y ?? p.y
+      const hasPos = px != null && py != null
+      return { ...p, x: px ?? fallX, y: py ?? fallY, ...(hasPos ? { fx: px, fy: py } : {}) }
     })
     nodesRef.current = nodes
     const nodeMap = new Map(nodes.map(n => [n.id, n]))
@@ -2000,6 +2036,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           aria-label="Reset Zoom">↺</button>
       </div>
 
+      <div className="absolute top-2 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
+        title="登場人物の総数（メモ・結婚ノードを除く）">
+        <UsersIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
+        <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note').length}</span>
+        <span>人</span>
+      </div>
+
       <div className="absolute top-2 right-2 z-10 flex items-center gap-3 bg-white p-2 rounded shadow">
         <label className="flex items-center gap-1 text-sm text-gray-700 cursor-pointer">
           <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)}
@@ -2014,14 +2057,24 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           <option value={40}>40px</option>
           <option value={50}>50px</option>
         </select>
-        <button onClick={handleAutoLayout}
-          className="px-2 py-1 text-sm rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-          Auto Layout
-        </button>
+        <div className="flex items-center rounded border border-gray-300 overflow-hidden">
+          <button onClick={handleAutoLayout} title="選択したモードで自動整列"
+            className="px-2 py-1 text-sm bg-white text-gray-700 hover:bg-gray-50 border-r border-gray-300">
+            Auto Layout
+          </button>
+          <select value={layoutMode}
+            onChange={e => { const m = e.target.value as LayoutMode; setLayoutMode(m); runAutoLayout(m) }}
+            title="レイアウトモード" className="text-sm px-1 py-1 bg-white text-gray-700 focus:outline-none">
+            <option value="auto">自動</option>
+            <option value="force">関係図(集約)</option>
+            <option value="tidy">系図(構造)</option>
+            <option value="timeline">年表(timeline)</option>
+          </select>
+        </div>
       </div>
 
       <svg ref={svgRef} width={dimensions.width} height={dimensions.height}
-        className="cursor-move relative z-[1]" />
+        className="fc-canvas-svg cursor-move relative z-[1]" />
     </div>
   )
 })
