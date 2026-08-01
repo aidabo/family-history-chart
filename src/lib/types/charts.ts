@@ -14,6 +14,15 @@ export type RelationType =
 
 export type EpisodeType = 'event' | 'article' | 'episode' | 'note'
 
+// Per-field text style override. Any unset field falls back to the node-level
+// defaults (labelColor / labelFontSize / fontFamily / labelBold) set via the dialog.
+export interface TextStyle {
+  color?: string
+  fontSize?: number
+  fontFamily?: string
+  bold?: boolean
+}
+
 // Vertical writing (縦書き) for CJK aesthetics.
 // Chart-level: 'off' (horizontal), 'cjk' (auto — vertical only for Japanese/Chinese text), 'on' (all vertical).
 export type VerticalTextMode = 'off' | 'cjk' | 'on'
@@ -55,6 +64,10 @@ export interface PersonNode {
   labelColor?: string
   labelFontSize?: number
   labelBold?: boolean        // name font weight (default bold)
+  // Per-field style overrides (fall back to the node-level defaults above).
+  nameStyle?: TextStyle
+  titleStyle?: TextStyle
+  descriptionStyle?: TextStyle
   labelRotation?: number     // rotate the name label box (degrees)
   labelScaleX?: number       // affine transform of the name box (negative = flip H)
   labelScaleY?: number       // negative = flip V
@@ -67,6 +80,8 @@ export interface PersonNode {
   labelOffsetY?: number
   labelBgColor?: string
   labelBgShape?: 'rect' | 'pill'
+  periodOffsetX?: number     // free drag offset for the lifespan (period) label, independent of title
+  periodOffsetY?: number
   // Description display
   descriptionOffsetX?: number   // free drag offset from node center
   descriptionOffsetY?: number

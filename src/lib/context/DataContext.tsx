@@ -164,8 +164,10 @@ export function DataProvider({
     }
     const saved = await store.savePage(pageData)
     if (saved) {
-      setCurrentPage(saved)
-      setData({ episodes: [], ...saved.chartProps })
+      // Update page metadata (id/thumbnail/etc.) but DON'T replace `data`: it already
+      // holds the saved state, and re-setting it from the server response would create
+      // new array refs → a full canvas rebuild (all nodes flash) on every Save.
+      setCurrentPage((prev) => ({ ...saved, chartProps: prev?.chartProps ?? saved.chartProps }))
     }
     return saved
   }

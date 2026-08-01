@@ -8,7 +8,7 @@ import { RelationshipTypeDialog } from '@/components/editors/RelationshipTypeDia
 import ChartSettingsDialog from '@/app/ChartSettingsDialog'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
 import { FontSelector } from '@/components/ui/FontSelector'
-import { PersonNode, Relationship } from '@/types/charts'
+import { PersonNode, Relationship, TextStyle } from '@/types/charts'
 import {
   ArrowLeftIcon,
   CloudArrowDownIcon,
@@ -189,13 +189,17 @@ function InlineEditOverlay({
   const wrapRef = useRef<HTMLDivElement>(null)
   const committed = useRef(false)
   const isDesc = req.field === 'description'
+  // Per-field style object (falls back to node-level defaults) — see TextStyle.
+  const styleKey: 'nameStyle' | 'titleStyle' | 'descriptionStyle' =
+    req.field === 'name' ? 'nameStyle' : req.field === 'title' ? 'titleStyle' : 'descriptionStyle'
+  const fStyle = node?.[styleKey]
 
   const [val, setVal] = useState(req.value)
   const [align, setAlign] = useState<TextAlign>(req.align)
-  const [bold, setBold] = useState(node?.labelBold !== false)
-  const [color, setColor] = useState(node?.labelColor || req.color)
-  const [font, setFont] = useState(node?.fontFamily || req.fontFamily)
-  const [size, setSize] = useState(node?.labelFontSize || 13)
+  const [bold, setBold] = useState(fStyle?.bold ?? (node?.labelBold !== false))
+  const [color, setColor] = useState(fStyle?.color ?? node?.labelColor ?? req.color)
+  const [font, setFont] = useState(fStyle?.fontFamily ?? node?.fontFamily ?? req.fontFamily)
+  const [size, setSize] = useState(fStyle?.fontSize ?? node?.labelFontSize ?? 13)
   const [bg, setBg] = useState((isDesc ? node?.descriptionBgColor : node?.labelBgColor) || '')
   const [rot, setRot] = useState((isDesc ? node?.descriptionRotation : node?.labelRotation) || 0)
   const [skew, setSkew] = useState((isDesc ? node?.descriptionSkewX : node?.labelSkewX) || 0)
@@ -215,10 +219,16 @@ function InlineEditOverlay({
     if (!wrapRef.current?.contains(e.relatedTarget as Node)) commit()
   }
 
-  const setSizeBy = (d: number) => { const s = Math.max(8, Math.min(48, size + d)); setSize(s); onSettings({ labelFontSize: s }) }
-  const toggleBold = () => { const b = !bold; setBold(b); onSettings({ labelBold: b }) }
-  const pickColor = (c: string) => { setColor(c); onSettings({ labelColor: c || undefined }) }
-  const pickFont = (f: string) => { setFont(f); onSettings({ fontFamily: f }) }
+  // Style edits write to THIS field's style object (merged), so name/title/description
+  // are styled independently; unset props fall back to the node-level defaults.
+  const writeStyle = (p: Partial<TextStyle>) => {
+    const cur = node?.[styleKey] ?? {}
+    onSettings({ [styleKey]: { ...cur, ...p } })
+  }
+  const setSizeBy = (d: number) => { const s = Math.max(8, Math.min(48, size + d)); setSize(s); writeStyle({ fontSize: s }) }
+  const toggleBold = () => { const b = !bold; setBold(b); writeStyle({ bold: b }) }
+  const pickColor = (c: string) => { setColor(c); writeStyle({ color: c || undefined }) }
+  const pickFont = (f: string) => { setFont(f); writeStyle({ fontFamily: f }) }
   const pickBg = (c: string) => {
     setBg(c)
     onSettings(isDesc
