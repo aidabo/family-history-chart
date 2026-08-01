@@ -444,6 +444,7 @@ export default function FamilyChartEditor({
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [exportMenu, setExportMenu] = useState(false)
   const [settingsZoom, setSettingsZoom] = useState(1)
 
   // Connect mode state
@@ -610,6 +611,18 @@ export default function FamilyChartEditor({
     URL.revokeObjectURL(url)
   }
 
+  const handleExportCsv = async () => {
+    const { graphToCsv } = await import('@/utils/csv')
+    const csv = graphToCsv(persons, relationships)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(currentPage?.title || 'chart').replace(/[^a-z0-9]/gi, '_')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const handleSave = async () => {
     if (isViewMode) return
     setSaving(true)
@@ -666,53 +679,63 @@ export default function FamilyChartEditor({
     setReloading(false)
   }
 
+  // Merge a { persons, relationships } graph into the current chart (shared by JSON + CSV).
+  const mergeGraph = useCallback((persons_: Record<string, unknown>[], rels_: Record<string, unknown>[]) => {
+    // Offset the imported block to the RIGHT of existing nodes, preserving relative layout.
+    const existingXs = persons.map((p) => p.x).filter((v): v is number => typeof v === 'number')
+    const baseX = existingXs.length ? Math.max(...existingXs) + 220 : 120
+    const impXs = persons_
+      .map((p) => (typeof p.x === 'number' ? (p.x as number) : null))
+      .filter((v): v is number => v != null)
+    const impMinX = impXs.length ? Math.min(...impXs) : 0
+    const dx = baseX - impMinX
+
+    const idMap = new Map<string, string>()   // old id / name → new id
+    persons_.forEach((p, i) => {
+      if (!p.name && !p.id) return
+      const x = (typeof p.x === 'number' ? p.x : 200 + (i % 8) * 170) + dx
+      const y = (typeof p.y === 'number' ? p.y : 100 + Math.floor(i / 8) * 170)
+      const node = addPerson({ ...p, x, y, fx: x, fy: y })
+      if (p.id) idMap.set(p.id as string, node.id)
+      if (p.name) idMap.set(p.name as string, node.id)
+    })
+    for (const r of rels_) {
+      const s = idMap.get(r.source as string) || (r.source as string)
+      const t = idMap.get(r.target as string) || (r.target as string)
+      addRelationship({ ...r, source: s, target: t })
+    }
+  }, [persons, addPerson, addRelationship])
+
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
       const text = await file.text()
-      const parsed = JSON.parse(text)
-      // Accept both the exported page shape ({ chartProps: { persons, relationships } })
-      // and a flat shape ({ persons, relationships }). Import MERGES into the current chart.
-      const src = parsed.chartProps ?? parsed
-      const persons_ = Array.isArray(src.persons) ? src.persons : []
-      const rels_ = Array.isArray(src.relationships) ? src.relationships : []
-
-      if (persons_.length === 0 && rels_.length === 0) {
-        alert('インポート対象が見つかりません。persons / relationships を含む JSON を選んでください（docs/import-schema.md 参照）。')
-        return
+      const isCsv = /\.csv$/i.test(file.name) || (!text.trim().startsWith('{') && !text.trim().startsWith('['))
+      if (isCsv) {
+        const { parseCsvToGraph } = await import('@/utils/csv')
+        const { persons: cp, relationships: cr } = parseCsvToGraph(text)
+        if (!cp.length) { alert('CSV にデータが見つかりません（docs/csv-format.md 参照）。'); e.target.value = ''; return }
+        mergeGraph(cp as Record<string, unknown>[], cr as Record<string, unknown>[])
+        alert(`CSV インポート完了: ${cp.filter((p) => p.type !== 'union').length}人 を追加しました。`)
+      } else {
+        const parsed = JSON.parse(text)
+        const src = parsed.chartProps ?? parsed
+        const persons_ = Array.isArray(src.persons) ? src.persons : []
+        const rels_ = Array.isArray(src.relationships) ? src.relationships : []
+        if (persons_.length === 0 && rels_.length === 0) {
+          alert('インポート対象が見つかりません（docs/import-schema.md 参照）。')
+          e.target.value = ''; return
+        }
+        mergeGraph(persons_, rels_)
+        alert(`インポート完了: ${persons_.length}人 / ${rels_.length}関係 を追加しました。`)
       }
-
-      // Offset the imported block so it lands to the RIGHT of existing nodes (no overlap),
-      // while preserving the imported layout's internal relative positions.
-      const existingXs = persons.map((p) => p.x).filter((v): v is number => typeof v === 'number')
-      const baseX = existingXs.length ? Math.max(...existingXs) + 220 : 120
-      const impXs = persons_
-        .map((p: Record<string, unknown>) => (typeof p.x === 'number' ? (p.x as number) : null))
-        .filter((v: number | null): v is number => v != null)
-      const impMinX = impXs.length ? Math.min(...impXs) : 0
-      const dx = baseX - impMinX
-
-      const idMap = new Map<string, string>()   // old id / name → new id
-      persons_.forEach((p: Record<string, unknown>, i: number) => {
-        if (!p.name && !p.id) return
-        const x = (typeof p.x === 'number' ? p.x : 200 + (i % 5) * 180) + dx
-        const y = (typeof p.y === 'number' ? p.y : 100 + Math.floor(i / 5) * 180)
-        const node = addPerson({ ...p, x, y, fx: x, fy: y })
-        if (p.id) idMap.set(p.id as string, node.id)
-        if (p.name) idMap.set(p.name as string, node.id)
-      })
-      for (const r of rels_) {
-        const s = idMap.get(r.source) || r.source
-        const t = idMap.get(r.target) || r.target
-        addRelationship({ ...r, source: s, target: t })
-      }
-      alert(`インポート完了: ${persons_.length}人 / ${rels_.length}関係 を追加しました。`)
-    } catch {
-      alert('Import failed: invalid JSON. See docs/import-schema.md for the format.')
+    } catch (err) {
+      console.error('import error:', err)
+      alert('インポート失敗：ファイル形式を確認してください（JSON: docs/import-schema.md / CSV: docs/csv-format.md）。')
     }
     e.target.value = ''
-  }, [addPerson, addRelationship])
+  }, [mergeGraph])
 
   const handlePdfExport = useCallback(() => {
     const svgEl = containerRef.current?.querySelector('svg') as SVGSVGElement | null
@@ -917,18 +940,31 @@ export default function FamilyChartEditor({
             <EyeIcon className="h-4 w-4" />
             <span className="fc-tb-label">Preview</span>
           </button>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-            title="Export as JSON"
-          >
-            <ArrowDownTrayIcon className="h-4 w-4" />
-            <span className="fc-tb-label">Export</span>
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportMenu((o) => !o)}
+              className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
+              title="エクスポート（JSON / CSV）"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              <span className="fc-tb-label">Export</span>
+            </button>
+            {exportMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setExportMenu(false)} />
+                <div className="absolute right-0 top-full z-40 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                  <button className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => { setExportMenu(false); handleExport() }}>JSON（図全体）</button>
+                  <button className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100"
+                    onClick={() => { setExportMenu(false); handleExportCsv() }}>CSV（人物・関係）</button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={() => importInputRef.current?.click()}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-            title="Import JSON (see docs/import-schema.md)"
+            title="インポート（JSON / CSV）"
           >
             <ArrowUpTrayIcon className="h-4 w-4" />
             <span className="fc-tb-label">Import</span>
@@ -971,7 +1007,7 @@ export default function FamilyChartEditor({
           <input
             ref={importInputRef}
             type="file"
-            accept=".json,application/json"
+            accept=".json,application/json,.csv,text/csv"
             className="hidden"
             onChange={handleImport}
           />
