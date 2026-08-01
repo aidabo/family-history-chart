@@ -5,6 +5,15 @@ import type { PersonNode, Relationship, VerticalTextMode } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 
+// Build a combined affine transform for a rotatable/deformable label box.
+function boxTransform(rot?: number, sx?: number, sy?: number, skew?: number): string | null {
+  const parts: string[] = []
+  if (rot) parts.push(`rotate(${rot})`)
+  if ((sx != null && sx !== 1) || (sy != null && sy !== 1)) parts.push(`scale(${sx ?? 1},${sy ?? 1})`)
+  if (skew) parts.push(`skewX(${skew})`)
+  return parts.length ? parts.join(' ') : null
+}
+
 interface DynastyNetworkProps {
   persons: PersonNode[]
   relationships: Relationship[]
@@ -24,6 +33,20 @@ interface DynastyNetworkProps {
   backgroundImage?: string     // background image layered over the color
   backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
   verticalText?: VerticalTextMode  // chart-wide vertical writing mode (default 'off')
+  editable?: boolean               // enable in-place (double-click) editing of name/description
+  onInlineEdit?: (req: InlineEditRequest) => void  // double-click → host renders an overlay editor
+}
+
+export interface InlineEditRequest {
+  nodeId: string
+  field: 'name' | 'title' | 'description'
+  value: string
+  multiline: boolean
+  left: number; top: number; width: number; height: number  // px, relative to the canvas container
+  fontSize: number
+  color: string
+  fontFamily: string
+  align: 'left' | 'center' | 'right'   // current text alignment (editable in the overlay toolbar)
 }
 
 type SimNode = PersonNode & {
@@ -256,6 +279,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   backgroundImage,
   backgroundOpacity,
   verticalText,
+  editable,
+  onInlineEdit,
 }: DynastyNetworkProps, ref) {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -268,6 +293,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const connectModeRef = useRef({ active: false, sourceId: '' })
   const currentTransform = useRef(d3.zoomIdentity)
   const initialZoomApplied = useRef(false)
+  // Double-tap detection state must survive effect re-runs (a node click re-runs the
+  // effect via selectedNodeId, which would otherwise reset an effect-local variable).
+  const lastTapRef = useRef<{ id: string; t: number } | null>(null)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [gridSize, setGridSize] = useState(20)
@@ -383,7 +412,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     nodePositionsRef.current = pos
   }, [persons])
 
-  useEffect(() => () => { simulationRef.current?.stop() }, [])
+  useEffect(() => () => {
+    simulationRef.current?.stop()
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+  }, [])
 
   // ── main D3 effect ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -573,6 +605,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       d.type === 'ally'         ? '#0ea5e9' :
       d.type === 'rival'        ? '#f43f5e' :
       d.type === 'mentor'       ? '#d97706' :
+      d.type === 'master'       ? '#c2410c' :
+      d.type === 'disciple'     ? '#ca8a04' :
+      d.type === 'comrade'      ? '#0d9488' :
       d.type === 'enemy'        ? '#dc2626' :
       d.type === 'friend'       ? '#22c55e' : '#94a3b8'
     )
@@ -610,6 +645,14 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Node drag — filter overridden so Ctrl/Cmd+click passes through (d3 ignores it by default)
     // Shift+drag moves the whole connected cluster (relative positions preserved).
     let cluster: { ids: string[]; orig: Map<string, { x: number; y: number }> } | null = null
+    // Manual double-tap detection (native dblclick is swallowed by d3.drag unless Ctrl
+    // is held; manual detection works with a plain double-click AND mobile double-tap).
+    // lastTap uses a ref (see above) so a node click re-running the effect doesn't reset it.
+    let lastTapDesc: { id: string; t: number } | null = null
+    let descMoved = false
+    let lastTapLbl: { id: string; t: number } | null = null
+    let lblMoved = false
+    const DBL_MS = 300
     const drag = d3.drag<SVGGElement, SimNode>()
       .filter((event) => !event.button)
       .on('start', function(event, d) {
@@ -668,7 +711,22 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         } else {
           const sx = se?.clientX ?? 0
           const sy = se?.clientY ?? 0
-          onNodeClick(d, sx, sy)
+          const now = Date.now()
+          const lt = lastTapRef.current
+          const canEdit = !!editable && !!onInlineEdit && d.type !== 'union'
+          if (canEdit && lt && lt.id === d.id && now - lt.t < DBL_MS) {
+            // 2nd tap → edit name; cancel the deferred single-click (which would select+rebuild).
+            if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+            lastTapRef.current = null
+            openEditFromEl((this as SVGGElement).querySelector('.node-inline-label'), d, 'name')
+          } else if (canEdit) {
+            // 1st tap → defer selection so a quick 2nd tap can cancel it (no rebuild between taps).
+            lastTapRef.current = { id: d.id, t: now }
+            if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+            clickTimerRef.current = setTimeout(() => { clickTimerRef.current = null; onNodeClick(d, sx, sy) }, DBL_MS)
+          } else {
+            onNodeClick(d, sx, sy)
+          }
         }
         draggingRef.current = false
       })
@@ -699,11 +757,40 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       sel.style('writing-mode', 'vertical-rl').style('text-orientation', 'mixed')
     }
 
+    // Open the React overlay editor for a node's name/description. anchorEl gives the
+    // on-screen box to position the editor over. Attached at the interactive GROUP
+    // level (node <g> / desc <g>) so double-click reliably fires regardless of the
+    // label's pointer-events. The editor lives in React so it survives D3 re-renders.
+    const openEditFromEl = (anchorEl: Element | null, d: SimNode, field: 'name' | 'title' | 'description') => {
+      if (!editable || !onInlineEdit) return
+      const svgEl = svgRef.current
+      if (!svgEl) return
+      const cRect = svgEl.getBoundingClientRect()
+      const eRect = (anchorEl ?? svgEl).getBoundingClientRect()
+      const k = currentTransform.current.k || 1
+      const multiline = field === 'description'
+      onInlineEdit({
+        nodeId: d.id, field,
+        value: (field === 'name' ? d.name : field === 'title' ? d.title : d.description) || '',
+        multiline,
+        left: eRect.left - cRect.left,
+        top: eRect.top - cRect.top,
+        width: Math.max(eRect.width, multiline ? 180 : 100),
+        height: Math.max(eRect.height, multiline ? 64 : 24),
+        fontSize: (d.labelFontSize || 13) * (multiline ? 0.8 : 1) * k,
+        color: d.labelColor || (field === 'name' ? '#333333' : '#334155'),
+        fontFamily: d.fontFamily || 'sans-serif',
+        align: d.descriptionAlign ?? 'center',
+      })
+    }
+
     const drawCenteredName = (g: d3.Selection<SVGGElement, unknown, null, undefined>, d: SimNode, halfW: number) => {
       const fsz = d.labelFontSize || 12
       const weight = d.labelBold === false ? 'normal' : 'bold'
       const vert = resolveVertical(d, d.name)
       const nameG = g.append('g').attr('class', 'node-inline-label').attr('pointer-events', 'none')
+      const nameTf = boxTransform(d.labelRotation, d.labelScaleX, d.labelScaleY, d.labelSkewX)
+      if (nameTf) nameG.attr('transform', nameTf)
       // Background is transparent by default; a band is drawn only when Label Background is set.
       if (d.labelBgShape && d.labelBgColor) {
         nameG.append('rect')
@@ -751,6 +838,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           if (w) t.attr('font-weight', w)
           applyVertical(t)
           col++
+          return t
         }
         addCol(d.name || 'Unknown', fs, weight)
         if (d.title) addCol(d.title, fs * 0.8)
@@ -1173,9 +1261,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const lblDrag = d3.drag<SVGGElement, SimNode>()
       .on('start', function(event) {
         event.sourceEvent.stopPropagation()
+        lblMoved = false
         d3.select(this).style('cursor', 'grabbing')
       })
       .on('drag', function(event, d) {
+        lblMoved = true
         const off = lblOffMap.get(d.id) ?? { x: 0, y: 0 }
         const newOff = { x: off.x + event.dx, y: off.y + event.dy }
         lblOffMap.set(d.id, newOff)
@@ -1185,17 +1275,31 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       })
       .on('end', function(_, d) {
         d3.select(this).style('cursor', 'grab')
-        const off = lblOffMap.get(d.id)!
-        onNodeUpdate?.(d.id, { labelOffsetX: off.x, labelOffsetY: off.y })
+        if (lblMoved) {
+          const off = lblOffMap.get(d.id)!
+          onNodeUpdate?.(d.id, { labelOffsetX: off.x, labelOffsetY: off.y })
+        } else if (editable && onInlineEdit) {
+          // Click (no drag): manual double-tap → edit the title.
+          const now = Date.now()
+          if (lastTapLbl && lastTapLbl.id === d.id && now - lastTapLbl.t < DBL_MS) {
+            lastTapLbl = null
+            const el = (this as SVGGElement).querySelector('text') || (this as SVGGElement)
+            openEditFromEl(el as Element, d, 'title')
+          } else {
+            lastTapLbl = { id: d.id, t: now }
+          }
+        }
       })
 
     // ── Description drag ─────────────────────────────────────────────────────────
     const descDrag = d3.drag<SVGGElement, SimNode>()
       .on('start', function(event) {
         event.sourceEvent.stopPropagation()
+        descMoved = false
         d3.select(this).style('cursor', 'grabbing')
       })
       .on('drag', function(event, d) {
+        descMoved = true
         const off = descOffMap.get(d.id) ?? { x: 0, y: 0 }
         const newOff = { x: off.x + event.dx, y: off.y + event.dy }
         descOffMap.set(d.id, newOff)
@@ -1204,8 +1308,19 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       })
       .on('end', function(_, d) {
         d3.select(this).style('cursor', 'grab')
-        const off = descOffMap.get(d.id)!
-        onNodeUpdate?.(d.id, { descriptionOffsetX: off.x, descriptionOffsetY: off.y })
+        if (descMoved) {
+          const off = descOffMap.get(d.id)!
+          onNodeUpdate?.(d.id, { descriptionOffsetX: off.x, descriptionOffsetY: off.y })
+        } else if (editable && onInlineEdit) {
+          // Click (no drag): manual double-tap → in-place edit (mobile-friendly, no Ctrl).
+          const now = Date.now()
+          if (lastTapDesc && lastTapDesc.id === d.id && now - lastTapDesc.t < DBL_MS) {
+            lastTapDesc = null
+            openEditFromEl((this as SVGGElement).querySelector('foreignObject'), d, 'description')
+          } else {
+            lastTapDesc = { id: d.id, t: now }
+          }
+        }
       })
 
     // Size the description box + frame to the ACTUAL text (no blank rows/columns).
@@ -1299,7 +1414,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const UNION_LABEL: Record<string, string> = {
           'marriage': '結婚', 'remarriage': '再婚', 'sibling': '兄弟姉妹',
           'parent-child': '親子', 'succession': '継承', 'friend': '親友',
-          'ally': '同盟', 'mentor': '師弟', 'rival': '対立', 'enemy': '敵対', 'custom': '',
+          'ally': '同盟', 'mentor': '師弟', 'master': '師匠', 'disciple': '弟子',
+          'comrade': '戦友', 'rival': '対立', 'enemy': '敵対', 'custom': '',
         }
         const utype = UNION_LABEL[d.marriage?.type ?? 'marriage'] ?? '結婚'
         txt.append('tspan').text(d.marriage?.label || utype).attr('x', 0).attr('dy', 0)
@@ -1409,38 +1525,45 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const fs = d.labelFontSize || 12
       const tc = d.labelColor || '#334155'
       const vDesc = resolveVertical(d, d.description)
+      // Inner group carries the rotation so the box + text rotate as a whole, while
+      // desc-g keeps the (drag) position. fitDescBox selects descendants, so it still works.
+      const inner = descG.append('g').attr('class', 'desc-inner')
+      const innerTf = boxTransform(d.descriptionRotation, d.descriptionScaleX, d.descriptionScaleY, d.descriptionSkewX)
+      if (innerTf) inner.attr('transform', innerTf)
 
       if (d.descriptionBgShape && d.descriptionBgColor) {
-        descG.append('rect').attr('class', 'desc-bg-rect')
+        inner.append('rect').attr('class', 'desc-bg-rect')
           .attr('rx', d.descriptionBgShape === 'pill' ? 999 : 4)
           .attr('ry', d.descriptionBgShape === 'pill' ? 999 : 4)
           .attr('fill', d.descriptionBgColor).attr('opacity', 0.85)
       }
       // Optional frame (border), tight to the text (sized in fitDescBox).
       if (d.descriptionBorder) {
-        descG.append('rect').attr('class', 'desc-border-rect')
+        inner.append('rect').attr('class', 'desc-border-rect')
           .attr('rx', d.descriptionBgShape === 'pill' ? 999 : 4)
           .attr('ry', d.descriptionBgShape === 'pill' ? 999 : 4)
           .attr('fill', 'none').attr('stroke', d.descriptionBgColor || '#94a3b8').attr('stroke-width', 1)
       }
 
       // foreignObject is sized by fitDescBox (below + each tick) to fit the text.
-      const descDiv = descG.append('foreignObject')
+      const descDiv = inner.append('foreignObject')
         .attr('x', 0).attr('y', 0).attr('width', 10).attr('height', 10)
         .append('xhtml:div')
         .style('color', tc).style('font-size', `${fs * 0.8}px`).style('font-family', d.fontFamily || 'sans-serif')
-        .style('box-sizing', 'border-box').style('word-break', 'break-word').style('user-select', 'none')
+        .style('box-sizing', 'border-box').style('word-break', 'break-word')
+        .style('white-space', 'pre-wrap').style('user-select', 'none')
+      const align = d.descriptionAlign ?? 'center'
       if (vDesc) {
         descDiv.style('writing-mode', 'vertical-rl').style('text-orientation', 'mixed')
-          .style('height', '100%').style('line-height', '1.6').style('text-align', 'start')
+          .style('height', '100%').style('line-height', '1.6').style('text-align', align)
       } else {
-        descDiv.style('text-align', 'center').style('line-height', '1.2')
+        descDiv.style('text-align', align).style('line-height', '1.2')
       }
       descDiv.text(d.description!)
 
       // Resize handle (position/orientation set by fitDescBox: right edge = horizontal
       // width, bottom edge = vertical height). Drag to resize directly on-canvas.
-      descG.append('rect').attr('class', 'desc-resize')
+      inner.append('rect').attr('class', 'desc-resize')
         .attr('width', 8).attr('height', 8).attr('rx', 2)
         .attr('fill', '#3b82f6').attr('opacity', 0.55)
         .call(descResizeDrag as any)
@@ -1457,6 +1580,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       'ally':         '同盟',
       'rival':        '対立',
       'mentor':       '師弟',
+      'master':       '師匠',
+      'disciple':     '弟子',
+      'comrade':      '戦友',
       'enemy':        '敵対',
       'friend':       '親友',
     }
@@ -1594,7 +1720,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
     onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange,
-    onBatchPositionChange, onNodeUpdate, computeFit, initialTransform, background, verticalText])
+    onBatchPositionChange, onNodeUpdate, computeFit, initialTransform, background, verticalText, editable, onInlineEdit])
 
   // Update selection rings without full redraw
   useEffect(() => {

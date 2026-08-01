@@ -10,6 +10,7 @@ export type NodeShape =
 export type RelationType =
   | 'parent-child' | 'marriage' | 'remarriage' | 'partner' | 'sibling'
   | 'succession' | 'ally' | 'rival' | 'mentor' | 'enemy' | 'friend' | 'custom'
+  | 'master' | 'disciple' | 'comrade'
 
 export type EpisodeType = 'event' | 'article' | 'episode' | 'note'
 
@@ -54,6 +55,10 @@ export interface PersonNode {
   labelColor?: string
   labelFontSize?: number
   labelBold?: boolean        // name font weight (default bold)
+  labelRotation?: number     // rotate the name label box (degrees)
+  labelScaleX?: number       // affine transform of the name box (negative = flip H)
+  labelScaleY?: number       // negative = flip V
+  labelSkewX?: number        // skew (degrees)
   vertical?: 'on' | 'off'    // per-node vertical-writing override (undefined = inherit chart mode)
   fontFamily?: string
   // Label display
@@ -69,6 +74,11 @@ export interface PersonNode {
   descriptionBgColor?: string
   descriptionBgShape?: 'rect' | 'pill'
   descriptionBorder?: boolean   // show a frame/border around the description box
+  descriptionAlign?: 'left' | 'center' | 'right'  // text alignment (default center)
+  descriptionRotation?: number   // rotate the description box (degrees)
+  descriptionScaleX?: number     // affine transform of the description box (negative = flip H)
+  descriptionScaleY?: number     // negative = flip V
+  descriptionSkewX?: number      // skew (degrees)
   // Band-specific (dynasty era)
   bandWidth?: number
   bandHeight?: number

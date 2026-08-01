@@ -20,6 +20,9 @@ const TYPE_BADGE: Record<string, string> = {
   'friend':       'bg-emerald-100 text-emerald-700',
   'ally':         'bg-sky-100 text-sky-700',
   'mentor':       'bg-orange-100 text-orange-700',
+  'master':       'bg-orange-100 text-orange-800',
+  'disciple':     'bg-yellow-100 text-yellow-700',
+  'comrade':      'bg-teal-100 text-teal-700',
   'rival':        'bg-rose-100 text-rose-700',
   'enemy':        'bg-red-100 text-red-700',
   'custom':       'bg-gray-100 text-gray-600',
@@ -35,6 +38,9 @@ const TYPE_LABEL: Record<string, string> = {
   'friend':       '親友',
   'ally':         '同盟',
   'mentor':       '師弟',
+  'master':       '師匠',
+  'disciple':     '弟子',
+  'comrade':      '戦友',
   'rival':        '対立',
   'enemy':        '敵対',
   'custom':       'Cus',
@@ -44,6 +50,7 @@ const TYPE_LABEL: Record<string, string> = {
 const REL_WORD: Record<string, string> = {
   'marriage': '結婚', 'remarriage': '再婚', 'sibling': '兄弟姉妹', 'succession': '継承',
   'friend': '親友', 'ally': '同盟', 'mentor': '師弟', 'rival': '対立', 'enemy': '敵対',
+  'master': '師匠', 'disciple': '弟子', 'comrade': '戦友',
   'parent-child': '親子', 'custom': '関係', 'partner': 'パートナー',
 }
 
@@ -83,6 +90,9 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
       case 'friend':       text = `親友: ${otherName}`; break
       case 'ally':         text = `同盟: ${otherName}`; break
       case 'mentor':       text = r.source === node.id ? `師: ${otherName}` : `弟子: ${otherName}`; break
+      case 'master':       text = r.source === node.id ? `弟子: ${otherName}` : `師匠: ${otherName}`; break
+      case 'disciple':     text = r.source === node.id ? `師匠: ${otherName}` : `弟子: ${otherName}`; break
+      case 'comrade':      text = `戦友: ${otherName}`; break
       case 'rival':        text = `対立: ${otherName}`; break
       case 'enemy':        text = `敵対: ${otherName}`; break
       default:             text = `${r.label ?? r.type}: ${otherName}`

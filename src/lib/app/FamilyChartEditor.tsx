@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useDataContext } from '@/context/DataContext'
-import DynastyNetwork, { DynastyNetworkHandle } from '@/components/canvas/DynastyNetwork'
+import DynastyNetwork, { DynastyNetworkHandle, InlineEditRequest } from '@/components/canvas/DynastyNetwork'
 import { NodeCard } from '@/components/canvas/NodeCard'
 import { EdgeCard } from '@/components/editors/EdgeCard'
 import { UnionCard } from '@/components/editors/UnionCard'
 import { RelationshipTypeDialog } from '@/components/editors/RelationshipTypeDialog'
 import ChartSettingsDialog from '@/app/ChartSettingsDialog'
+import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
+import { FontSelector } from '@/components/ui/FontSelector'
 import { PersonNode, Relationship } from '@/types/charts'
 import {
   ArrowLeftIcon,
@@ -19,6 +21,9 @@ import {
   ArrowUpTrayIcon,
   PrinterIcon,
   Cog6ToothIcon,
+  Bars3BottomLeftIcon,
+  Bars3Icon,
+  Bars3BottomRightIcon,
 } from '@heroicons/react/24/outline'
 
 // Generate a PNG thumbnail blob from a chart SVG element.
@@ -163,6 +168,161 @@ async function generateThumbnailBlob(
   })
 }
 
+// HTML overlay editor for in-place (double-click) name/description editing. Lives in
+// React (not the D3 SVG) so it survives canvas re-renders. Positioned in px over the
+// canvas container using the rect the canvas computed for the double-clicked label.
+type TextAlign = 'left' | 'center' | 'right'
+
+// Shared in-place text editor with a floating toolbar (font size / bold / color /
+// font family / background / alignment / rotation). Style changes persist immediately
+// via onSettings; the text value commits via onCommit (Enter / focus leaving the editor).
+function InlineEditOverlay({
+  req, node, onCommit, onSettings, onCancel,
+}: {
+  req: InlineEditRequest
+  node?: PersonNode
+  onCommit: (value: string) => void
+  onSettings: (patch: Partial<PersonNode>) => void
+  onCancel: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const committed = useRef(false)
+  const isDesc = req.field === 'description'
+
+  const [val, setVal] = useState(req.value)
+  const [align, setAlign] = useState<TextAlign>(req.align)
+  const [bold, setBold] = useState(node?.labelBold !== false)
+  const [color, setColor] = useState(node?.labelColor || req.color)
+  const [font, setFont] = useState(node?.fontFamily || req.fontFamily)
+  const [size, setSize] = useState(node?.labelFontSize || 13)
+  const [bg, setBg] = useState((isDesc ? node?.descriptionBgColor : node?.labelBgColor) || '')
+  const [rot, setRot] = useState((isDesc ? node?.descriptionRotation : node?.labelRotation) || 0)
+  const [skew, setSkew] = useState((isDesc ? node?.descriptionSkewX : node?.labelSkewX) || 0)
+  const [scaleX, setScaleX] = useState((isDesc ? node?.descriptionScaleX : node?.labelScaleX) ?? 1)
+  const [scaleY, setScaleY] = useState((isDesc ? node?.descriptionScaleY : node?.labelScaleY) ?? 1)
+  const [picker, setPicker] = useState<null | 'text' | 'bg' | 'deform'>(null)
+
+  useEffect(() => { const el = inputRef.current; if (el) { el.focus(); el.select?.() } }, [])
+
+  const commit = () => { if (committed.current) return; committed.current = true; onCommit(val) }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); committed.current = true; onCancel() }
+    else if (e.key === 'Enter' && (!isDesc || e.ctrlKey || e.metaKey)) { e.preventDefault(); commit() }
+  }
+  // Commit only when focus leaves the WHOLE editor (input + toolbar + color popovers).
+  const onWrapBlur = (e: React.FocusEvent) => {
+    if (!wrapRef.current?.contains(e.relatedTarget as Node)) commit()
+  }
+
+  const setSizeBy = (d: number) => { const s = Math.max(8, Math.min(48, size + d)); setSize(s); onSettings({ labelFontSize: s }) }
+  const toggleBold = () => { const b = !bold; setBold(b); onSettings({ labelBold: b }) }
+  const pickColor = (c: string) => { setColor(c); onSettings({ labelColor: c || undefined }) }
+  const pickFont = (f: string) => { setFont(f); onSettings({ fontFamily: f }) }
+  const pickBg = (c: string) => {
+    setBg(c)
+    onSettings(isDesc
+      ? { descriptionBgColor: c || undefined, descriptionBgShape: c ? 'rect' : undefined }
+      : { labelBgColor: c || undefined, labelBgShape: c ? 'rect' : undefined })
+  }
+  const persistTf = (r: number, sx: number, sy: number, sk: number) => {
+    onSettings(isDesc
+      ? { descriptionRotation: r, descriptionScaleX: sx, descriptionScaleY: sy, descriptionSkewX: sk }
+      : { labelRotation: r, labelScaleX: sx, labelScaleY: sy, labelSkewX: sk })
+  }
+  const setRotation = (r: number) => { setRot(r); persistTf(r, scaleX, scaleY, skew) }
+  const setSkewV = (v: number) => { setSkew(v); persistTf(rot, scaleX, scaleY, v) }
+  const setScaleXV = (mag: number) => { const s = (scaleX < 0 ? -1 : 1) * mag; setScaleX(s); persistTf(rot, s, scaleY, skew) }
+  const setScaleYV = (mag: number) => { const s = (scaleY < 0 ? -1 : 1) * mag; setScaleY(s); persistTf(rot, scaleX, s, skew) }
+  const flipH = () => { const s = -scaleX; setScaleX(s); persistTf(rot, s, scaleY, skew) }
+  const flipV = () => { const s = -scaleY; setScaleY(s); persistTf(rot, scaleX, s, skew) }
+  const resetTf = () => { setRot(0); setSkew(0); setScaleX(1); setScaleY(1); persistTf(0, 1, 1, 0) }
+  const setAlignment = (a: TextAlign) => { setAlign(a); onSettings({ descriptionAlign: a }) }
+
+  const inputStyle: React.CSSProperties = {
+    position: 'absolute', left: req.left, top: req.top, width: req.width, height: req.height,
+    fontSize: req.fontSize, color, fontFamily: font, fontWeight: bold ? 700 : 400,
+    textAlign: align, background: bg || '#ffffff',
+    border: '1px solid #3b82f6', borderRadius: 3, padding: '1px 3px', outline: 'none', resize: 'none', zIndex: 50,
+  }
+  const tbTop = Math.max(0, req.top - 40)
+  const btn = (active: boolean, onClick: () => void, title: string, children: React.ReactNode) => (
+    <button type="button" title={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}
+      className={`flex h-7 min-w-7 items-center justify-center rounded px-1 text-sm ${
+        active ? 'bg-blue-500 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+      {children}
+    </button>
+  )
+
+  return (
+    <div ref={wrapRef} onBlur={onWrapBlur}>
+      {/* Floating toolbar */}
+      <div className="absolute z-[51] flex items-center gap-0.5 rounded-md border border-gray-200 bg-white px-1 py-0.5 shadow-lg"
+        style={{ left: req.left, top: tbTop }}>
+        {btn(false, () => setSizeBy(-1), 'フォント小', <span>A−</span>)}
+        <span className="w-5 text-center text-xs text-gray-600">{size}</span>
+        {btn(false, () => setSizeBy(1), 'フォント大', <span className="font-bold">A+</span>)}
+        {btn(bold, toggleBold, '太字', <span className="font-bold">B</span>)}
+        <button type="button" title="文字色" onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setPicker(picker === 'text' ? null : 'text')}
+          className="flex h-7 w-7 items-center justify-center rounded hover:bg-gray-100">
+          <span className="font-bold underline" style={{ color: color || '#333' }}>A</span>
+        </button>
+        <button type="button" title="背景色" onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setPicker(picker === 'bg' ? null : 'bg')}
+          className="h-6 w-6 rounded border border-gray-300" style={{ background: bg || '#fff' }} />
+        <div className="w-28"><FontSelector value={font} onChange={pickFont} /></div>
+        {isDesc && <>
+          {btn(align === 'left', () => setAlignment('left'), '左揃え', <Bars3BottomLeftIcon className="h-4 w-4" />)}
+          {btn(align === 'center', () => setAlignment('center'), '中央', <Bars3Icon className="h-4 w-4" />)}
+          {btn(align === 'right', () => setAlignment('right'), '右揃え', <Bars3BottomRightIcon className="h-4 w-4" />)}
+        </>}
+        {btn(picker === 'deform', () => setPicker(picker === 'deform' ? null : 'deform'), '変形（回転・傾き・伸縮・反転）',
+          <span className="text-xs">変形</span>)}
+      </div>
+
+      {/* Color popovers */}
+      {picker === 'text' && (
+        <div className="absolute z-[52]" style={{ left: req.left, top: tbTop + 34 }}>
+          <ColorPickerPopover value={color} onChange={pickColor} onClose={() => setPicker(null)} />
+        </div>
+      )}
+      {picker === 'bg' && (
+        <div className="absolute z-[52]" style={{ left: req.left, top: tbTop + 34 }}>
+          <ColorPickerPopover value={bg} onChange={pickBg} onClose={() => setPicker(null)} />
+        </div>
+      )}
+      {picker === 'deform' && (
+        <div className="absolute z-[52] w-56 rounded-lg border border-gray-300 bg-white p-3 shadow-xl"
+          style={{ left: req.left, top: tbTop + 34 }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-600">変形</span>
+            <button type="button" onClick={() => setPicker(null)} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100" title="閉じる">×</button>
+          </div>
+          <label className="text-xs text-gray-500">回転 {rot}°</label>
+          <input type="range" min={-180} max={180} step={5} value={rot} onChange={(e) => setRotation(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
+          <label className="text-xs text-gray-500">傾き {skew}°</label>
+          <input type="range" min={-45} max={45} step={1} value={skew} onChange={(e) => setSkewV(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
+          <label className="text-xs text-gray-500">横比 {Math.abs(scaleX).toFixed(1)}×</label>
+          <input type="range" min={0.5} max={2} step={0.1} value={Math.abs(scaleX)} onChange={(e) => setScaleXV(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
+          <label className="text-xs text-gray-500">縦比 {Math.abs(scaleY).toFixed(1)}×</label>
+          <input type="range" min={0.5} max={2} step={0.1} value={Math.abs(scaleY)} onChange={(e) => setScaleYV(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
+          <div className="flex gap-2">
+            <button type="button" onClick={flipH} className={`flex-1 rounded border px-2 py-1 text-xs ${scaleX < 0 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>左右反転</button>
+            <button type="button" onClick={flipV} className={`flex-1 rounded border px-2 py-1 text-xs ${scaleY < 0 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>上下反転</button>
+          </div>
+          <button type="button" onClick={resetTf} className="mt-2 w-full rounded border border-gray-300 py-1 text-xs text-gray-600 hover:bg-gray-50">変形をリセット</button>
+        </div>
+      )}
+
+      {/* Editable field */}
+      {isDesc
+        ? <textarea ref={inputRef} value={val} style={inputStyle} onKeyDown={onKeyDown} onChange={(e) => setVal(e.target.value)} />
+        : <input ref={inputRef} value={val} style={inputStyle} onKeyDown={onKeyDown} onChange={(e) => setVal(e.target.value)} />}
+    </div>
+  )
+}
+
 export interface FamilyChartEditorProps {
   id: string
   mode?: 'edit' | 'view'
@@ -225,6 +385,7 @@ export default function FamilyChartEditor({
 
   const [nodeCardPos, setNodeCardPos] = useState({ x: 200, y: 100 })
   const [edgeCardPos, setEdgeCardPos] = useState({ x: 400, y: 200 })
+  const [inlineEdit, setInlineEdit] = useState<InlineEditRequest | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -746,6 +907,7 @@ export default function FamilyChartEditor({
           backgroundImage={backgroundImage}
           backgroundOpacity={backgroundOpacity}
           verticalText={verticalText}
+          editable={!isViewMode}
           persons={persons}
           relationships={relationships}
           selectedNodeId={selectedNode?.id ?? null}
@@ -758,8 +920,33 @@ export default function FamilyChartEditor({
           onPositionChange={updatePersonPosition}
           onBatchPositionChange={updatePersonsBatch}
           onNodeUpdate={updatePerson}
+          onInlineEdit={(req) => {
+            // Close the floating cards so the in-place editor is the only focused UI.
+            setSelectedNode(null)
+            setSelectedRelationship(null)
+            setInlineEdit(req)
+          }}
           connectMode={connectState.active}
         />
+
+        {/* In-place (double-click) editor overlay — React-owned so it survives canvas re-renders */}
+        {inlineEdit && (
+          <>
+            {/* Transparent backdrop: catches the "click outside" so it blurs the field
+                (→ commit) WITHOUT reaching the canvas (which would pan/zoom the view). */}
+            <div className="absolute inset-0 z-40" />
+            <InlineEditOverlay
+              req={inlineEdit}
+              node={persons.find((p) => p.id === inlineEdit.nodeId)}
+              onCommit={(v) => {
+                if (v !== inlineEdit.value) updatePerson(inlineEdit.nodeId, { [inlineEdit.field]: v })
+                setInlineEdit(null)
+              }}
+              onSettings={(patch) => updatePerson(inlineEdit.nodeId, patch)}
+              onCancel={() => setInlineEdit(null)}
+            />
+          </>
+        )}
 
         {/* Connect mode overlay */}
         {connectState.active && (
