@@ -4,3 +4,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Toolbar label: icon-only on mobile, icon+label on desktop. A dedicated class
+   (instead of `hidden md:inline`) so a host stylesheet's own `.hidden` loaded after
+   this file can't override the responsive rule. */
+.fc-tb-label { display: none; }
+@media (min-width: 768px) { .fc-tb-label { display: inline; } }

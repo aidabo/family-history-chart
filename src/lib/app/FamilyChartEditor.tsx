@@ -391,13 +391,14 @@ export default function FamilyChartEditor({
     dpi,
     setDpi,
     thumbnailDpi,
+    t,
   } = useDataContext()
 
   const [nodeCardPos, setNodeCardPos] = useState({ x: 200, y: 100 })
   const [edgeCardPos, setEdgeCardPos] = useState({ x: 400, y: 200 })
   const [inlineEdit, setInlineEdit] = useState<InlineEditRequest | null>(null)
   const [saving, setSaving] = useState(false)
-  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [saveStatus, setSaveStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsZoom, setSettingsZoom] = useState(1)
 
@@ -587,9 +588,11 @@ export default function FamilyChartEditor({
       ...(vp ? { viewport: vp } : {}),
       ...(dpi !== undefined ? { dpi } : {}),
     })
-    setSaveMsg(result ? 'Saved!' : 'Save failed')
+    setSaveStatus(result
+      ? { message: t('Saved successfully!', 'Saved successfully!'), type: 'success' }
+      : { message: t('Save failed', 'Save failed'), type: 'error' })
     setSaving(false)
-    setTimeout(() => setSaveMsg(null), 2500)
+    setTimeout(() => setSaveStatus(null), 3000)
   }
 
   const handleClear = () => {
@@ -826,26 +829,37 @@ export default function FamilyChartEditor({
               {currentPage?.title || 'Chart Editor'}
             </h1>
           </div>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            title="Save"
-            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-60"
-          >
-            {saving ? (
-              <ArrowPathIcon className="h-4 w-4 animate-spin" />
-            ) : (
-              <CloudArrowDownIcon className="h-4 w-4" />
+          <div className="relative">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              title="Save"
+              className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-60"
+            >
+              {saving ? (
+                <ArrowPathIcon className="h-4 w-4 animate-spin" />
+              ) : (
+                <CloudArrowDownIcon className="h-4 w-4" />
+              )}
+              <span className="fc-tb-label">Save</span>
+            </button>
+            {saveStatus && (
+              <div
+                className={`absolute top-full left-0 mt-1 w-max max-w-[220px] whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium shadow z-30 ${
+                  saveStatus.type === 'success' ? 'bg-blue-500 text-white' : 'bg-red-100 text-red-800'
+                }`}
+              >
+                {saveStatus.message}
+              </div>
             )}
-            <span className="hidden md:inline">{saveMsg ?? 'Save'}</span>
-          </button>
+          </div>
           <button
             onClick={() => setPreviewing(true)}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"
             title="Preview (check the result, then return to editing)"
           >
             <EyeIcon className="h-4 w-4" />
-            <span className="hidden md:inline">Preview</span>
+            <span className="fc-tb-label">Preview</span>
           </button>
           <button
             onClick={handleExport}
@@ -853,7 +867,7 @@ export default function FamilyChartEditor({
             title="Export as JSON"
           >
             <ArrowDownTrayIcon className="h-4 w-4" />
-            <span className="hidden md:inline">Export</span>
+            <span className="fc-tb-label">Export</span>
           </button>
           <button
             onClick={() => importInputRef.current?.click()}
@@ -861,7 +875,7 @@ export default function FamilyChartEditor({
             title="Import JSON (see docs/import-schema.md)"
           >
             <ArrowUpTrayIcon className="h-4 w-4" />
-            <span className="hidden md:inline">Import</span>
+            <span className="fc-tb-label">Import</span>
           </button>
           <button
             onClick={() => {
@@ -872,7 +886,7 @@ export default function FamilyChartEditor({
             title="設定（背景・DPI・ビューポート）"
           >
             <Cog6ToothIcon className="h-4 w-4" />
-            <span className="hidden md:inline">設定</span>
+            <span className="fc-tb-label">設定</span>
           </button>
           <button
             onClick={handlePdfExport}
@@ -880,7 +894,7 @@ export default function FamilyChartEditor({
             title="Print / Export as PDF"
           >
             <PrinterIcon className="h-4 w-4" />
-            <span className="hidden md:inline">PDF</span>
+            <span className="fc-tb-label">PDF</span>
           </button>
           <button
             onClick={handleReload}
@@ -889,7 +903,7 @@ export default function FamilyChartEditor({
             title="再読み込み（保存済みの内容に戻す）"
           >
             <ArrowPathIcon className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">Reload</span>
+            <span className="fc-tb-label">Reload</span>
           </button>
           <button
             onClick={handleClear}
