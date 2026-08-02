@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useDataContext } from '@/context/DataContext'
 import { PageProps } from '@/types/charts'
 import {
@@ -8,7 +8,7 @@ import {
   TrashIcon,
   PencilSquareIcon,
   ArrowDownTrayIcon,
-  ArrowUpTrayIcon,
+  DocumentDuplicateIcon,
 } from '@heroicons/react/24/outline'
 import { v4 as uuidv4 } from 'uuid'
 import { PageInfoDialog } from '@/components/charts/PageInfoDialog'
@@ -31,14 +31,20 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
   const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPage, setEditingPage] = useState<PageProps | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
-  const { loadPageList, updatePage, deletePage, insertPage } = useDataContext()
+  const { loadPageList, loadPage, updatePage, deletePage, insertPage, t } = useDataContext()
+
+  const statusLabel = (s?: string) => (s === 'published' ? t('Published') : t('Drafts'))
+
+  // Most-recently-updated charts first. Falls back to created_at, then keeps a stable
+  // order (the store may already sort server-side; this makes it deterministic anyway).
+  const stamp = (p: PageProps) => new Date(p.updated_at ?? p.created_at ?? 0).getTime() || 0
 
   const refresh = async () => {
     setLoading(true)
     const result = await loadPageList()
-    if (result !== false) setPages(result)
+    if (result !== false) setPages([...result].sort((a, b) => stamp(b) - stamp(a)))
     setLoading(false)
   }
 
@@ -72,33 +78,30 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
     URL.revokeObjectURL(url)
   }
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const text = await file.text()
-      const data = JSON.parse(text) as Partial<PageProps>
-      if (!data.chartProps) throw new Error('missing chartProps')
-      const newPage: PageProps = {
-        id: uuidv4(),
-        title: data.title || file.name.replace(/\.json$/i, ''),
-        image: data.image || '',
-        options: data.options || {},
-        chartProps: {
-          dynasties: data.chartProps.dynasties || [],
-          persons: data.chartProps.persons || [],
-          relationships: data.chartProps.relationships || [],
-          episodes: data.chartProps.episodes || [],
-          events: data.chartProps.events || [],
-        },
-      }
-      const created = await insertPage(newPage)
-      await refresh()
-      if (created) onOpen(created.id)
-    } catch {
-      alert('Invalid JSON file. Expected a chart export with chartProps.')
+  // Duplicate a chart: re-fetch the FULL page from the API (so every chartProps field —
+  // persons, relationships, drawings, viewSettings, background, … — is included), then
+  // register it as a brand-new page with "copy" appended to the id and title.
+  const handleDuplicate = async (pageId: string) => {
+    setNotice('複製中…')
+    const full = await loadPage(pageId)
+    if (!full) { setNotice(null); alert('複製元の取得に失敗しました。'); return }
+    let newId = `${full.id}-copy`
+    for (let n = 2; pages.some((p) => p.id === newId); n++) newId = `${full.id}-copy-${n}`
+    const copy: PageProps = {
+      ...full,
+      id: newId,
+      title: `${full.title || 'Chart'} copy`,
+      chartProps: { ...full.chartProps },  // carry ALL fields verbatim
     }
-    e.target.value = ''
+    const created = await insertPage(copy)
+    await refresh()
+    if (created) {
+      setNotice(`「${copy.title}」を作成しました`)
+      setTimeout(() => setNotice(null), 3000)
+    } else {
+      setNotice(null)
+      alert('複製に失敗しました。')
+    }
   }
 
   const handleDialogSubmit = async (data: { title: string; image: string; status: 'published' | 'draft'; category: string }) => {
@@ -124,115 +127,140 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
     if (!editingPage && pageId) onOpen(pageId)
   }
 
+  const chartImg = (page: PageProps) => (
+    <img
+      src={page.image || CHART_PLACEHOLDER}
+      alt={page.title}
+      className="w-12 h-12 rounded-full object-cover bg-gray-200 flex-shrink-0"
+      onError={(e) => {
+        const img = e.target as HTMLImageElement
+        img.onerror = null // stop retry loop
+        img.src = CHART_PLACEHOLDER
+      }}
+    />
+  )
+
+  const badges = (page: PageProps) => (
+    <>
+      <span
+        className={`inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium leading-tight ${
+          page.status === 'published' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+        }`}
+      >
+        {statusLabel(page.status)}
+      </span>
+      {page.category && (
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium leading-tight bg-blue-100 text-blue-800 capitalize">
+          {page.category}
+        </span>
+      )}
+    </>
+  )
+
   return (
     <>
-      <div className="min-h-screen bg-gray-100 p-8">
-        <div className="max-w-4xl mx-auto bg-white rounded-xl shadow p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-800">Dynasty History Charts</h1>
-            <div className="flex gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportFile}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition-colors border border-gray-200"
-                title="Import chart from JSON"
-              >
-                <ArrowUpTrayIcon className="h-4 w-4" />
-                Import
-              </button>
-              <button
-                onClick={handleCreate}
-                className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                <PlusIcon className="h-5 w-5" />
-                New Chart
-              </button>
-            </div>
-          </div>
+      {notice && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-full shadow-lg">
+          {notice}
+        </div>
+      )}
+      <div className="w-full p-4 min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+          <h2 className="text-2xl font-bold text-gray-800 leading-tight">
+            {t('Dynasty History Charts')} ({pages.length})
+          </h2>
+          <button
+            onClick={handleCreate}
+            className="flex items-center gap-2.5 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2.5 rounded-lg transition-colors shadow-sm w-full sm:w-auto justify-center text-base font-medium"
+          >
+            <PlusIcon className="h-4 w-4" />
+            <span>{t('New Chart')}</span>
+          </button>
+        </div>
 
-          {loading ? (
-            <div className="text-center text-gray-400 py-12">Loading…</div>
-          ) : pages.length === 0 ? (
-            <div className="text-center text-gray-400 py-12">
-              No charts yet. Create your first one!
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pages.map((page) => (
-                <div
-                  key={page.id}
-                  className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <img
-                    src={page.image || CHART_PLACEHOLDER}
-                    alt={page.title}
-                    className="w-10 h-10 rounded-full object-cover bg-gray-200 flex-shrink-0"
-                    onError={(e) => {
-                      const img = e.target as HTMLImageElement
-                      img.onerror = null // stop retry loop
-                      img.src = CHART_PLACEHOLDER
-                    }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-800 truncate">{page.title}</div>
-                    <div className="text-xs text-gray-400 truncate flex gap-2">
-                      {page.status && (
-                        <span className={page.status === 'published' ? 'text-green-500' : 'text-yellow-500'}>
-                          {page.status}
-                        </span>
-                      )}
-                      {page.category && <span>{page.category}</span>}
-                      <span className="truncate">{page.id}</span>
+        <hr className="border-gray-300 mb-4" />
+
+        {/* List */}
+        <div className="space-y-1">
+          {pages.map((page) => (
+            <div key={page.id} className="border-b border-black/10 transition-colors duration-200 overflow-hidden">
+              <div className="p-2.5">
+                {/* PC: one line */}
+                <div className="hidden md:flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    {chartImg(page)}
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="font-bold text-lg text-gray-900 truncate leading-tight">
+                        {page.title}
+                        <button
+                          onClick={() => handleEdit(page.id)}
+                          className="p-2 text-green-500 hover:bg-green-50 rounded-lg transition-colors flex-shrink-0 ml-2"
+                          title={t('Edit Info')}
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => handleEdit(page.id)}
-                      className="p-2 text-blue-500 hover:bg-blue-50 rounded-full"
-                      title="Edit info"
-                    >
-                      <PencilIcon className="h-4 w-4" />
+
+                  <div className="flex gap-3 flex-shrink-0">{badges(page)}</div>
+
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <button onClick={() => handleOpen(page.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title={t('Edit Content')}>
+                      <div className="flex"><PencilSquareIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Edit')}</span></div>
                     </button>
-                    <button
-                      onClick={() => handleOpen(page.id)}
-                      className="p-2 text-blue-500 hover:bg-blue-50 rounded-full"
-                      title="Open editor"
-                    >
-                      <PencilSquareIcon className="h-4 w-4" />
+                    <button onClick={() => handleView(page.id)} className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors" title={t('Preview')}>
+                      <div className="flex"><EyeIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Preview')}</span></div>
                     </button>
-                    <button
-                      onClick={() => handleView(page.id)}
-                      className="p-2 text-green-500 hover:bg-green-50 rounded-full"
-                      title="View"
-                    >
-                      <EyeIcon className="h-4 w-4" />
+                    <button onClick={() => handleDuplicate(page.id)} className="p-2 text-cyan-500 hover:bg-cyan-50 rounded-lg transition-colors" title={t('Duplicate')}>
+                      <div className="flex"><DocumentDuplicateIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Duplicate')}</span></div>
                     </button>
-                    <button
-                      onClick={() => handleExportPage(page)}
-                      className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"
-                      title="Export as JSON"
-                    >
-                      <ArrowDownTrayIcon className="h-4 w-4" />
+                    <button onClick={() => handleExportPage(page)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title={t('Export')}>
+                      <div className="flex"><ArrowDownTrayIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Export')}</span></div>
                     </button>
-                    <button
-                      onClick={() => handleDelete(page.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded-full"
-                      title="Delete"
-                    >
-                      <TrashIcon className="h-4 w-4" />
+                    <button onClick={() => handleDelete(page.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('Delete')}>
+                      <div className="flex"><TrashIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Delete')}</span></div>
                     </button>
                   </div>
                 </div>
-              ))}
+
+                {/* Mobile: two lines */}
+                <div className="md:hidden">
+                  <div className="flex items-center gap-2.5 mb-2.5">
+                    {chartImg(page)}
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="font-bold text-base text-gray-900 truncate leading-tight flex-1 min-w-0">{page.title}</div>
+                      <button onClick={() => handleEdit(page.id)} className="p-2 text-green-500 hover:bg-green-50 rounded-lg transition-colors flex-shrink-0" title={t('Edit Info')}>
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center border-t border-gray-100 pt-2 gap-2">
+                    <div className="flex gap-2 flex-wrap">{badges(page)}</div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => handleOpen(page.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title={t('Edit Content')}><PencilSquareIcon className="h-4 w-4" /></button>
+                      <button onClick={() => handleView(page.id)} className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors" title={t('Preview')}><EyeIcon className="h-4 w-4" /></button>
+                      <button onClick={() => handleDuplicate(page.id)} className="p-2 text-cyan-500 hover:bg-cyan-50 rounded-lg transition-colors" title={t('Duplicate')}><DocumentDuplicateIcon className="h-4 w-4" /></button>
+                      <button onClick={() => handleExportPage(page)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title={t('Export')}><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      <button onClick={() => handleDelete(page.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('Delete')}><TrashIcon className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
+          ))}
         </div>
+
+        {/* Empty state */}
+        {pages.length === 0 && !loading && (
+          <div className="text-center py-12 text-gray-400">
+            {t('No charts yet. Create your first one!')}
+          </div>
+        )}
+
+        {/* Loading state */}
+        {loading && <div className="text-center py-12 text-gray-400">{t('Loading…')}</div>}
       </div>
 
       {isDialogOpen && (

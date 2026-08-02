@@ -184,6 +184,7 @@ export interface PageProps {
   category?: string
   thumbnail?: string
   created_at?: Date
+  updated_at?: string | Date
   options?: any
   chartProps: ChartProps
 }
