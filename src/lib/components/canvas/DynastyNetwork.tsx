@@ -363,6 +363,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
   const [spacing, setSpacing] = useState(1)
   const spacingRef = useRef(1)   // last-applied spacing factor
+  const [lastLayoutKind, setLastLayoutKind] = useState<LayoutMode | null>(null)
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -462,6 +463,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const pos = positions[n.id]
       if (pos) { n.x = pos.x; n.y = pos.y; n.fx = pos.x; n.fy = pos.y }
     }
+    setLastLayoutKind(resolved)   // drives the timeline year axis
     simulationRef.current.alpha(0.3).restart()
     // Fit the freshly-arranged tree into view.
     if (svgRef.current && zoomRef.current) {
@@ -666,6 +668,34 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         .attr('height', maxY - minY + BOARD_MARGIN * 2)
     }
     updateBoard()
+
+    // Timeline year axis: a vertical scale down the left, with ticks at the years where
+    // people actually sit (non-uniform — busy periods are stretched, matching the nodes,
+    // not the other way round). Drawn inside the zoom container so it pans/zooms along.
+    if (lastLayoutKind === 'timeline') {
+      const parseYr = (s?: string) => { const m = String(s ?? '').match(/-?\d{1,4}/); return m ? parseInt(m[0], 10) : null }
+      const byYear = new Map<number, number>()
+      for (const n of nodes) { const yr = parseYr(n.birth); if (yr != null && !byYear.has(yr)) byYear.set(yr, n.y) }
+      if (byYear.size) {
+        let minX = Infinity, minY = Infinity, maxY = -Infinity
+        for (const n of nodes) { const r = getNodeRadius(n); minX = Math.min(minX, n.x - r); minY = Math.min(minY, n.y - r); maxY = Math.max(maxY, n.y + r) }
+        const axisX = minX - 70
+        const axisG = container.append('g').attr('class', 'year-axis').style('pointer-events', 'none')
+        axisG.append('line').attr('x1', axisX).attr('y1', minY).attr('x2', axisX).attr('y2', maxY)
+          .attr('stroke', '#94a3b8').attr('stroke-width', 1).attr('vector-effect', 'non-scaling-stroke')
+        const sorted = [...byYear.entries()].sort((a, b) => a[1] - b[1])
+        let lastLabelY = -Infinity
+        for (const [yr, yy] of sorted) {
+          axisG.append('line').attr('x1', axisX - 5).attr('y1', yy).attr('x2', axisX + 5).attr('y2', yy)
+            .attr('stroke', '#94a3b8').attr('stroke-width', 1).attr('vector-effect', 'non-scaling-stroke')
+          if (yy - lastLabelY >= 24) {
+            axisG.append('text').attr('x', axisX - 8).attr('y', yy).attr('text-anchor', 'end')
+              .attr('dominant-baseline', 'middle').attr('font-size', 12).attr('fill', '#64748b').text(String(yr))
+            lastLabelY = yy
+          }
+        }
+      }
+    }
 
     // Simulation
     const simulation = d3.forceSimulation<SimNode, SimLink>(nodes)
@@ -2007,7 +2037,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind])
 
   // Update selection rings without full redraw
   useEffect(() => {

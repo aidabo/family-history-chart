@@ -662,6 +662,78 @@ function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: L
   return { positions: out, mode: resolved }
 }
 
+// Adaptive (non-linear) year→y mapping: every year that has people advances by a fixed
+// step (busy periods stretched, like a zoom), empty stretches add only a small capped
+// gap. Returns the mapping fn plus the list of occupied years (for drawing the axis).
+export function buildYearAxis(occupied: number[], topY: number, rowGap: number): { yForYear: (y: number) => number; ticks: Array<{ year: number; y: number }> } {
+  const map = new Map<number, number>()
+  let cy = topY
+  occupied.forEach((yv, i) => {
+    // Each occupied year advances by a base step (enough to clear a node), plus a small
+    // capped term for the real time gap. Keeps busy periods stretched without the whole
+    // axis becoming absurdly tall.
+    if (i > 0) cy += rowGap * 0.5 + Math.min((yv - occupied[i - 1]) * (rowGap / 45), rowGap * 1.2)
+    map.set(yv, cy)
+  })
+  const yForYear = (y: number): number => {
+    if (map.has(y)) return map.get(y)!
+    if (!occupied.length) return topY
+    if (y <= occupied[0]) return map.get(occupied[0])!
+    if (y >= occupied[occupied.length - 1]) return map.get(occupied[occupied.length - 1])!
+    let lo = occupied[0]
+    for (const o of occupied) { if (o <= y) lo = o; else break }
+    const hi = occupied.find(o => o > y)!
+    return map.get(lo)! + ((y - lo) / (hi - lo)) * (map.get(hi)! - map.get(lo)!)
+  }
+  return { yForYear, ticks: occupied.map(year => ({ year, y: map.get(year)! })) }
+}
+
+// Timeline: ONE global adaptive time axis shared by every cluster (so a left-hand year
+// axis is meaningful), with clusters laid out in separate horizontal lanes. Each cluster
+// keeps its internal family x-order (and spine zigzag) from the core layout; y is then
+// overwritten with the global year mapping.
+function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: LayoutOptions): LayoutResult {
+  const centerX = options.centerX ?? 600
+  const topY = options.topY ?? 100
+  const col = options.colGap ?? 150
+  const rowGap = options.rowGap ?? 160
+  const laneGap = col * 1.4
+
+  const g = buildGraph(nodes, links)
+  if (!g.persons.length) return { positions: {}, mode: 'timeline' }
+  const year = inferYears(g)
+  const occupied = [...new Set([...year.values()])].sort((a, b) => a - b)
+  const { yForYear } = buildYearAxis(occupied, topY, rowGap)
+
+  const comps = connectedComponents(nodes, links).sort((a, b) => b.length - a.length)
+  let laneX = 0
+  const out: Record<string, { x: number; y: number }> = {}
+  for (const compIds of comps) {
+    const set = new Set(compIds)
+    const sub = nodes.filter(n => set.has(n.id))
+    const subLinks = links.filter(l => set.has(l.source) && set.has(l.target))
+    const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: 'timeline', centerX: 0, topY: 0 })
+    const pxs = Object.values(positions).map(p => p.x)
+    const minX = pxs.length ? Math.min(...pxs) : 0, maxX = pxs.length ? Math.max(...pxs) : 0
+    for (const id in positions) {
+      const yv = year.get(id)
+      out[id] = { x: positions[id].x - minX + laneX, y: yv != null ? yForYear(yv) : NaN }
+    }
+    laneX += (maxX - minX) + laneGap
+  }
+  // Unions / undated: derive y from partners (or leave at top).
+  for (const [uid] of g.partnersOfUnion) {
+    const ps = (g.partnersOfUnion.get(uid) || []).map(p => out[p]?.y).filter(v => Number.isFinite(v)) as number[]
+    if (out[uid] && ps.length) out[uid].y = ps.reduce((a, b) => a + b, 0) / ps.length
+  }
+  for (const id in out) if (!Number.isFinite(out[id].y)) out[id].y = topY
+
+  const xs = Object.values(out).map(p => p.x)
+  const shiftX = centerX - (Math.min(...xs) + Math.max(...xs)) / 2
+  for (const id in out) out[id].x += shiftX
+  return { positions: out, mode: 'timeline' }
+}
+
 // Public entry — unified pipeline. Step 1: split into independent components (separate
 // imports / unrelated families) so they never interleave. Step 2: within each component,
 // analyse the relationship graph into lineage clusters and lay each out per the chosen
@@ -675,6 +747,8 @@ export function computeFamilyLayout(
   const resolved = options.mode && options.mode !== 'auto' ? options.mode : pickAutoMode(nodes, links)
   // 'force' is produced by the canvas component; anything else uses the cluster pipeline.
   if (resolved !== 'tidy' && resolved !== 'timeline') return computeSingleLayout(nodes, links, { ...options, mode: resolved })
+  // Timeline: one global time axis + horizontal cluster lanes (so a left year axis fits).
+  if (resolved === 'timeline') return layoutTimeline(nodes, links, options)
 
   const components = connectedComponents(nodes, links)
   if (components.length <= 1) return layoutOneComponent(nodes, links, options, resolved)
