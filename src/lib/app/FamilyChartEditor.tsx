@@ -436,6 +436,7 @@ export default function FamilyChartEditor({
     backgroundOpacity,
     verticalText,
     viewport,
+    viewSettings,
     setBackground,
     setBackgroundImage,
     setBackgroundOpacity,
@@ -658,11 +659,13 @@ export default function FamilyChartEditor({
       }
     }
 
-    // Persist the current zoom/pan so the page reloads at the same view.
+    // Persist the current zoom/pan + layout settings so the page reloads identically.
     const vp = netRef.current?.getViewport()
+    const vs = netRef.current?.getViewSettings()
     const result = await savePage({
       ...thumbnailPatch,
       ...(vp ? { viewport: vp } : {}),
+      ...(vs ? { viewSettings: vs } : {}),
       ...(dpi !== undefined ? { dpi } : {}),
     })
     setSaveStatus(result
@@ -1027,6 +1030,7 @@ export default function FamilyChartEditor({
         <DynastyNetwork
           ref={netRef}
           initialTransform={viewport ?? null}
+          initialViewSettings={viewSettings ?? null}
           background={background}
           backgroundImage={backgroundImage}
           backgroundOpacity={backgroundOpacity}

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import * as d3 from 'd3'
-import type { PersonNode, Relationship, VerticalTextMode, NoteShape } from '@/types/charts'
+import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, type LayoutMode } from '@/utils/familyLayout'
@@ -73,6 +73,7 @@ interface DynastyNetworkProps {
   onBatchPositionChange: (positions: Record<string, { x: number; y: number }>) => void
   onNodeUpdate?: (id: string, updates: Partial<PersonNode>) => void
   initialTransform?: { k: number; x: number; y: number } | null   // restore saved zoom/pan
+  initialViewSettings?: ViewSettings | null   // restore saved layout mode / spacing / grid
   background?: string          // canvas background color
   backgroundImage?: string     // background image layered over the color
   backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
@@ -312,6 +313,8 @@ export interface DynastyNetworkHandle {
   fitToContent: () => void
   /** Visible content rect in content coordinates: the area currently shown in the viewport. */
   getVisibleRect: () => { x: number; y: number; w: number; h: number }
+  /** Current toolbar/layout settings, for persisting with the page. */
+  getViewSettings: () => ViewSettings
 }
 
 const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(function DynastyNetwork({
@@ -329,6 +332,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   onBatchPositionChange,
   onNodeUpdate,
   initialTransform,
+  initialViewSettings,
   background,
   backgroundImage,
   backgroundOpacity,
@@ -363,7 +367,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
   const [spacing, setSpacing] = useState(1)
   const spacingRef = useRef(1)   // last-applied spacing factor
-  const [lastLayoutKind, setLastLayoutKind] = useState<LayoutMode | null>(null)
+  const [lastLayoutKind, setLastLayoutKind] = useState<'tidy' | 'timeline' | 'force' | null>(null)
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -443,7 +447,25 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         h: dimensions.height / t.k,
       }
     },
-  }), [dimensions, onAddPerson, computeFit])
+    getViewSettings: (): ViewSettings => ({
+      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize,
+    }),
+  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize])
+
+  // Restore saved toolbar/layout settings once when the page loads. Positions are already
+  // stored at the saved spacing, so spacing only restores the slider baseline (no re-scale);
+  // lastLayoutKind restores the timeline axis; the mode dropdown reflects the saved choice.
+  const viewSettingsApplied = useRef(false)
+  useEffect(() => {
+    if (viewSettingsApplied.current || !initialViewSettings) return
+    viewSettingsApplied.current = true
+    const vs = initialViewSettings
+    if (vs.layoutMode) setLayoutMode(vs.layoutMode)
+    if (vs.lastLayoutKind) setLastLayoutKind(vs.lastLayoutKind)
+    if (typeof vs.spacing === 'number') { setSpacing(vs.spacing); spacingRef.current = vs.spacing }
+    if (typeof vs.showGrid === 'boolean') setShowGrid(vs.showGrid)
+    if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
+  }, [initialViewSettings])
 
   const runAutoLayout = useCallback((mode: LayoutMode) => {
     if (!simulationRef.current) return

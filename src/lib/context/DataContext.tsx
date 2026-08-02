@@ -1,7 +1,7 @@
 'use client'
 import { createContext, useState, useContext, useMemo, ReactNode } from 'react'
 import { createLayoutStore, LayoutStore } from '@/services/layoutStore'
-import { ChartViewport, Episode, PageProps, PersonNode, Relationship, VerticalTextMode } from '@/types/charts'
+import { ChartViewport, Episode, PageProps, PersonNode, Relationship, VerticalTextMode, ViewSettings } from '@/types/charts'
 
 // Injectable translate function; when a host supplies one, the library uses it, else identity.
 export type TranslateFn = (key: string, fallback?: string) => string
@@ -14,6 +14,7 @@ interface DataState {
   events: any[]
   // Page-level view state + canvas background, persisted inside chartProps.
   viewport?: ChartViewport
+  viewSettings?: ViewSettings
   background?: string
   backgroundImage?: string
   backgroundOpacity?: number
@@ -27,7 +28,7 @@ interface DataContextValue extends DataState {
   setCurrentPage: (page: PageProps | null) => void
   loadPageList: () => Promise<PageProps[] | false>
   loadPage: (id: string) => Promise<PageProps | false>
-  savePage: (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; verticalText?: VerticalTextMode; dpi?: number }) => Promise<PageProps | false>
+  savePage: (patch?: { thumbnail?: string; viewport?: ChartViewport; viewSettings?: ViewSettings; background?: string; backgroundImage?: string; backgroundOpacity?: number; verticalText?: VerticalTextMode; dpi?: number }) => Promise<PageProps | false>
   insertPage: (data: PageProps) => Promise<PageProps | false>
   updatePage: (data: PageProps) => Promise<PageProps | false>
   deletePage: (id: string) => Promise<boolean>
@@ -37,6 +38,7 @@ interface DataContextValue extends DataState {
   backgroundOpacity?: number
   verticalText?: VerticalTextMode
   viewport?: ChartViewport
+  viewSettings?: ViewSettings
   dpi?: number
   setBackground: (bg: string) => void
   setBackgroundImage: (url: string) => void
@@ -146,12 +148,13 @@ export function DataProvider({
     }
   }
 
-  const savePage = async (patch?: { thumbnail?: string; viewport?: ChartViewport; background?: string; backgroundImage?: string; backgroundOpacity?: number; verticalText?: VerticalTextMode; dpi?: number }) => {
+  const savePage = async (patch?: { thumbnail?: string; viewport?: ChartViewport; viewSettings?: ViewSettings; background?: string; backgroundImage?: string; backgroundOpacity?: number; verticalText?: VerticalTextMode; dpi?: number }) => {
     if (!currentPage?.id) return false
     // thumbnail is a page-level column; viewport/background/dpi live inside chartProps.
     const chartProps = {
       ...data,
       ...(patch?.viewport !== undefined ? { viewport: patch.viewport } : {}),
+      ...(patch?.viewSettings !== undefined ? { viewSettings: patch.viewSettings } : {}),
       ...(patch?.background !== undefined ? { background: patch.background } : {}),
       ...(patch?.backgroundImage !== undefined ? { backgroundImage: patch.backgroundImage } : {}),
       ...(patch?.backgroundOpacity !== undefined ? { backgroundOpacity: patch.backgroundOpacity } : {}),
@@ -434,6 +437,7 @@ export function DataProvider({
         backgroundOpacity: data.backgroundOpacity,
         verticalText: data.verticalText,
         viewport: data.viewport,
+        viewSettings: data.viewSettings,
         dpi: data.dpi,
         setBackground,
         setBackgroundImage,
