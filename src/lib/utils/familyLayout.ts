@@ -49,13 +49,28 @@ export interface LayoutResult {
   mode: 'tidy' | 'timeline'
 }
 
-// Extract a signed integer year from strings like "1543", "1543-06-23", "155", or a BC
-// year written as "-200", "前200", "紀元前200", "公元前200(年)", "200 BC"/"200 BCE" →
-// negative. AD/CE forms ("公元100", "西暦1600") stay positive.
-// Era names (e.g. "享保12") return null — they can't be placed on a numeric axis.
+// Modern Japanese eras (元号) with an unambiguous, fixed Gregorian start year. Older
+// Japanese eras and Chinese dynasty eras are intentionally NOT included — there are
+// hundreds/thousands and they overlap across dynasties, so they can't be resolved
+// reliably from an era name alone.
+const JP_ERAS: Array<[string, number]> = [
+  ['令和', 2019], ['平成', 1989], ['昭和', 1926], ['大正', 1912], ['明治', 1868],
+]
+
+// Extract a signed integer year from strings like "1543", "1543-06-23", "155"; a BC year
+// ("-200", "前200", "紀元前200", "公元前200(年)", "200 BC"/"200 BCE") → negative; AD/CE
+// forms ("公元100", "西暦1600") stay positive; or a modern Japanese era ("明治3年",
+// "昭和10", "令和元年") → Gregorian. Other era names (享保12 等) return the bare number.
 export function parseYear(s?: string): number | null {
   if (!s) return null
   const str = String(s)
+  // Modern Japanese era: era name + (元 | number) → Gregorian (era start + n - 1).
+  for (const [era, start] of JP_ERAS) {
+    if (!str.includes(era)) continue
+    const em = str.match(new RegExp(era + '\\s*(元|\\d{1,3})'))
+    const n = em ? (em[1] === '元' ? 1 : parseInt(em[1], 10)) : 1
+    return start + n - 1
+  }
   const m = str.match(/-?\d{1,4}/)
   if (!m) return null
   let n = parseInt(m[0], 10)
