@@ -769,22 +769,23 @@ function computeSingleLayout(
     }
   }
 
-  // Horizontal zigzag for vertical "spine" runs: a generation row holding a single
-  // person (a lone succession heir, no spouse/siblings on that row) is nudged left/right
-  // by row parity, so a long straight vertical chain (e.g. the shogun succession) reads
-  // as a gentle left–right zigzag instead of a cramped single column. Tidy view only.
-  if (mode === 'tidy') {
-    const rowsById = new Map<number, string[]>()
+  // Horizontal zigzag for vertical "spine" runs (both 系図 and timeline): shift a node
+  // left/right by its GENERATION parity so a long straight vertical lineage (e.g. the
+  // shogun succession) fans into a readable left–right zigzag. Only SPARSE generations
+  // (a lone-heir chain, ≤2 people incl. spouse) are moved; wide branching generations
+  // stay centered so they aren't tilted.
+  {
+    const genOf = (id: string) =>
+      isUnion(g.nodeMap.get(id)!)
+        ? Math.max(0, ...(g.partnersOfUnion.get(id) || []).map(p => gen.get(p) ?? 0))
+        : (gen.get(id) ?? 0)
+    const perGen = new Map<number, number>()
+    for (const p of g.persons) { const gg = gen.get(p.id) ?? 0; perGen.set(gg, (perGen.get(gg) ?? 0) + 1) }
+    const DX = mode === 'timeline' ? col * 1.1 : col * 0.6
     for (const id of px.keys()) {
-      const r = Math.round((rowValue.get(id) ?? 0))
-      ;(rowsById.get(r) || rowsById.set(r, []).get(r)!).push(id)
-    }
-    const DX = col * 0.6
-    for (const [r, ids] of rowsById) {
-      const people = ids.filter(id => !isUnion(g.nodeMap.get(id)!))
-      if (people.length !== 1) continue           // only lone-heir rows
-      const off = (Math.abs(r) % 2 === 0 ? -1 : 1) * DX
-      for (const id of ids) px.set(id, (px.get(id) ?? 0) + off)
+      const gg = genOf(id)
+      if ((perGen.get(gg) ?? 0) > 2) continue   // keep branching generations centered
+      px.set(id, (px.get(id) ?? 0) + (gg % 2 === 0 ? -1 : 1) * DX)
     }
   }
 
