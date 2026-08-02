@@ -2482,23 +2482,23 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         <span>人</span>
       </div>
 
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-3 bg-white p-2 rounded shadow">
-        <label className="flex items-center gap-1 text-sm text-gray-700 cursor-pointer">
+      <div className="absolute top-2 right-2 z-10 flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 md:gap-3 bg-white/95 p-1.5 md:p-2 rounded shadow max-w-[calc(100vw-4rem)]">
+        <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700 cursor-pointer">
           <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)}
             className="h-4 w-4 rounded text-blue-600" />
           Grid
         </label>
         <select value={gridSize} onChange={e => setGridSize(Number(e.target.value))}
-          className="rounded border border-gray-300 text-sm px-1 py-0.5">
+          className="shrink-0 rounded border border-gray-300 text-sm px-1 py-0.5">
           <option value={10}>10px</option>
           <option value={20}>20px</option>
           <option value={30}>30px</option>
           <option value={40}>40px</option>
           <option value={50}>50px</option>
         </select>
-        <div className="flex items-center rounded border border-gray-300 overflow-hidden">
+        <div className="flex shrink-0 items-center rounded border border-gray-300 overflow-hidden">
           <button onClick={handleAutoLayout} title="選択したモードで自動整列"
-            className="px-2 py-1 text-sm bg-white text-gray-700 hover:bg-gray-50 border-r border-gray-300">
+            className="whitespace-nowrap px-2 py-1 text-sm bg-white text-gray-700 hover:bg-gray-50 border-r border-gray-300">
             Auto Layout
           </button>
           <select value={layoutMode}
@@ -2511,8 +2511,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           </select>
         </div>
         {(layoutMode === 'tidy' || lastLayoutKind === 'tidy') && (
-          <label className="flex items-center gap-1 text-sm text-gray-700" title="親子の配線（系図のみ）：直線／直交バス">
-            <span>配線</span>
+          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title="親子の配線（系図のみ）：直線／直交バス">
+            <span className="whitespace-nowrap">配線</span>
             <select value={edgeStyle} onChange={e => setEdgeStyle(e.target.value as 'straight' | 'ortho')}
               className="rounded border border-gray-300 text-sm px-1 py-0.5">
               <option value="straight">直線</option>
@@ -2520,12 +2520,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             </select>
           </label>
         )}
-        <label className="flex items-center gap-1 text-sm text-gray-700" title="ノードの間隔（座標）を拡大／縮小">
-          <span>間隔</span>
+        <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title="ノードの間隔（座標）を拡大／縮小">
+          <span className="whitespace-nowrap">間隔</span>
           <input type="range" min={0.4} max={2.5} step={0.05} value={spacing}
             onChange={e => setSpacing(Number(e.target.value))}
             onMouseUp={() => applySpacing(spacing)} onTouchEnd={() => applySpacing(spacing)}
-            className="w-24" />
+            className="w-20 md:w-24" />
         </label>
       </div>
 

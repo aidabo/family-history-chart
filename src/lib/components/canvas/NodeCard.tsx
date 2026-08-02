@@ -52,7 +52,9 @@ export function NodeCard({
 
   const [pos, setPos] = useState({
     x: clamp(position.x, 10, iw - 310),
-    y: clamp(position.y, 10, ih - 100),
+    // Keep the top high enough that a usable amount of the card stays on-screen (the body
+    // height is derived from the space below this top), so low taps don't yield a tiny card.
+    y: clamp(position.y, 10, Math.max(60, ih - 340)),
   })
 
   const dragging = useRef(false)
@@ -113,8 +115,12 @@ export function NodeCard({
         </button>
       </div>
 
-      {/* Scrollable accordion body — key forces remount on node switch so uncontrolled inputs get fresh defaultValues (fixes CJK IME stale input) */}
-      <div key={node.id} className="overflow-y-auto" style={{ maxHeight: 'calc(80vh - 48px)' }}>
+      {/* Scrollable accordion body — key forces remount on node switch so uncontrolled inputs get fresh defaultValues (fixes CJK IME stale input).
+          maxHeight is the space left BELOW the card's top edge (not a fixed 80vh), so the
+          card bottom always stays on-screen and the last section (Relationships) is reachable
+          even when the card opens low on a phone. Uses dvh so the mobile address bar is excluded. */}
+      <div key={node.id} className="overflow-y-auto overscroll-contain"
+        style={{ maxHeight: `min(calc(100dvh - ${Math.max(0, pos.y)}px - 64px), 80vh)` }}>
         <AccordionSection title="Identity">
           <IdentitySection node={node} onChange={handleChange} onUpload={onUploadFile} />
         </AccordionSection>

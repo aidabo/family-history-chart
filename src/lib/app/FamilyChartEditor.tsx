@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
 import { useDataContext } from '@/context/DataContext'
 import DynastyNetwork, { DynastyNetworkHandle, InlineEditRequest } from '@/components/canvas/DynastyNetwork'
 import { NodeCard } from '@/components/canvas/NodeCard'
@@ -274,7 +274,23 @@ function InlineEditOverlay({
     textAlign: align, background: bg ? toRgba(bg, bgOpacity) : '#ffffff',
     border: '1px solid #3b82f6', borderRadius: 3, padding: '1px 3px', outline: 'none', resize: 'none', zIndex: 50,
   }
-  const tbTop = Math.max(0, req.top - 40)
+  // Keep the floating toolbar (and its popovers) fully on-screen. It can wrap to several
+  // rows on mobile, so measure its real size: clamp `left` so it never runs off the right
+  // edge, and place it its own height ABOVE the field (dropping below only if it wouldn't
+  // fit above) — otherwise the taller wrapped bar would overlap and hide the input box.
+  const tbRef = useRef<HTMLDivElement>(null)
+  const [tb, setTb] = useState({ left: req.left, top: Math.max(0, req.top - 40), h: 34 })
+  useLayoutEffect(() => {
+    const el = tbRef.current
+    const w = el?.offsetWidth ?? 0
+    const h = el?.offsetHeight ?? 34
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+    const left = Math.max(8, Math.min(req.left, vw - 8 - w))
+    let top = req.top - h - 6
+    if (top < 4) top = Math.min(req.top + req.height + 6, vh - h - 6)
+    setTb({ left, top, h })
+  }, [req.left, req.top, req.height, isNote, isDesc, size, font, bold, vertOn])
   const btn = (active: boolean, onClick: () => void, title: string, children: React.ReactNode) => (
     <button type="button" title={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}
       className={`flex h-7 min-w-7 items-center justify-center rounded px-1 text-sm ${
@@ -286,8 +302,8 @@ function InlineEditOverlay({
   return (
     <div ref={wrapRef} onBlur={onWrapBlur}>
       {/* Floating toolbar */}
-      <div className="absolute z-[51] flex items-center gap-0.5 rounded-md border border-gray-200 bg-white px-1 py-0.5 shadow-lg"
-        style={{ left: req.left, top: tbTop }}>
+      <div ref={tbRef} className="absolute z-[51] flex flex-wrap items-center gap-0.5 rounded-md border border-gray-200 bg-white px-1 py-0.5 shadow-lg"
+        style={{ left: tb.left, top: tb.top, maxWidth: 'calc(100vw - 16px)' }}>
         {btn(false, () => setSizeBy(-1), 'フォント小', <span>A−</span>)}
         <span className="w-5 text-center text-xs text-gray-600">{size}</span>
         {btn(false, () => setSizeBy(1), 'フォント大', <span className="font-bold">A+</span>)}
@@ -338,12 +354,12 @@ function InlineEditOverlay({
 
       {/* Color popovers */}
       {picker === 'text' && (
-        <div className="absolute z-[52]" style={{ left: req.left, top: tbTop + 34 }}>
+        <div className="absolute z-[52]" style={{ left: tb.left, top: tb.top + tb.h + 4 }}>
           <ColorPickerPopover value={color} onChange={pickColor} onClose={() => setPicker(null)} />
         </div>
       )}
       {picker === 'bg' && (
-        <div className="absolute z-[52]" style={{ left: req.left, top: tbTop + 34 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="absolute z-[52]" style={{ left: tb.left, top: tb.top + tb.h + 4 }} onMouseDown={(e) => e.stopPropagation()}>
           <ColorPickerPopover value={bg} onChange={pickBg} onClose={() => setPicker(null)}>
             {isDesc && (
               <div className="mt-2 flex items-center gap-2">
@@ -358,7 +374,7 @@ function InlineEditOverlay({
       )}
       {picker === 'deform' && (
         <div className="absolute z-[52] w-56 rounded-lg border border-gray-300 bg-white p-3 shadow-xl"
-          style={{ left: req.left, top: tbTop + 34 }} onMouseDown={(e) => e.stopPropagation()}>
+          style={{ left: tb.left, top: tb.top + tb.h + 4 }} onMouseDown={(e) => e.stopPropagation()}>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-600">変形</span>
             <button type="button" onClick={() => setPicker(null)} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100" title="閉じる">×</button>
