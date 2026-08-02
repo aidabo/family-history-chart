@@ -8,8 +8,11 @@ import { RelationshipTypeDialog } from '@/components/editors/RelationshipTypeDia
 import ChartSettingsDialog from '@/app/ChartSettingsDialog'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
 import { FontSelector } from '@/components/ui/FontSelector'
-import { PersonNode, Relationship, TextStyle } from '@/types/charts'
+import { PersonNode, Relationship, TextStyle, DrawTool } from '@/types/charts'
 import {
+  PencilIcon,
+  ArrowUturnLeftIcon,
+  ArrowUturnRightIcon,
   ArrowLeftIcon,
   CloudArrowDownIcon,
   EyeIcon,
@@ -426,6 +429,16 @@ export default function FamilyChartEditor({
     addEpisode,
     updateEpisode,
     deleteEpisode,
+    drawings,
+    addStroke,
+    deleteStroke,
+    clearDrawings,
+    moveStrokes,
+    deleteStrokes,
+    undoDraw,
+    redoDraw,
+    canUndoDraw,
+    canRedoDraw,
     setSelectedNode,
     setSelectedRelationship,
     clearPage,
@@ -449,6 +462,11 @@ export default function FamilyChartEditor({
 
   const [nodeCardPos, setNodeCardPos] = useState({ x: 200, y: 100 })
   const [edgeCardPos, setEdgeCardPos] = useState({ x: 400, y: 200 })
+  // Whiteboard / annotation drawing toolbar state
+  const [wbOpen, setWbOpen] = useState(false)
+  const [drawMode, setDrawMode] = useState<DrawTool | 'eraser' | 'select' | null>(null)
+  const [drawColor, setDrawColor] = useState('#ef4444')
+  const [drawWidth, setDrawWidth] = useState(3)
   const [inlineEdit, setInlineEdit] = useState<InlineEditRequest | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
@@ -508,6 +526,17 @@ export default function FamilyChartEditor({
         setConnectState({ active: false, sourceId: null })
         return
       }
+      // Ctrl/Cmd+Z → undo whiteboard drawing; Ctrl+Shift+Z / Ctrl+Y → redo
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !isEditable(e.target) && !isViewMode) {
+        e.preventDefault()
+        if (e.shiftKey) redoDraw(); else undoDraw()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y') && !isEditable(e.target) && !isViewMode) {
+        e.preventDefault()
+        redoDraw()
+        return
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isEditable(e.target) && !isViewMode) {
         if (selectedNode) {
           e.preventDefault()
@@ -523,7 +552,7 @@ export default function FamilyChartEditor({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isViewMode, selectedNode, selectedRelationship, deletePerson, deleteRelationship,
-    setSelectedNode, setSelectedRelationship])
+    setSelectedNode, setSelectedRelationship, undoDraw, redoDraw])
 
   const handleNodeClick = useCallback(
     (node: PersonNode, screenX: number, screenY: number) => {
@@ -1062,6 +1091,14 @@ export default function FamilyChartEditor({
             setInlineEdit(req)
           }}
           connectMode={connectState.active}
+          drawings={drawings}
+          drawMode={isViewMode ? null : drawMode}
+          drawColor={drawColor}
+          drawWidth={drawWidth}
+          onStrokeCommit={addStroke}
+          onStrokeErase={deleteStroke}
+          onStrokesMove={moveStrokes}
+          onStrokesDelete={deleteStrokes}
         />
 
         {/* In-place (double-click) editor overlay — React-owned so it survives canvas re-renders */}
@@ -1176,6 +1213,105 @@ export default function FamilyChartEditor({
             <DocumentPlusIcon className="h-5 w-5" />
             <span className="fc-tb-label">メモ</span>
           </button>
+        )}
+
+        {/* Whiteboard / annotation toolbar */}
+        {!isViewMode && (
+          <>
+            {/* Toggle FAB */}
+            <button
+              onClick={() => { setWbOpen((o) => { const n = !o; if (!n) setDrawMode(null); return n }) }}
+              className={`absolute bottom-36 left-6 z-20 h-12 px-3 rounded-full shadow-lg flex items-center gap-1 text-sm transition-colors ${
+                wbOpen || drawMode ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
+              }`}
+              title="ホワイトボード（手描き・注釈）"
+            >
+              <PencilIcon className="h-5 w-5" />
+              <span className="fc-tb-label">お絵かき</span>
+            </button>
+
+            {/* Tool panel */}
+            {wbOpen && (
+              <div
+                className="absolute bottom-52 left-6 z-30 flex max-w-[calc(100vw-3rem)] flex-col gap-2 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-xl backdrop-blur"
+                style={{ touchAction: 'manipulation' }}
+              >
+                {/* Tools */}
+                <div className="flex flex-wrap gap-1.5">
+                  {([
+                    ['select', '⬚', '選択・移動'],
+                    ['pen', '✏️', 'ペン'],
+                    ['highlighter', '🖍️', 'マーカー'],
+                    ['line', '／', '直線'],
+                    ['arrow', '↗', '矢印'],
+                    ['rect', '▭', '矩形'],
+                    ['ellipse', '◯', '楕円'],
+                    ['eraser', '🧽', '消しゴム'],
+                  ] as [DrawTool | 'eraser' | 'select', string, string][]).map(([tool, icon, label]) => (
+                    <button
+                      key={tool}
+                      onClick={() => setDrawMode((m) => (m === tool ? null : tool))}
+                      title={label}
+                      className={`flex h-11 min-w-[44px] items-center justify-center gap-1 rounded-lg px-2 text-base transition-colors ${
+                        drawMode === tool ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <span>{icon}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Colors */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {['#ef4444', '#111827', '#2563eb', '#16a34a', '#f59e0b', '#eab308', '#ffffff'].map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setDrawColor(c)}
+                      title={c}
+                      className={`h-8 w-8 rounded-full border-2 transition ${drawColor === c ? 'border-emerald-600 ring-2 ring-emerald-300' : 'border-gray-300'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+
+                {/* Width */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range" min={1} max={16} value={drawWidth}
+                    onChange={(e) => setDrawWidth(Number(e.target.value))}
+                    className="h-2 flex-1 accent-emerald-600"
+                    style={{ minWidth: 90 }}
+                  />
+                  <span className="w-6 text-center text-xs text-gray-500">{drawWidth}</span>
+                </div>
+
+                {/* Undo / redo / clear */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={undoDraw} disabled={!canUndoDraw}
+                    className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-gray-100 text-xs text-gray-700 hover:bg-gray-200 disabled:opacity-40"
+                    title="元に戻す (Ctrl+Z)"
+                  >
+                    <ArrowUturnLeftIcon className="h-4 w-4" /><span className="fc-tb-label">戻す</span>
+                  </button>
+                  <button
+                    onClick={redoDraw} disabled={!canRedoDraw}
+                    className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-gray-100 text-xs text-gray-700 hover:bg-gray-200 disabled:opacity-40"
+                    title="やり直し (Ctrl+Shift+Z)"
+                  >
+                    <ArrowUturnRightIcon className="h-4 w-4" /><span className="fc-tb-label">やり直し</span>
+                  </button>
+                  <button
+                    onClick={() => { if (window.confirm('手描き注釈をすべて消去しますか？')) clearDrawings() }}
+                    className="flex h-9 items-center justify-center rounded-lg bg-red-50 px-2 text-red-600 hover:bg-red-100"
+                    title="すべて消去"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Return-to-edit button — only during in-editor preview, NOT in pure view mode */}

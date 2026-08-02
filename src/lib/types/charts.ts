@@ -116,6 +116,20 @@ export interface PersonNode {
   }
 }
 
+// Freehand whiteboard / annotation drawing tools.
+export type DrawTool = 'pen' | 'highlighter' | 'line' | 'arrow' | 'rect' | 'ellipse'
+
+// A single free-form stroke/shape drawn on the whiteboard layer. Coordinates are in
+// the same chart (zoom-container) space as node x/y, so drawings pan/zoom with the graph.
+export interface DrawStroke {
+  id: string
+  tool: DrawTool
+  points: number[]      // flat [x0,y0,x1,y1,…]; freehand keeps all points, shapes keep 2 (start,end)
+  color: string
+  width: number
+  opacity?: number      // 0..1 (highlighter defaults lower)
+}
+
 export interface Relationship {
   id: string
   source: string
@@ -150,6 +164,7 @@ export interface ChartProps {
   relationships: Relationship[]
   episodes: Episode[]
   events: any[]
+  drawings?: DrawStroke[]    // freehand whiteboard / annotation strokes
   // Persisted page-level view state (restored on next load) + canvas background.
   viewport?: ChartViewport
   viewSettings?: ViewSettings

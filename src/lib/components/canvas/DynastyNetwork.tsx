@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import * as d3 from 'd3'
-import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings } from '@/types/charts'
+import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, type LayoutMode } from '@/utils/familyLayout'
@@ -58,6 +58,68 @@ function boxTransform(rot?: number, sx?: number, sy?: number, skew?: number): st
   return parts.length ? parts.join(' ') : null
 }
 
+// Build an SVG path `d` from a stroke's flat point list. Freehand tools keep every
+// point (smoothed with a Catmull-Rom curve); shape tools use just start+end.
+const drawLine = d3.line<[number, number]>().curve(d3.curveCatmullRom.alpha(0.5))
+function strokeToPath(tool: DrawTool, pts: number[]): string {
+  const p: [number, number][] = []
+  for (let i = 0; i + 1 < pts.length; i += 2) p.push([pts[i], pts[i + 1]])
+  if (p.length === 0) return ''
+  if (tool === 'pen' || tool === 'highlighter') return drawLine(p) || ''
+  const [x0, y0] = p[0]
+  const [x1, y1] = p[p.length - 1]
+  if (tool === 'line' || tool === 'arrow') return `M${x0},${y0}L${x1},${y1}`
+  if (tool === 'rect') return `M${x0},${y0}H${x1}V${y1}H${x0}Z`
+  // ellipse: bounding box of start/end
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
+  const rx = Math.abs(x1 - x0) / 2, ry = Math.abs(y1 - y0) / 2
+  return `M${cx - rx},${cy}a${rx},${ry} 0 1,0 ${rx * 2},0a${rx},${ry} 0 1,0 ${-rx * 2},0Z`
+}
+function strokeOpacity(s: DrawStroke): number { return s.opacity ?? (s.tool === 'highlighter' ? 0.4 : 1) }
+
+type Rect = { x0: number; y0: number; x1: number; y1: number }
+function strokeBBox(pts: number[]): Rect | null {
+  if (pts.length < 2) return null
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (let i = 0; i + 1 < pts.length; i += 2) {
+    const x = pts[i], y = pts[i + 1]
+    if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y
+  }
+  return { x0, y0, x1, y1 }
+}
+// Outline polyline used for marquee hit-testing. Shapes expand to their 4 bbox corners.
+function strokeOutline(tool: DrawTool, pts: number[]): number[] {
+  if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') return pts
+  const b = strokeBBox(pts); if (!b) return pts
+  return [b.x0, b.y0, b.x1, b.y0, b.x1, b.y1, b.x0, b.y1, b.x0, b.y0]
+}
+function ccw(ax: number, ay: number, bx: number, by: number, cx: number, cy: number) {
+  return (by - ay) * (cx - ax) - (bx - ax) * (cy - ay)
+}
+function segSeg(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
+  const d1 = ccw(cx, cy, dx, dy, ax, ay), d2 = ccw(cx, cy, dx, dy, bx, by)
+  const d3 = ccw(ax, ay, bx, by, cx, cy), d4 = ccw(ax, ay, bx, by, dx, dy)
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))
+}
+function rectsOverlap(a: Rect, b: Rect) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0 }
+// A stroke is "hit" by the marquee if any vertex is inside, or any segment crosses a rect edge.
+function strokeHitsRect(s: DrawStroke, r: Rect): boolean {
+  const bb = strokeBBox(s.points); if (!bb || !rectsOverlap(bb, r)) return false
+  const o = strokeOutline(s.tool, s.points)
+  const inside = (x: number, y: number) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1
+  const edges: [number, number, number, number][] = [
+    [r.x0, r.y0, r.x1, r.y0], [r.x1, r.y0, r.x1, r.y1], [r.x1, r.y1, r.x0, r.y1], [r.x0, r.y1, r.x0, r.y0],
+  ]
+  for (let i = 0; i + 1 < o.length; i += 2) {
+    if (inside(o[i], o[i + 1])) return true
+    if (i + 3 < o.length) {
+      const ax = o[i], ay = o[i + 1], bx = o[i + 2], by = o[i + 3]
+      for (const [cx, cy, dx, dy] of edges) if (segSeg(ax, ay, bx, by, cx, cy, dx, dy)) return true
+    }
+  }
+  return false
+}
+
 interface DynastyNetworkProps {
   persons: PersonNode[]
   relationships: Relationship[]
@@ -80,6 +142,15 @@ interface DynastyNetworkProps {
   verticalText?: VerticalTextMode  // chart-wide vertical writing mode (default 'off')
   editable?: boolean               // enable in-place (double-click) editing of name/description
   onInlineEdit?: (req: InlineEditRequest) => void  // double-click → host renders an overlay editor
+  // Whiteboard / annotation drawing layer
+  drawings?: DrawStroke[]
+  drawMode?: DrawTool | 'eraser' | 'select' | null   // active tool; null/undefined = normal graph interaction
+  drawColor?: string
+  drawWidth?: number
+  onStrokeCommit?: (stroke: DrawStroke) => void
+  onStrokeErase?: (id: string) => void
+  onStrokesMove?: (ids: string[], dx: number, dy: number) => void
+  onStrokesDelete?: (ids: string[]) => void
 }
 
 export interface InlineEditRequest {
@@ -339,12 +410,25 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   verticalText,
   editable,
   onInlineEdit,
+  drawings,
+  drawMode,
+  drawColor,
+  drawWidth,
+  onStrokeCommit,
+  onStrokeErase,
+  onStrokesMove,
+  onStrokesDelete,
 }: DynastyNetworkProps, ref) {
   // Keep the latest callbacks in a ref so the heavy D3 effect doesn't re-run (which
   // rebuilds every node → a flash) when the parent re-renders with new callback
   // identities (e.g. on Save, when context functions like updatePerson are recreated).
-  const cbRef = useRef({ onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange, onBatchPositionChange, onNodeUpdate, onInlineEdit })
-  cbRef.current = { onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange, onBatchPositionChange, onNodeUpdate, onInlineEdit }
+  const cbRef = useRef({ onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange, onBatchPositionChange, onNodeUpdate, onInlineEdit, onStrokeCommit, onStrokeErase, onStrokesMove, onStrokesDelete })
+  cbRef.current = { onNodeClick, onNodeCtrlClick, onEdgeClick, onConnectRequest, onAddPerson, onPositionChange, onBatchPositionChange, onNodeUpdate, onInlineEdit, onStrokeCommit, onStrokeErase, onStrokesMove, onStrokesDelete }
+  // Drawing state read live by pointer/zoom handlers (avoids rebuilding the canvas on tool toggle).
+  const drawRef = useRef<{ mode: DrawTool | 'eraser' | 'select' | null; color: string; width: number }>({ mode: drawMode ?? null, color: drawColor ?? '#ef4444', width: drawWidth ?? 3 })
+  drawRef.current = { mode: drawMode ?? null, color: drawColor ?? '#ef4444', width: drawWidth ?? 3 }
+  // Selected stroke ids (marquee selection). A ref so it survives canvas rebuilds on move/undo.
+  const selRef = useRef<Set<string>>(new Set())
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null)
@@ -356,6 +440,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const connectModeRef = useRef({ active: false, sourceId: '' })
   const currentTransform = useRef(d3.zoomIdentity)
   const initialZoomApplied = useRef(false)
+  // A page's saved viewport arrives asynchronously (loadPage), often AFTER the first
+  // (empty) render already applied a provisional openOnBoard transform. Track whether the
+  // real saved viewport has been applied so it can override that provisional one exactly once.
+  const savedViewportApplied = useRef(false)
   // Double-tap detection state must survive effect re-runs (a node click re-runs the
   // effect via selectedNodeId, which would otherwise reset an effect-local variable).
   const lastTapRef = useRef<{ id: string; t: number } | null>(null)
@@ -550,7 +638,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
 
   // ── main D3 effect ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!svgRef.current || !persons.length || dimensions.width === 0) return
+    // Render even with zero people so a blank page still has a drawing board + capture
+    // surface (the whiteboard must work before any node/note is added).
+    if (!svgRef.current || dimensions.width === 0) return
 
     const svg = d3.select(svgRef.current)
     svg.selectAll('*').remove()
@@ -564,6 +654,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .attr('viewBox', '0 -5 10 10').attr('refX', 8).attr('refY', 0)
       .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
       .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#94a3b8')
+
+    // Whiteboard arrow marker — inherits the stroke color of the drawing.
+    defs.append('marker').attr('id', 'draw-arrow')
+      .attr('viewBox', '0 -5 10 10').attr('refX', 9).attr('refY', 0)
+      .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto').attr('markerUnits', 'strokeWidth')
+      .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', 'context-stroke')
 
     // Dot markers
     for (const [id, color] of [['marriage-dot', '#f97316'], ['partner-dot', '#f97316']] as const) {
@@ -671,7 +767,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       ? container.append('rect').attr('class', 'grid-bg')
           .attr('fill', 'url(#family-chart-grid)').style('pointer-events', 'none')
       : null
-    const updateBoard = () => {
+    // Fixed default "paper" for a fresh/empty page, and a floor so 0–1 node boards aren't
+    // tiny. Sizes are viewport-INDEPENDENT so the board (and its grid) is deterministic —
+    // it looks the same on every open and never fills the whole screen (leaving a margin).
+    const DEFAULT_BOARD_W = 1000, DEFAULT_BOARD_H = 700
+    const MIN_BOARD_W = 800, MIN_BOARD_H = 560
+    // The grid area (excludes the outer BOARD_MARGIN border), snapped to the grid step.
+    const computeBoardRect = (): Rect => {
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
       for (const n of nodes) {
         const r = getNodeRadius(n) + GRID_PAD
@@ -680,18 +782,27 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         if (n.x + r > maxX) maxX = n.x + r
         if (n.y + r > maxY) maxY = n.y + r
       }
-      if (!Number.isFinite(minX)) return
-      // Snap the grid area to the grid step so the pattern lines meet the edges cleanly.
-      minX = Math.floor(minX / gridSize) * gridSize
-      minY = Math.floor(minY / gridSize) * gridSize
-      maxX = Math.ceil(maxX / gridSize) * gridSize
-      maxY = Math.ceil(maxY / gridSize) * gridSize
-      gridBg?.attr('x', minX).attr('y', minY)
-        .attr('width', maxX - minX).attr('height', maxY - minY)
+      // Empty page: fixed default board anchored at the origin (where new nodes/notes spawn).
+      if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = DEFAULT_BOARD_W; maxY = DEFAULT_BOARD_H }
+      // Enforce the minimum board size, keeping the content centred.
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+      const halfW = Math.max((maxX - minX) / 2, MIN_BOARD_W / 2)
+      const halfH = Math.max((maxY - minY) / 2, MIN_BOARD_H / 2)
+      return {
+        x0: Math.floor((cx - halfW) / gridSize) * gridSize,
+        y0: Math.floor((cy - halfH) / gridSize) * gridSize,
+        x1: Math.ceil((cx + halfW) / gridSize) * gridSize,
+        y1: Math.ceil((cy + halfH) / gridSize) * gridSize,
+      }
+    }
+    const updateBoard = () => {
+      const b = computeBoardRect()
+      gridBg?.attr('x', b.x0).attr('y', b.y0)
+        .attr('width', b.x1 - b.x0).attr('height', b.y1 - b.y0)
       boardBorder
-        .attr('x', minX - BOARD_MARGIN).attr('y', minY - BOARD_MARGIN)
-        .attr('width', maxX - minX + BOARD_MARGIN * 2)
-        .attr('height', maxY - minY + BOARD_MARGIN * 2)
+        .attr('x', b.x0 - BOARD_MARGIN).attr('y', b.y0 - BOARD_MARGIN)
+        .attr('width', b.x1 - b.x0 + BOARD_MARGIN * 2)
+        .attr('height', b.y1 - b.y0 + BOARD_MARGIN * 2)
     }
     updateBoard()
 
@@ -2070,9 +2181,154 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         })
     })
 
+    // ── Whiteboard / annotation drawing layer (top of the stack so it overlays the graph) ──
+    const genId = () => 'stroke_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36)
+    const drawLayer = container.append('g').attr('class', 'draw-layer')
+    drawLayer.selectAll<SVGPathElement, DrawStroke>('path.draw-stroke')
+      .data(drawings ?? [], (d: any) => d.id).enter()
+      .append('path').attr('class', 'draw-stroke')
+      .attr('d', d => strokeToPath(d.tool, d.points))
+      .attr('fill', 'none').attr('stroke', d => d.color).attr('stroke-width', d => d.width)
+      .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round')
+      .attr('opacity', d => strokeOpacity(d))
+      .attr('marker-end', d => d.tool === 'arrow' ? 'url(#draw-arrow)' : null)
+      .style('pointer-events', drawRef.current.mode === 'eraser' ? 'stroke' : 'none')
+      .style('cursor', drawRef.current.mode === 'eraser' ? 'pointer' : 'default')
+      .on('pointerdown', function(event, d) {
+        if (drawRef.current.mode !== 'eraser') return
+        event.stopPropagation(); cbRef.current.onStrokeErase?.(d.id)
+      })
+      .on('pointerenter', function(event, d) {
+        if (drawRef.current.mode !== 'eraser' || (event as PointerEvent).buttons !== 1) return
+        cbRef.current.onStrokeErase?.(d.id)
+      })
+
+    // Selection overlay (dashed bbox around the marquee-selected strokes) + marquee rect.
+    const selGroup = container.append('g').attr('class', 'sel-group').style('pointer-events', 'none')
+    const unionSelBBox = (): Rect | null => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+      for (const s of (drawings ?? [])) {
+        if (!selRef.current.has(s.id)) continue
+        const b = strokeBBox(s.points); if (!b) continue
+        if (b.x0 < x0) x0 = b.x0; if (b.y0 < y0) y0 = b.y0; if (b.x1 > x1) x1 = b.x1; if (b.y1 > y1) y1 = b.y1
+      }
+      return Number.isFinite(x0) ? { x0, y0, x1, y1 } : null
+    }
+    const renderSelection = () => {
+      selGroup.selectAll('*').remove()
+      const bb = unionSelBBox(); if (!bb) return
+      selGroup.append('rect')
+        .attr('x', bb.x0 - 5).attr('y', bb.y0 - 5)
+        .attr('width', bb.x1 - bb.x0 + 10).attr('height', bb.y1 - bb.y0 + 10)
+        .attr('fill', 'rgba(59,130,246,0.06)').attr('stroke', '#3b82f6').attr('stroke-width', 1)
+        .attr('stroke-dasharray', '5,4').attr('vector-effect', 'non-scaling-stroke')
+    }
+    renderSelection()
+
+    // Transparent full-board capture surface — active while a drawing OR select tool is chosen.
+    const drawingTool0 = drawRef.current.mode && drawRef.current.mode !== 'eraser'
+    let live: { tool: DrawTool; pts: number[]; color: string; width: number; path: d3.Selection<SVGPathElement, unknown, null, undefined> } | null = null
+    let sel: { mode: 'marquee' | 'move'; sx: number; sy: number; ids: string[] } | null = null
+    const drawSurface = container.append('rect').attr('class', 'draw-surface')
+      .attr('x', -20000).attr('y', -20000).attr('width', 40000).attr('height', 40000)
+      .attr('fill', 'transparent')
+      .style('pointer-events', drawingTool0 ? 'all' : 'none')
+      .style('cursor', drawingTool0 ? (drawRef.current.mode === 'select' ? 'default' : 'crosshair') : 'default')
+      .style('touch-action', 'none')  // let touch/pen draw instead of scrolling/panning the page
+    const marquee = container.append('rect').attr('class', 'marquee')
+      .attr('fill', 'rgba(59,130,246,0.12)').attr('stroke', '#3b82f6').attr('stroke-width', 1)
+      .attr('stroke-dasharray', '5,4').attr('vector-effect', 'non-scaling-stroke')
+      .style('pointer-events', 'none').style('display', 'none')
+    drawSurface
+      .on('pointerdown', function(event: PointerEvent) {
+        const mode = drawRef.current.mode
+        if (!mode || mode === 'eraser') return
+        event.stopPropagation()
+        ;(this as SVGRectElement).setPointerCapture?.(event.pointerId)
+        const [x, y] = d3.pointer(event, container.node())
+        // ── Select tool: move existing selection, or start a marquee ──
+        if (mode === 'select') {
+          const bb = unionSelBBox()
+          if (bb && x >= bb.x0 - 6 && x <= bb.x1 + 6 && y >= bb.y0 - 6 && y <= bb.y1 + 6) {
+            sel = { mode: 'move', sx: x, sy: y, ids: [...selRef.current] }
+          } else {
+            selRef.current.clear(); renderSelection()
+            sel = { mode: 'marquee', sx: x, sy: y, ids: [] }
+            marquee.attr('x', x).attr('y', y).attr('width', 0).attr('height', 0).style('display', null)
+          }
+          return
+        }
+        // ── Drawing tools ──
+        const tool = mode as DrawTool
+        const color = drawRef.current.color, width = drawRef.current.width
+        const path = drawLayer.append('path')
+          .attr('fill', 'none').attr('stroke', color).attr('stroke-width', width)
+          .attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round')
+          .attr('opacity', tool === 'highlighter' ? 0.4 : 1)
+          .attr('marker-end', tool === 'arrow' ? 'url(#draw-arrow)' : null)
+          .style('pointer-events', 'none')
+        live = { tool, pts: [x, y], color, width, path }
+      })
+      .on('pointermove', function(event: PointerEvent) {
+        const [x, y] = d3.pointer(event, container.node())
+        if (sel) {
+          if (sel.mode === 'marquee') {
+            marquee.attr('x', Math.min(sel.sx, x)).attr('y', Math.min(sel.sy, y))
+              .attr('width', Math.abs(x - sel.sx)).attr('height', Math.abs(y - sel.sy))
+          } else {
+            const dx = x - sel.sx, dy = y - sel.sy
+            drawLayer.selectAll<SVGPathElement, DrawStroke>('.draw-stroke')
+              .filter((d) => selRef.current.has(d.id)).attr('transform', `translate(${dx},${dy})`)
+            selGroup.attr('transform', `translate(${dx},${dy})`)
+          }
+          return
+        }
+        if (!live) return
+        if (live.tool === 'pen' || live.tool === 'highlighter') live.pts.push(x, y)
+        else { live.pts[2] = x; live.pts[3] = y }
+        live.path.attr('d', strokeToPath(live.tool, live.pts))
+      })
+      .on('pointerup pointercancel', function(event: PointerEvent) {
+        ;(this as SVGRectElement).releasePointerCapture?.(event.pointerId)
+        const [x, y] = d3.pointer(event, container.node())
+        if (sel) {
+          if (sel.mode === 'marquee') {
+            marquee.style('display', 'none')
+            const r: Rect = { x0: Math.min(sel.sx, x), y0: Math.min(sel.sy, y), x1: Math.max(sel.sx, x), y1: Math.max(sel.sy, y) }
+            const next = new Set<string>()
+            for (const s of (drawings ?? [])) if (strokeHitsRect(s, r)) next.add(s.id)
+            selRef.current = next
+            renderSelection()
+          } else {
+            const dx = x - sel.sx, dy = y - sel.sy
+            // Leave the live transform in place; the data update re-renders at the new coords
+            // (resetting first would flash the strokes back to their old position).
+            if (dx || dy) cbRef.current.onStrokesMove?.(sel.ids, dx, dy)
+            else { selGroup.attr('transform', null); renderSelection() }
+          }
+          sel = null
+          return
+        }
+        if (!live) return
+        const { tool, pts, color, width, path } = live
+        live = null
+        path.remove()
+        if (pts.length < 4) return  // ignore stray taps / zero-size shapes
+        cbRef.current.onStrokeCommit?.({
+          id: genId(), tool, points: pts, color, width,
+          ...(tool === 'highlighter' ? { opacity: 0.4 } : {}),
+        })
+      })
+
     // Zoom
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
+      .filter((event) => {
+        // While a drawing tool is active, block drag-pan (but keep wheel zoom).
+        const mode = drawRef.current.mode
+        if (mode && mode !== 'eraser' && event.type !== 'wheel') return false
+        return !event.ctrlKey && !event.button
+      })
       .on('zoom', event => {
         currentTransform.current = event.transform
         container.attr('transform', event.transform)
@@ -2087,14 +2343,30 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       cbRef.current.onAddPerson(x, y)
     })
 
-    if (!initialZoomApplied.current) {
-      // Restore the saved zoom/pan if the page has one; otherwise fit-to-content.
-      const t = initialTransform && Number.isFinite(initialTransform.k)
-        ? d3.zoomIdentity.translate(initialTransform.x, initialTransform.y).scale(initialTransform.k)
-        : computeFit(dimensions.width, dimensions.height)
+    // Restore the saved zoom/pan if the page has one; otherwise anchor the board's top-left
+    // at a fixed screen margin so the grid always opens with clear top-left spacing (same
+    // for empty and content pages, and identical on every reopen).
+    const openOnBoard = () => {
+      const b = computeBoardRect()
+      const m = 56  // screen margin (px) from the viewport's top-left to the board border
+      const bx0 = b.x0 - BOARD_MARGIN, by0 = b.y0 - BOARD_MARGIN
+      const bw = (b.x1 - b.x0) + BOARD_MARGIN * 2, bh = (b.y1 - b.y0) + BOARD_MARGIN * 2
+      const scale = Math.min(1, Math.max(0.15,
+        Math.min((dimensions.width - 2 * m) / bw, (dimensions.height - 2 * m) / bh)))
+      return d3.zoomIdentity.translate(m - bx0 * scale, m - by0 * scale).scale(scale)
+    }
+    const hasSaved = !!initialTransform && Number.isFinite(initialTransform.k)
+    // Apply the saved viewport the moment it arrives, even if a provisional openOnBoard
+    // transform was already applied during the pre-load (empty) render — otherwise the
+    // reopened page keeps the provisional view instead of the saved one.
+    if (!initialZoomApplied.current || (hasSaved && !savedViewportApplied.current)) {
+      const t = hasSaved
+        ? d3.zoomIdentity.translate(initialTransform!.x, initialTransform!.y).scale(initialTransform!.k)
+        : openOnBoard()
       svg.call(zoom.transform, t)
       currentTransform.current = t
       initialZoomApplied.current = true
+      if (hasSaved) savedViewportApplied.current = true
     } else {
       svg.call(zoom.transform, currentTransform.current)
     }
@@ -2106,6 +2378,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         previewLine.style('display', 'none')
         nodeSel.select('.node-shape').attr('opacity', 1)
         nodeSel.select('.port-handles').style('display', 'none')
+      }
+      // Whiteboard selection: Esc clears it, Delete removes the selected strokes.
+      const el = e.target as HTMLElement | null
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+      if (e.key === 'Escape' && selRef.current.size) { selRef.current.clear(); renderSelection() }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && drawRef.current.mode === 'select' && selRef.current.size) {
+        e.preventDefault()
+        const ids = [...selRef.current]; selRef.current.clear(); renderSelection()
+        cbRef.current.onStrokesDelete?.(ids)
       }
     }
     document.addEventListener('keydown', handleKeyDown)
@@ -2119,7 +2400,27 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings])
+
+  // Toggle the drawing capture surface / eraser hit-testing when the active tool changes,
+  // without rebuilding the whole canvas (which would flash all nodes).
+  useEffect(() => {
+    if (!svgRef.current) return
+    const svg = d3.select(svgRef.current)
+    const mode = drawMode ?? null
+    const drawingTool = !!mode && mode !== 'eraser'
+    svg.select('.draw-surface')
+      .style('pointer-events', drawingTool ? 'all' : 'none')
+      .style('cursor', drawingTool ? (mode === 'select' ? 'default' : 'crosshair') : 'default')
+    svg.selectAll('.draw-stroke')
+      .style('pointer-events', mode === 'eraser' ? 'stroke' : 'none')
+      .style('cursor', mode === 'eraser' ? 'pointer' : 'default')
+    // Leaving the select tool drops any active selection box.
+    if (mode !== 'select' && selRef.current.size) {
+      selRef.current.clear()
+      svg.select('.sel-group').selectAll('*').remove()
+    }
+  }, [drawMode, drawings])
 
   // Update selection rings without full redraw
   useEffect(() => {

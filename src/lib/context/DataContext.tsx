@@ -1,7 +1,7 @@
 'use client'
-import { createContext, useState, useContext, useMemo, ReactNode } from 'react'
+import { createContext, useState, useContext, useMemo, useRef, ReactNode } from 'react'
 import { createLayoutStore, LayoutStore } from '@/services/layoutStore'
-import { ChartViewport, Episode, PageProps, PersonNode, Relationship, VerticalTextMode, ViewSettings } from '@/types/charts'
+import { ChartViewport, DrawStroke, Episode, PageProps, PersonNode, Relationship, VerticalTextMode, ViewSettings } from '@/types/charts'
 
 // Injectable translate function; when a host supplies one, the library uses it, else identity.
 export type TranslateFn = (key: string, fallback?: string) => string
@@ -12,6 +12,7 @@ interface DataState {
   relationships: Relationship[]
   episodes: Episode[]
   events: any[]
+  drawings?: DrawStroke[]
   // Page-level view state + canvas background, persisted inside chartProps.
   viewport?: ChartViewport
   viewSettings?: ViewSettings
@@ -58,6 +59,15 @@ interface DataContextValue extends DataState {
   addEpisode: (ep: Omit<Episode, 'id'>) => Episode
   updateEpisode: (id: string, updates: Partial<Episode>) => void
   deleteEpisode: (id: string) => void
+  addStroke: (stroke: DrawStroke) => void
+  deleteStroke: (id: string) => void
+  clearDrawings: () => void
+  moveStrokes: (ids: string[], dx: number, dy: number) => void
+  deleteStrokes: (ids: string[]) => void
+  undoDraw: () => void
+  redoDraw: () => void
+  canUndoDraw: boolean
+  canRedoDraw: boolean
   selectedNode: PersonNode | null
   setSelectedNode: (node: PersonNode | null) => void
   selectedRelationship: Relationship | null
@@ -125,6 +135,13 @@ export function DataProvider({
   const [selectedNode, setSelectedNode] = useState<PersonNode | null>(null)
   const [selectedRelationship, setSelectedRelationship] = useState<Relationship | null>(null)
 
+  // Whiteboard drawing undo/redo history (snapshots of the drawings array).
+  const [drawHistory, setDrawHistory] = useState<{ undo: DrawStroke[][]; redo: DrawStroke[][] }>({ undo: [], redo: [] })
+  const drawingsRef = useRef<DrawStroke[]>(data.drawings ?? [])
+  drawingsRef.current = data.drawings ?? []
+  const drawHistRef = useRef(drawHistory)
+  drawHistRef.current = drawHistory
+
   const loadPageList = async () => {
     setLoading(true)
     try {
@@ -140,7 +157,7 @@ export function DataProvider({
       const page = await store.getPageById(pageId)
       if (page) {
         setCurrentPage(page)
-        setData({ episodes: [], ...page.chartProps })
+        setData({ episodes: [], drawings: [], ...page.chartProps })
       }
       return page
     } finally {
@@ -262,6 +279,69 @@ export function DataProvider({
     }
     setData((prev) => ({ ...prev, persons: [...prev.persons, newPerson] }))
     return newPerson
+  }
+
+  // ── Whiteboard / annotation drawings (with undo/redo history) ──
+  // Snapshot the current drawings onto the undo stack before a mutation; a new edit
+  // clears the redo stack. Capped so the history can't grow without bound.
+  const recordDrawSnapshot = () => {
+    setDrawHistory((h) => ({ undo: [...h.undo, drawingsRef.current].slice(-100), redo: [] }))
+  }
+
+  const addStroke = (stroke: DrawStroke) => {
+    recordDrawSnapshot()
+    setData((prev) => ({ ...prev, drawings: [...(prev.drawings ?? []), stroke] }))
+  }
+
+  const deleteStroke = (id: string) => {
+    recordDrawSnapshot()
+    setData((prev) => ({ ...prev, drawings: (prev.drawings ?? []).filter((s) => s.id !== id) }))
+  }
+
+  const clearDrawings = () => {
+    if (!drawingsRef.current.length) return
+    recordDrawSnapshot()
+    setData((prev) => ({ ...prev, drawings: [] }))
+  }
+
+  // Translate a set of strokes by (dx,dy). Snapshots for undo like any other edit.
+  const moveStrokes = (ids: string[], dx: number, dy: number) => {
+    if (!ids.length || (dx === 0 && dy === 0)) return
+    const idSet = new Set(ids)
+    recordDrawSnapshot()
+    setData((prev) => ({
+      ...prev,
+      drawings: (prev.drawings ?? []).map((s) =>
+        idSet.has(s.id)
+          ? { ...s, points: s.points.map((v, i) => (i % 2 === 0 ? v + dx : v + dy)) }
+          : s,
+      ),
+    }))
+  }
+
+  const deleteStrokes = (ids: string[]) => {
+    if (!ids.length) return
+    const idSet = new Set(ids)
+    recordDrawSnapshot()
+    setData((prev) => ({ ...prev, drawings: (prev.drawings ?? []).filter((s) => !idSet.has(s.id)) }))
+  }
+
+  const undoDraw = () => {
+    const h = drawHistRef.current
+    if (!h.undo.length) return
+    const target = h.undo[h.undo.length - 1]
+    const current = drawingsRef.current
+    setData((prev) => ({ ...prev, drawings: target }))
+    setDrawHistory({ undo: h.undo.slice(0, -1), redo: [...h.redo, current] })
+  }
+
+  const redoDraw = () => {
+    const h = drawHistRef.current
+    if (!h.redo.length) return
+    const target = h.redo[h.redo.length - 1]
+    const current = drawingsRef.current
+    setData((prev) => ({ ...prev, drawings: target }))
+    setDrawHistory({ undo: [...h.undo, current], redo: h.redo.slice(0, -1) })
   }
 
   const updatePerson = (id: string, updates: Partial<PersonNode>) => {
@@ -457,6 +537,15 @@ export function DataProvider({
         addEpisode,
         updateEpisode,
         deleteEpisode,
+        addStroke,
+        deleteStroke,
+        clearDrawings,
+        moveStrokes,
+        deleteStrokes,
+        undoDraw,
+        redoDraw,
+        canUndoDraw: drawHistory.undo.length > 0,
+        canRedoDraw: drawHistory.redo.length > 0,
         selectedNode,
         setSelectedNode,
         selectedRelationship,
