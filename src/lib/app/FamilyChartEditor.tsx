@@ -270,7 +270,7 @@ function InlineEditOverlay({
   }
   const inputStyle: React.CSSProperties = {
     position: 'absolute', left: req.left, top: req.top, width: req.width, height: req.height,
-    fontSize: req.fontSize, color, fontFamily: font, fontWeight: bold ? 700 : 400,
+    fontSize: size, color, fontFamily: font, fontWeight: bold ? 700 : 400,
     textAlign: align, background: bg ? toRgba(bg, bgOpacity) : '#ffffff',
     border: '1px solid #3b82f6', borderRadius: 3, padding: '1px 3px', outline: 'none', resize: 'none', zIndex: 50,
   }
