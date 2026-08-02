@@ -4,7 +4,7 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
-import { computeFamilyLayout, pickAutoMode, type LayoutMode } from '@/utils/familyLayout'
+import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, type LayoutMode } from '@/utils/familyLayout'
 import { UsersIcon } from '@heroicons/react/24/outline'
 
 // Resolve a field's text style: per-field override (nameStyle/titleStyle/descriptionStyle)
@@ -673,9 +673,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // people actually sit (non-uniform — busy periods are stretched, matching the nodes,
     // not the other way round). Drawn inside the zoom container so it pans/zooms along.
     if (lastLayoutKind === 'timeline') {
-      const parseYr = (s?: string) => { const m = String(s ?? '').match(/-?\d{1,4}/); return m ? parseInt(m[0], 10) : null }
       const byYear = new Map<number, number>()
-      for (const n of nodes) { const yr = parseYr(n.birth); if (yr != null && !byYear.has(yr)) byYear.set(yr, n.y) }
+      for (const n of nodes) { const yr = parseYear(n.birth); if (yr != null && !byYear.has(yr)) byYear.set(yr, n.y) }
       if (byYear.size) {
         let minX = Infinity, minY = Infinity, maxY = -Infinity
         for (const n of nodes) { const r = getNodeRadius(n); minX = Math.min(minX, n.x - r); minY = Math.min(minY, n.y - r); maxY = Math.max(maxY, n.y + r) }
@@ -690,7 +689,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             .attr('stroke', '#94a3b8').attr('stroke-width', 1).attr('vector-effect', 'non-scaling-stroke')
           if (yy - lastLabelY >= 24) {
             axisG.append('text').attr('x', axisX - 8).attr('y', yy).attr('text-anchor', 'end')
-              .attr('dominant-baseline', 'middle').attr('font-size', 12).attr('fill', '#64748b').text(String(yr))
+              .attr('dominant-baseline', 'middle').attr('font-size', 12).attr('fill', '#64748b').text(formatYear(yr))
             lastLabelY = yy
           }
         }

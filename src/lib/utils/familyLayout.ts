@@ -49,14 +49,23 @@ export interface LayoutResult {
   mode: 'tidy' | 'timeline'
 }
 
-// Extract a signed integer year from strings like "1543", "1543-06-23", "155".
+// Extract a signed integer year from strings like "1543", "1543-06-23", "155", or a BC
+// year written as "-200", "前200", "紀元前200", "200 BC"/"200 BCE" → negative.
 // Era names (e.g. "享保12") return null — they can't be placed on a numeric axis.
 export function parseYear(s?: string): number | null {
   if (!s) return null
-  const m = String(s).match(/-?\d{1,4}/)
+  const str = String(s)
+  const m = str.match(/-?\d{1,4}/)
   if (!m) return null
-  const n = parseInt(m[0], 10)
-  return Number.isFinite(n) ? n : null
+  let n = parseInt(m[0], 10)
+  if (!Number.isFinite(n)) return null
+  if (n > 0 && /(紀元前|前|B\.?C\.?E?)/i.test(str)) n = -n   // BC → negative
+  return n
+}
+
+// Format a year for display: negative → "前200" (BC).
+export function formatYear(n: number): string {
+  return n < 0 ? `前${-n}` : String(n)
 }
 
 const isUnion = (n: LayoutNode) => n.type === 'union'
