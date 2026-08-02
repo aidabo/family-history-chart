@@ -50,7 +50,8 @@ export interface LayoutResult {
 }
 
 // Extract a signed integer year from strings like "1543", "1543-06-23", "155", or a BC
-// year written as "-200", "前200", "紀元前200", "200 BC"/"200 BCE" → negative.
+// year written as "-200", "前200", "紀元前200", "公元前200(年)", "200 BC"/"200 BCE" →
+// negative. AD/CE forms ("公元100", "西暦1600") stay positive.
 // Era names (e.g. "享保12") return null — they can't be placed on a numeric axis.
 export function parseYear(s?: string): number | null {
   if (!s) return null
