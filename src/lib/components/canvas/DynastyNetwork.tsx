@@ -673,26 +673,48 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // people actually sit (non-uniform — busy periods are stretched, matching the nodes,
     // not the other way round). Drawn inside the zoom container so it pans/zooms along.
     if (lastLayoutKind === 'timeline') {
-      const byYear = new Map<number, number>()
-      for (const n of nodes) { const yr = parseYear(n.birth); if (yr != null && !byYear.has(yr)) byYear.set(yr, n.y) }
-      if (byYear.size) {
+      // One tick per dated node, top→bottom. A year that is EARLIER than a year already
+      // seen higher up is out of chronological order (e.g. after a manual drag) → drawn
+      // in red so the user can spot and fix the misplaced node.
+      const pts = nodes
+        .map(n => ({ yr: parseYear(n.birth), y: n.y }))
+        .filter((p): p is { yr: number; y: number } => p.yr != null)
+        .sort((a, b) => a.y - b.y)
+      if (pts.length) {
+        // "In order" = the longest non-decreasing run of years down the axis (LIS). Any
+        // node NOT in it is the misplaced one (e.g. a young person dragged up among older
+        // ones) → its year label is red. This flags the moved node itself, not everyone
+        // below it.
+        const yr = pts.map(p => p.yr)
+        const n = yr.length, dp = new Array(n).fill(1), prev = new Array(n).fill(-1)
+        let best = 0
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < i; j++) if (yr[j] <= yr[i] && dp[j] + 1 > dp[i]) { dp[i] = dp[j] + 1; prev[i] = j }
+          if (dp[i] > dp[best]) best = i
+        }
+        const inOrder = new Set<number>()
+        for (let k = best; k !== -1; k = prev[k]) inOrder.add(k)
+
         let minX = Infinity, minY = Infinity, maxY = -Infinity
-        for (const n of nodes) { const r = getNodeRadius(n); minX = Math.min(minX, n.x - r); minY = Math.min(minY, n.y - r); maxY = Math.max(maxY, n.y + r) }
+        for (const nd of nodes) { const r = getNodeRadius(nd); minX = Math.min(minX, nd.x - r); minY = Math.min(minY, nd.y - r); maxY = Math.max(maxY, nd.y + r) }
         const axisX = minX - 70
         const axisG = container.append('g').attr('class', 'year-axis').style('pointer-events', 'none')
         axisG.append('line').attr('x1', axisX).attr('y1', minY).attr('x2', axisX).attr('y2', maxY)
           .attr('stroke', '#94a3b8').attr('stroke-width', 1).attr('vector-effect', 'non-scaling-stroke')
-        const sorted = [...byYear.entries()].sort((a, b) => a[1] - b[1])
         let lastLabelY = -Infinity
-        for (const [yr, yy] of sorted) {
-          axisG.append('line').attr('x1', axisX - 5).attr('y1', yy).attr('x2', axisX + 5).attr('y2', yy)
-            .attr('stroke', '#94a3b8').attr('stroke-width', 1).attr('vector-effect', 'non-scaling-stroke')
-          if (yy - lastLabelY >= 24) {
-            axisG.append('text').attr('x', axisX - 8).attr('y', yy).attr('text-anchor', 'end')
-              .attr('dominant-baseline', 'middle').attr('font-size', 12).attr('fill', '#64748b').text(formatYear(yr))
-            lastLabelY = yy
+        pts.forEach((p, i) => {
+          const bad = !inOrder.has(i)      // misplaced relative to the chronological run
+          const stroke = bad ? '#ef4444' : '#94a3b8'
+          axisG.append('line').attr('x1', axisX - 5).attr('y1', p.y).attr('x2', axisX + 5).attr('y2', p.y)
+            .attr('stroke', stroke).attr('stroke-width', 1).attr('vector-effect', 'non-scaling-stroke')
+          if (bad || p.y - lastLabelY >= 24) {   // always label out-of-order ones; thin the rest
+            axisG.append('text').attr('x', axisX - 8).attr('y', p.y).attr('text-anchor', 'end')
+              .attr('dominant-baseline', 'middle').attr('font-size', 12)
+              .attr('fill', bad ? '#ef4444' : '#64748b').attr('font-weight', bad ? 700 : 400)
+              .text(formatYear(p.yr))
+            lastLabelY = p.y
           }
-        }
+        })
       }
     }
 

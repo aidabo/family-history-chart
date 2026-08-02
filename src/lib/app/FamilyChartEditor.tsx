@@ -178,13 +178,14 @@ type TextAlign = 'left' | 'center' | 'right'
 // font family / background / alignment / rotation). Style changes persist immediately
 // via onSettings; the text value commits via onCommit (Enter / focus leaving the editor).
 function InlineEditOverlay({
-  req, node, onCommit, onSettings, onCancel,
+  req, node, onCommit, onSettings, onCancel, onDelete,
 }: {
   req: InlineEditRequest
   node?: PersonNode
   onCommit: (value: string) => void
   onSettings: (patch: Partial<PersonNode>) => void
   onCancel: () => void
+  onDelete?: () => void
 }) {
   const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -315,6 +316,13 @@ function InlineEditOverlay({
             <option value="card">カード</option>
             <option value="banner">バナー</option>
           </select>
+        )}
+        {isNote && onDelete && (
+          <button type="button" title="メモを削除" onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { committed.current = true; onDelete() }}
+            className="flex h-6 w-6 items-center justify-center rounded border border-red-300 text-red-600 hover:bg-red-50">
+            <TrashIcon className="h-4 w-4" />
+          </button>
         )}
         {isDesc && <>
           {btn(align === 'left', () => setAlignment('left'), '左揃え', <Bars3BottomLeftIcon className="h-4 w-4" />)}
@@ -1060,6 +1068,7 @@ export default function FamilyChartEditor({
               }}
               onSettings={(patch) => updatePerson(inlineEdit.nodeId, patch)}
               onCancel={() => setInlineEdit(null)}
+              onDelete={() => { deletePerson(inlineEdit.nodeId); setInlineEdit(null) }}
             />
           </>
         )}
