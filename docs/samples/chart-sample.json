@@ -1,0 +1,81 @@
+{
+  "id": "page_sample_tokugawa",
+  "title": "徳川将軍家（サンプル）",
+  "status": "draft",
+  "category": "history",
+  "options": {},
+  "chartProps": {
+    "dynasties": [],
+    "events": [],
+    "episodes": [
+      { "id": "ep1", "personId": "p_ieyasu", "title": "関ヶ原の戦い", "excerpt": "1600年、天下分け目の戦いに勝利。", "date": "1600", "type": "event" }
+    ],
+    "persons": [
+      {
+        "id": "p_ieyasu", "type": "person", "name": "徳川家康", "gender": "male",
+        "birth": "1543", "death": "1616", "title": "征夷大将軍",
+        "description": "江戸幕府初代将軍",
+        "shape": "circle", "nodeSize": 44, "bgColor": "#3b82f6",
+        "nameStyle": { "color": "#1e3a8a", "fontSize": 15, "bold": true },
+        "x": 300, "y": 120, "fx": 300, "fy": 120
+      },
+      {
+        "id": "p_tsukiyama", "type": "person", "name": "築山殿", "gender": "female",
+        "death": "1579", "description": "家康の正室",
+        "shape": "circle", "nodeSize": 40,
+        "x": 160, "y": 120, "fx": 160, "fy": 120
+      },
+      {
+        "id": "u1", "type": "union", "name": "",
+        "marriage": { "type": "marriage" },
+        "x": 230, "y": 120, "fx": 230, "fy": 120
+      },
+      {
+        "id": "p_nobuyasu", "type": "person", "name": "松平信康", "gender": "male",
+        "birth": "1559", "death": "1579", "description": "家康の長男",
+        "x": 230, "y": 300, "fx": 230, "fy": 300
+      },
+      {
+        "id": "p_hidetada", "type": "person", "name": "徳川秀忠", "gender": "male",
+        "birth": "1579", "death": "1632", "title": "二代将軍", "description": "家康の三男",
+        "x": 480, "y": 300, "fx": 480, "fy": 300
+      },
+      {
+        "id": "p_go", "type": "person", "name": "江", "gender": "female",
+        "birth": "1573", "death": "1626", "description": "浅井三姉妹の三女・崇源院",
+        "x": 620, "y": 300, "fx": 620, "fy": 300
+      },
+      {
+        "id": "u2", "type": "union", "name": "",
+        "marriage": { "type": "marriage" },
+        "x": 550, "y": 300, "fx": 550, "fy": 300
+      },
+      {
+        "id": "p_iemitsu", "type": "person", "name": "徳川家光", "gender": "male",
+        "birth": "1604", "death": "1651", "title": "三代将軍",
+        "x": 550, "y": 480, "fx": 550, "fy": 480
+      },
+      {
+        "id": "note1", "type": "note", "name": "", "noteShape": "sticky",
+        "description": "徳川将軍家の略系図（サンプル）",
+        "descriptionWidth": 180, "descriptionBgColor": "#fef9c3", "descriptionAlign": "center",
+        "x": 800, "y": 120, "fx": 800, "fy": 120
+      }
+    ],
+    "relationships": [
+      { "id": "r1", "source": "p_ieyasu",   "target": "u1", "type": "partner" },
+      { "id": "r2", "source": "p_tsukiyama","target": "u1", "type": "partner" },
+      { "id": "r3", "source": "u1", "target": "p_nobuyasu", "type": "parent-child" },
+      { "id": "r4", "source": "p_ieyasu", "target": "p_hidetada", "type": "parent-child" },
+      { "id": "r5", "source": "p_hidetada", "target": "u2", "type": "partner" },
+      { "id": "r6", "source": "p_go",       "target": "u2", "type": "partner" },
+      { "id": "r7", "source": "u2", "target": "p_iemitsu", "type": "parent-child" },
+      { "id": "r8", "source": "p_ieyasu", "target": "p_hidetada", "type": "succession", "label": "継承" }
+    ],
+    "viewport": { "k": 1, "x": 0, "y": 0 },
+    "viewSettings": { "layoutMode": "auto", "lastLayoutKind": "tidy", "spacing": 1, "showGrid": true, "gridSize": 20 },
+    "background": "#ffffff",
+    "backgroundOpacity": 1,
+    "verticalText": "off"
+  }
+}
