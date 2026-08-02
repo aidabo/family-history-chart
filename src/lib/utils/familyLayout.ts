@@ -591,56 +591,44 @@ function lineageBlocks(nodes: LayoutNode[], links: LayoutLink[]): string[][] {
   return [...groups().values()]
 }
 
-// Public entry — unified pipeline. Step 1: analyse the relationship graph and split it
-// into lineage clusters (the "relationship map" foundation). Step 2: lay each cluster
-// out internally with the chosen view — 系図 (tidy, top→down) or timeline (by year,
-// anchored on the cluster's dated members; others are approximate). Step 3: pack the
-// clusters as non-overlapping blocks (stacked vertically and across). Both 系図 and
-// timeline share this, so families never tangle and unrelated people never overlap.
-export function computeFamilyLayout(
-  nodes: LayoutNode[],
-  links: LayoutLink[],
-  options: LayoutOptions = {},
-): LayoutResult {
-  const resolved = options.mode && options.mode !== 'auto' ? options.mode : pickAutoMode(nodes, links)
-  // 'force' is produced by the canvas component; anything else uses the cluster pipeline.
-  if (resolved !== 'tidy' && resolved !== 'timeline') return computeSingleLayout(nodes, links, { ...options, mode: resolved })
+// Connected components (independent families / separate imports) over all nodes.
+function connectedComponents(nodes: LayoutNode[], links: LayoutLink[]): string[][] {
+  const ids = new Set(nodes.map(n => n.id))
+  const adj = new Map<string, string[]>()
+  for (const n of nodes) adj.set(n.id, [])
+  for (const l of links) if (ids.has(l.source) && ids.has(l.target)) {
+    adj.get(l.source)!.push(l.target); adj.get(l.target)!.push(l.source)
+  }
+  const seen = new Set<string>()
+  const comps: string[][] = []
+  for (const n of nodes) {
+    if (seen.has(n.id)) continue
+    const comp: string[] = []; const q = [n.id]; seen.add(n.id)
+    while (q.length) { const x = q.shift()!; comp.push(x); for (const nb of adj.get(x) || []) if (!seen.has(nb)) { seen.add(nb); q.push(nb) } }
+    comps.push(comp)
+  }
+  return comps
+}
 
-  const comps = lineageBlocks(nodes, links)
-  if (comps.length <= 1) return computeSingleLayout(nodes, links, { ...options, mode: resolved })
+interface Laid { positions: Record<string, { x: number; y: number }>; minX: number; minY: number; w: number; h: number; size: number }
 
-  const centerX = options.centerX ?? 600
-  const topY = options.topY ?? 100
-  const col = options.colGap ?? 150
-  const gap = col * 0.7   // spacing between packed lineage blocks (kept tight)
+function measure(positions: Record<string, { x: number; y: number }>, size: number, pad: number): Laid {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const id in positions) {
+    const p = positions[id]
+    if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
+  }
+  if (!Number.isFinite(minX)) { minX = minY = 0; maxX = maxY = 0 }
+  return { positions, minX: minX - pad, minY: minY - pad, w: (maxX - minX) + 2 * pad, h: (maxY - minY) + 2 * pad, size }
+}
 
-  // Lay out each cluster locally (centred on 0,0), measure its bounding box.
-  const laid = comps.map(idsArr => {
-    const idset = new Set(idsArr)
-    const sub = nodes.filter(n => idset.has(n.id))
-    const subLinks = links.filter(l => idset.has(l.source) && idset.has(l.target))
-    const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: resolved, centerX: 0, topY: 0 })
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const id in positions) {
-      const p = positions[id]
-      if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
-      if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
-    }
-    if (!Number.isFinite(minX)) { minX = minY = 0; maxX = maxY = 0 }
-    const pad = col * 0.3
-    return { positions, minX: minX - pad, minY: minY - pad, w: (maxX - minX) + 2 * pad, h: (maxY - minY) + 2 * pad, size: idset.size }
-  })
-  // Biggest family first; isolated people (size 1) drift to the end.
+// Shelf-pack blocks into a roughly square area, zigzagging every other block in a row
+// (dropped down) so neighbours are easy to tell apart and connector lines don't pile up.
+function shelfPack(laid: Laid[], col: number, gap: number, centerX: number, topY: number): Record<string, { x: number; y: number }> {
   laid.sort((a, b) => b.size - a.size || b.w - a.w)
-
-  // Shelf-pack the cluster boxes into a roughly square overall area (so blocks stagger
-  // both across and down instead of forming one very tall column). The largest block
-  // still sets a lower bound on the row width so it never wraps mid-family.
   const totalArea = laid.reduce((s, c) => s + c.w * c.h, 0)
   const maxRow = Math.max(laid[0].w, Math.sqrt(totalArea) * 1.5)
-  // Zigzag the blocks in each row (every other block dropped down) so horizontally
-  // adjacent clusters are easy to tell apart and their cross-block connector lines sit
-  // at different heights instead of piling up in one dense band.
   const zig = (h: number) => Math.min(h * 0.6, col * 1.6)
   let x = 0, y = 0, rowH = 0, col0 = 0
   const out: Record<string, { x: number; y: number }> = {}
@@ -651,11 +639,56 @@ export function computeFamilyLayout(
     for (const id in c.positions) out[id] = { x: c.positions[id].x + ox, y: c.positions[id].y + oy }
     x += c.w + gap; rowH = Math.max(rowH, c.h + stagger); col0++
   }
-  // Recenter horizontally on centerX, top at topY.
   const xs = Object.values(out).map(p => p.x), ys = Object.values(out).map(p => p.y)
   const shiftX = centerX - (Math.min(...xs) + Math.max(...xs)) / 2
   const shiftY = topY - Math.min(...ys)
   for (const id in out) { out[id].x += shiftX; out[id].y += shiftY }
+  return out
+}
+
+// Lay out ONE connected component: split into lineage blocks and pack them (tight gap).
+function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: LayoutOptions, resolved: 'tidy' | 'timeline'): LayoutResult {
+  const comps = lineageBlocks(nodes, links)
+  if (comps.length <= 1) return computeSingleLayout(nodes, links, { ...options, mode: resolved })
+  const col = options.colGap ?? 150
+  const laid = comps.map(idsArr => {
+    const idset = new Set(idsArr)
+    const sub = nodes.filter(n => idset.has(n.id))
+    const subLinks = links.filter(l => idset.has(l.source) && idset.has(l.target))
+    const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: resolved, centerX: 0, topY: 0 })
+    return measure(positions, idset.size, col * 0.3)
+  })
+  const out = shelfPack(laid, col, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
+  return { positions: out, mode: resolved }
+}
+
+// Public entry — unified pipeline. Step 1: split into independent components (separate
+// imports / unrelated families) so they never interleave. Step 2: within each component,
+// analyse the relationship graph into lineage clusters and lay each out per the chosen
+// view (系図 tidy / timeline). Step 3: pack lineage blocks within a component (tight),
+// then pack whole components apart (wide gap) so unrelated families are clearly separated.
+export function computeFamilyLayout(
+  nodes: LayoutNode[],
+  links: LayoutLink[],
+  options: LayoutOptions = {},
+): LayoutResult {
+  const resolved = options.mode && options.mode !== 'auto' ? options.mode : pickAutoMode(nodes, links)
+  // 'force' is produced by the canvas component; anything else uses the cluster pipeline.
+  if (resolved !== 'tidy' && resolved !== 'timeline') return computeSingleLayout(nodes, links, { ...options, mode: resolved })
+
+  const components = connectedComponents(nodes, links)
+  if (components.length <= 1) return layoutOneComponent(nodes, links, options, resolved)
+
+  const col = options.colGap ?? 150
+  const laid = components.map(compIds => {
+    const idset = new Set(compIds)
+    const sub = nodes.filter(n => idset.has(n.id))
+    const subLinks = links.filter(l => idset.has(l.source) && idset.has(l.target))
+    const { positions } = layoutOneComponent(sub, subLinks, { ...options, centerX: 0, topY: 0 }, resolved)
+    return measure(positions, idset.size, col * 0.5)
+  })
+  // Independent components separated with a wide gap so separate imports don't cross.
+  const out = shelfPack(laid, col, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
   return { positions: out, mode: resolved }
 }
 
@@ -781,11 +814,14 @@ function computeSingleLayout(
         : (gen.get(id) ?? 0)
     const perGen = new Map<number, number>()
     for (const p of g.persons) { const gg = gen.get(p.id) ?? 0; perGen.set(gg, (perGen.get(gg) ?? 0) + 1) }
-    const DX = mode === 'timeline' ? col * 1.1 : col * 0.6
+    // Amplitude grows with depth so a long lone-heir chain opens into a wider fan the
+    // further down it goes (deeper generation → bigger swing), capped so it stays sane.
+    const base = mode === 'timeline' ? col * 1.1 : col * 0.6
     for (const id of px.keys()) {
       const gg = genOf(id)
       if ((perGen.get(gg) ?? 0) > 2) continue   // keep branching generations centered
-      px.set(id, (px.get(id) ?? 0) + (gg % 2 === 0 ? -1 : 1) * DX)
+      const amp = base * (1 + Math.min(gg, 12) * 0.22)
+      px.set(id, (px.get(id) ?? 0) + (gg % 2 === 0 ? -1 : 1) * amp)
     }
   }
 
