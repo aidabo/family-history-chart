@@ -361,6 +361,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [gridSize, setGridSize] = useState(20)
   const [showGrid, setShowGrid] = useState(true)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
+  const [spacing, setSpacing] = useState(1)
+  const spacingRef = useRef(1)   // last-applied spacing factor
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -469,6 +471,30 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   }, [onBatchPositionChange, computeFit, dimensions])
 
   const handleAutoLayout = useCallback(() => runAutoLayout(layoutMode), [runAutoLayout, layoutMode])
+
+  // Spacing slider: scale every node's POSITION (coordinates) out/in from the content
+  // centroid — nodes spread apart or draw closer without changing node size. Applied on
+  // release so the heavy re-render happens once, not on every slider tick.
+  const applySpacing = useCallback((val: number) => {
+    const nodes = nodesRef.current
+    if (!nodes.length) return
+    const ratio = val / (spacingRef.current || 1)
+    spacingRef.current = val
+    if (ratio === 1) return
+    let cx = 0, cy = 0
+    for (const n of nodes) { cx += n.x; cy += n.y }
+    cx /= nodes.length; cy /= nodes.length
+    const positions: Record<string, { x: number; y: number }> = {}
+    for (const n of nodes) {
+      const nx = cx + (n.x - cx) * ratio, ny = cy + (n.y - cy) * ratio
+      n.x = nx; n.y = ny; n.fx = nx; n.fy = ny
+      positions[n.id] = { x: nx, y: ny }
+    }
+    cbRef.current.onBatchPositionChange(positions)
+    simulationRef.current?.alpha(0.1).restart()
+    // No auto-fit: keep the current zoom so the spacing change (nodes spreading apart or
+    // drawing closer, at constant node size) is directly visible.
+  }, [])
 
   useEffect(() => {
     const el = containerRef.current
@@ -2071,6 +2097,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             <option value="timeline">年表(timeline)</option>
           </select>
         </div>
+        <label className="flex items-center gap-1 text-sm text-gray-700" title="ノードの間隔（座標）を拡大／縮小">
+          <span>間隔</span>
+          <input type="range" min={0.4} max={2.5} step={0.05} value={spacing}
+            onChange={e => setSpacing(Number(e.target.value))}
+            onMouseUp={() => applySpacing(spacing)} onTouchEnd={() => applySpacing(spacing)}
+            className="w-24" />
+        </label>
       </div>
 
       <svg ref={svgRef} width={dimensions.width} height={dimensions.height}
