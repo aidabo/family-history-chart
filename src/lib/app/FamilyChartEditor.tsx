@@ -477,10 +477,16 @@ export default function FamilyChartEditor({
   const importInputRef = useRef<HTMLInputElement>(null)
   const netRef = useRef<DynastyNetworkHandle>(null)
 
+  // Tracks which page's data is actually loaded into the context. Until this matches `id`,
+  // `viewSettings`/`viewport` still hold the PREVIOUS chart's values (loadPage is async), so
+  // the canvas must not restore from them — otherwise a chart reopens with the prior chart's
+  // layout mode / spacing / edge style. See the gated props on <DynastyNetwork> below.
+  const [loadedId, setLoadedId] = useState<string | null>(null)
   useEffect(() => {
     if (id) {
       loadPage(id).then((page) => {
         if (!page) onBack()
+        else setLoadedId(id)
       })
     }
   }, [id])
@@ -1028,9 +1034,10 @@ export default function FamilyChartEditor({
       {/* Canvas area */}
       <div ref={containerRef} className="flex-1 relative overflow-hidden">
         <DynastyNetwork
+          key={id}
           ref={netRef}
-          initialTransform={viewport ?? null}
-          initialViewSettings={viewSettings ?? null}
+          initialTransform={loadedId === id ? (viewport ?? null) : null}
+          initialViewSettings={loadedId === id ? (viewSettings ?? null) : null}
           background={background}
           backgroundImage={backgroundImage}
           backgroundOpacity={backgroundOpacity}

@@ -141,6 +141,7 @@ export interface ViewSettings {
   spacing?: number     // node-position spacing factor (the 間隔 slider)
   showGrid?: boolean
   gridSize?: number
+  edgeStyle?: 'straight' | 'ortho'  // parent-child wiring: straight line / orthogonal bus (系図 only)
 }
 
 export interface ChartProps {

@@ -368,6 +368,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [spacing, setSpacing] = useState(1)
   const spacingRef = useRef(1)   // last-applied spacing factor
   const [lastLayoutKind, setLastLayoutKind] = useState<'tidy' | 'timeline' | 'force' | null>(null)
+  // Parent-child wiring style. 'ortho' draws a shared horizontal "bus" (bracket) per parent
+  // so siblings hang from one bar; only takes effect in 系図(tidy). Default straight (unchanged).
+  const [edgeStyle, setEdgeStyle] = useState<'straight' | 'ortho'>('straight')
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -448,9 +451,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       }
     },
     getViewSettings: (): ViewSettings => ({
-      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize,
+      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle,
     }),
-  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize])
+  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle])
 
   // Restore saved toolbar/layout settings once when the page loads. Positions are already
   // stored at the saved spacing, so spacing only restores the slider baseline (no re-scale);
@@ -465,6 +468,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (typeof vs.spacing === 'number') { setSpacing(vs.spacing); spacingRef.current = vs.spacing }
     if (typeof vs.showGrid === 'boolean') setShowGrid(vs.showGrid)
     if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
+    if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
   }, [initialViewSettings])
 
   const runAutoLayout = useCallback((mode: LayoutMode) => {
@@ -780,6 +784,20 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const edgeCurveIndex = new Map<string, number>()
     for (const group of edgeGroups.values()) {
       group.forEach((l, i) => edgeCurveIndex.set(l.id, i - Math.floor(group.length / 2)))
+    }
+
+    // Orthogonal "bus" wiring (系図 only): group parent-child links by their parent so
+    // siblings share one horizontal bar. Each link stays its own <path> (per-edge click /
+    // EdgeCard preserved); they just share the same bus Y, so the horizontals line up.
+    const orthoBus = edgeStyle === 'ortho' && lastLayoutKind === 'tidy'
+    const busGroups = new Map<string, SimLink[]>()
+    if (orthoBus) {
+      for (const l of links) {
+        if (l.type !== 'parent-child') continue
+        const k = l.source.id
+        if (!busGroups.has(k)) busGroups.set(k, [])
+        busGroups.get(k)!.push(l)
+      }
     }
 
     const edgeColor = (d: SimLink): string => d.color || (
@@ -1964,6 +1982,27 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
 
     // Helper: build a curved SVG path for a link
     const buildLinkPath = (d: SimLink) => {
+      // Orthogonal bus (系図 only): parent → drop to shared bus Y → across → drop to child.
+      // Siblings share busY so their horizontals form one continuous bar. Each path is still
+      // its own element, so clicking a child's drop selects that specific relationship.
+      if (orthoBus && d.type === 'parent-child') {
+        const group = busGroups.get(d.source.id)
+        const rSb = getNodeRadius(d.source)
+        const rTb = getNodeRadius(d.target)
+        const sx = snapToGrid(d.source.x)
+        const sBottom = d.source.y + rSb
+        // Topmost child in the group decides the bus line (consistent for all siblings).
+        let minChildTop = d.target.y - rTb
+        if (group) for (const m of group) minChildTop = Math.min(minChildTop, m.target.y - getNodeRadius(m.target))
+        // Only valid when children sit below the parent; otherwise fall through to straight.
+        if (minChildTop > sBottom + 4) {
+          const busY = snapToGrid(sBottom + (minChildTop - sBottom) * 0.5)
+          const cx = snapToGrid(d.target.x)
+          const cTop = snapToGrid(d.target.y - rTb)
+          const y1b = snapToGrid(sBottom)
+          return `M ${sx} ${y1b} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
+        }
+      }
       const dx = d.target.x - d.source.x
       const dy = d.target.y - d.source.y
       const len = Math.hypot(dx, dy) || 1
@@ -2080,7 +2119,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle])
 
   // Update selection rings without full redraw
   useEffect(() => {
@@ -2170,6 +2209,16 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             <option value="timeline">年表(timeline)</option>
           </select>
         </div>
+        {(layoutMode === 'tidy' || lastLayoutKind === 'tidy') && (
+          <label className="flex items-center gap-1 text-sm text-gray-700" title="親子の配線（系図のみ）：直線／直交バス">
+            <span>配線</span>
+            <select value={edgeStyle} onChange={e => setEdgeStyle(e.target.value as 'straight' | 'ortho')}
+              className="rounded border border-gray-300 text-sm px-1 py-0.5">
+              <option value="straight">直線</option>
+              <option value="ortho">直交</option>
+            </select>
+          </label>
+        )}
         <label className="flex items-center gap-1 text-sm text-gray-700" title="ノードの間隔（座標）を拡大／縮小">
           <span>間隔</span>
           <input type="range" min={0.4} max={2.5} step={0.05} value={spacing}

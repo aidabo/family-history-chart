@@ -68,6 +68,19 @@ Mirror `app/pages/`:
 - Image upload uses host `fileUploadService`.
 - (Phase 5) place a chart on a page via stackpage and view it.
 
+## 実装メモ / 既知の注意点（Phase 2–3）
+
+- **`viewSettings` を必ず往復させる**（重要）。ホストの行マッパー `socialChartsApi.ts` の `rowToPageProps` は
+  `chart_props` を項目ごとに再構築するため、**保存済みの `chartProps.viewSettings` を復元対象に含め忘れると、
+  再Open時にレイアウト設定（`layoutMode` 系図/年表・`spacing` 間隔・`showGrid`/`gridSize`・`edgeStyle` 配線・
+  `lastLayoutKind`）が失われて既定値（force）に戻る**。保存側（`pagePropsToRow` → `JSON.stringify(chartProps)`）は
+  全体を書き出すので落ちないが、**読込側でのみ欠落**して発覚しにくい（スタンドアロンの json-server は
+  chartProps をそのまま返すため再現しない）。`viewport`/`background`/`dpi` と同様に `viewSettings` も明示的に通すこと。
+- **エディタは「対象idのロード完了後」に復元する**。`loadPage` は非同期なので、`DataProvider` を跨いで
+  前チャートの `viewSettings` が一瞬残る。ライブラリ側は `<DynastyNetwork key={id}>` ＋ `loadedId===id` ゲートで
+  古い値による復元を防いでいる（`FamilyChartEditor.tsx`）。ホスト側は編集ページ内に `DataProvider` を置くので
+  基本フレッシュだが、この不変条件は維持する。
+
 ## Open items to resolve during Phase 1
 - Exact template for a custom Ghost table + admin endpoint in THIS fork (read the person/estate impl first).
 - ID scheme (Ghost objectid vs our `name_shortid`) — map on save.
