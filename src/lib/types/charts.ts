@@ -159,6 +159,7 @@ export interface ViewSettings {
   gridSize?: number
   edgeStyle?: 'straight' | 'ortho'  // parent-child wiring: straight line / orthogonal bus (系図 only)
   timelineBasis?: 'lifespan' | 'period'  // 年表(timeline)の縦軸基準：生没年(既定) / 在位期間(period)
+  timelineCols?: number  // 年表: 一直線の系譜を左右に折り返す列数（幅の制御・既定6）
 }
 
 export interface ChartProps {

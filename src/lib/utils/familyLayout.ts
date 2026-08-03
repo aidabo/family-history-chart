@@ -42,6 +42,55 @@ export interface LayoutOptions {
   topY?: number      // y of the first (oldest) generation
   colGap?: number    // horizontal distance between adjacent people
   rowGap?: number    // vertical distance between generations
+  timelineCols?: number  // timeline: max columns a chain-like line snakes across (width control)
+}
+
+// A component is "chain-like" when almost nothing branches — a linear succession/temporal
+// line (e.g. an emperor lineage) rather than a family tree. Such a component is snaked
+// left↔right within a bounded width instead of drifting endlessly to one side.
+function isChainLike(nodes: LayoutNode[], links: LayoutLink[]): boolean {
+  if (nodes.length < 8) return false
+  const deg = new Map<string, number>()
+  for (const l of links) {
+    deg.set(l.source, (deg.get(l.source) ?? 0) + 1)
+    deg.set(l.target, (deg.get(l.target) ?? 0) + 1)
+  }
+  const branchy = nodes.filter(n => (deg.get(n.id) ?? 0) > 2).length
+  return branchy <= nodes.length * 0.15
+}
+
+// Order the ids by a depth-first walk of the chain edges, starting from the earliest node
+// and, at each step, continuing to the UNVISITED neighbour whose year is closest. This keeps
+// each lineage contiguous, so when snaked into columns the succession edges connect adjacent
+// columns (short, non-crossing); only a genuine branch/dynasty-change becomes a long jump.
+function chainOrder(ids: string[], links: LayoutLink[], yearOf: (id: string) => number | undefined): string[] {
+  const idset = new Set(ids)
+  const adj = new Map<string, string[]>()
+  for (const id of ids) adj.set(id, [])
+  for (const l of links) {
+    if (idset.has(l.source) && idset.has(l.target)) {
+      adj.get(l.source)!.push(l.target)
+      adj.get(l.target)!.push(l.source)
+    }
+  }
+  const y = (id: string) => yearOf(id) ?? Number.MAX_SAFE_INTEGER
+  const starts = [...ids].sort((a, b) => y(a) - y(b))
+  const visited = new Set<string>()
+  const order: string[] = []
+  for (const s of starts) {
+    if (visited.has(s)) continue
+    const stack = [s]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (visited.has(id)) continue
+      visited.add(id); order.push(id)
+      // Closest-year unvisited neighbour should be visited next → push it LAST (popped first).
+      const nbs = adj.get(id)!.filter(n => !visited.has(n))
+        .sort((a, b) => Math.abs(y(a) - y(id)) - Math.abs(y(b) - y(id)))
+      for (let i = nbs.length - 1; i >= 0; i--) stack.push(nbs[i])
+    }
+  }
+  return order
 }
 
 export interface LayoutResult {
@@ -751,6 +800,47 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
     const set = new Set(compIds)
     const sub = nodes.filter(n => set.has(n.id))
     const subLinks = links.filter(l => set.has(l.source) && set.has(l.target))
+
+    // Chain-like line (e.g. an emperor succession): snake it left↔right across a bounded
+    // number of columns (options.timelineCols), ordered by year down the axis, so a long
+    // temporal chain stays readable instead of drifting ever rightwards.
+    if (isChainLike(sub, subLinks)) {
+      const C = Math.max(2, Math.round(options.timelineCols ?? 4))
+      const period = 2 * (C - 1)
+      const boustro = (i: number) => { const c = i % period; return c < C ? c : period - c }   // 0..C-1..1
+
+      // Split into ROOT lineages by succession/血縁 only — a 朝代更换(custom) does NOT merge
+      // two lineages — so each dynasty/root line is separate, ordered along its own chain.
+      const spineLinks = subLinks.filter(l => l.type !== 'custom')
+      const groups = connectedComponents(sub, spineLinks)
+        .map(ids => {
+          const order = chainOrder(ids.filter(id => year.get(id) != null), subLinks, id => year.get(id))
+          const undated = ids.filter(id => year.get(id) == null)
+          const ys = order.map(id => year.get(id)!)
+          return { order, undated, minY: ys.length ? Math.min(...ys) : Infinity, maxY: ys.length ? Math.max(...ys) : -Infinity }
+        })
+        .filter(g => g.order.length)
+        .sort((a, b) => a.minY - b.minY)
+
+      // Pack lineages into x-lanes (interval partitioning): a lane is reused once its previous
+      // line has ended, so SEQUENTIAL dynasties stack in one lane while CONCURRENT lineages
+      // (different roots at the same era, e.g. 南宋 vs 元) get separate, side-by-side lanes.
+      // Total width = the MAX number of concurrent lineages, not the total node count.
+      const laneStride = (C - 1) * col + laneGap
+      const laneEnd: number[] = []
+      for (const g of groups) {
+        let lane = laneEnd.findIndex(end => end <= g.minY)
+        if (lane === -1) { lane = laneEnd.length; laneEnd.push(-Infinity) }
+        laneEnd[lane] = g.maxY
+        const baseX = laneX + lane * laneStride
+        g.order.forEach((id, i) => { out[id] = { x: baseX + boustro(i) * col, y: yForYear(year.get(id)!) } })
+        for (const id of g.undated) if (out[id] == null) out[id] = { x: baseX, y: NaN }
+      }
+      for (const n of sub) if (out[n.id] == null) out[n.id] = { x: laneX, y: NaN }
+      laneX += Math.max(1, laneEnd.length) * laneStride
+      continue
+    }
+
     const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: 'timeline', centerX: 0, topY: 0 })
     const pxs = Object.values(positions).map(p => p.x)
     const minX = pxs.length ? Math.min(...pxs) : 0, maxX = pxs.length ? Math.max(...pxs) : 0

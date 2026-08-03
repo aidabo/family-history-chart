@@ -439,6 +439,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   drawRef.current = { mode: drawMode ?? null, color: drawColor ?? '#ef4444', width: drawWidth ?? 3 }
   // Selected stroke ids (marquee selection). A ref so it survives canvas rebuilds on move/undo.
   const selRef = useRef<Set<string>>(new Set())
+  // Rectangle multi-select of person nodes: a toggle mode + the set of selected node ids
+  // (ref so it survives rebuilds). In marquee mode an empty-canvas drag selects; dragging any
+  // selected node then moves the whole selection together.
+  const [marqueeMode, setMarqueeMode] = useState(false)
+  const marqueeModeRef = useRef(false)
+  marqueeModeRef.current = marqueeMode
+  const selNodesRef = useRef<Set<string>>(new Set())
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null)
@@ -471,6 +478,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [edgeStyle, setEdgeStyle] = useState<'straight' | 'ortho'>('straight')
   // 年表(timeline)の縦軸基準：'lifespan'=生没年（既定） / 'period'=在位期間(person.period)。
   const [timelineBasis, setTimelineBasis] = useState<'lifespan' | 'period'>('lifespan')
+  // 年表: 一直線の系譜（皇帝の継承など）を左右に折り返す列数＝表示幅の制御（既定4）。
+  const [timelineCols, setTimelineCols] = useState(4)
   // The birth/death fed to the timeline layout & axis: swap in the period's start/end when
   // the basis is 'period' (so emperors line up by reign, not birth).
   const tlBirth = (n: { birth?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodStart(n.period) : n.birth
@@ -555,9 +564,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       }
     },
     getViewSettings: (): ViewSettings => ({
-      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle, timelineBasis,
+      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols,
     }),
-  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis])
+  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols])
 
   // Restore saved toolbar/layout settings once when the page loads. Positions are already
   // stored at the saved spacing, so spacing only restores the slider baseline (no re-scale);
@@ -574,6 +583,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
     if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
     if (vs.timelineBasis === 'lifespan' || vs.timelineBasis === 'period') setTimelineBasis(vs.timelineBasis)
+    if (typeof vs.timelineCols === 'number') setTimelineCols(vs.timelineCols)
   }, [initialViewSettings])
 
   const runAutoLayout = useCallback((mode: LayoutMode) => {
@@ -586,7 +596,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (resolved === 'force') {
       positions = forceLayoutPositions(nodesRef.current, linksRef.current)
     } else {
-      positions = computeFamilyLayout(nodes, links, { mode: resolved }).positions
+      positions = computeFamilyLayout(nodes, links, { mode: resolved, timelineCols }).positions
       // Timeline: keep the year axis (y) but resolve any overlaps via collision.
       if (resolved === 'timeline') positions = relaxTimelinePositions(nodesRef.current, positions)
     }
@@ -602,7 +612,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const t = computeFit(dimensions.width, dimensions.height)
       d3.select(svgRef.current).transition().duration(400).call(zoomRef.current.transform, t)
     }
-  }, [onBatchPositionChange, computeFit, dimensions, timelineBasis])
+  }, [onBatchPositionChange, computeFit, dimensions, timelineBasis, timelineCols])
 
   const handleAutoLayout = useCallback(() => runAutoLayout(layoutMode), [runAutoLayout, layoutMode])
 
@@ -613,7 +623,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (tlBasisFirst.current) { tlBasisFirst.current = false; return }
     if (lastLayoutKind === 'timeline') runAutoLayout('timeline')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timelineBasis])
+  }, [timelineBasis, timelineCols])
+
+  // Crosshair cursor while range-select mode is on (hint that a drag will marquee-select).
+  useEffect(() => {
+    if (svgRef.current) svgRef.current.style.cursor = marqueeMode ? 'crosshair' : ''
+  }, [marqueeMode])
 
   // Spacing slider: scale every node's POSITION (coordinates) out/in from the content
   // centroid — nodes spread apart or draw closer without changing node size. Applied on
@@ -1006,7 +1021,16 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         if (!event.active) simulation.alphaTarget(0.3).restart()
         d.fx = d.x; d.fy = d.y
         cluster = null
-        if ((event.sourceEvent as MouseEvent | undefined)?.shiftKey) {
+        // Dragging a member of the marquee selection moves the WHOLE selection together.
+        if (selNodesRef.current.has(d.id) && selNodesRef.current.size > 1) {
+          const ids = [...selNodesRef.current]
+          const orig = new Map<string, { x: number; y: number }>()
+          for (const id of ids) {
+            const n = nodesRef.current.find((nn) => nn.id === id)
+            if (n) { orig.set(id, { x: n.x, y: n.y }); n.fx = n.x; n.fy = n.y }
+          }
+          cluster = { ids, orig }
+        } else if ((event.sourceEvent as MouseEvent | undefined)?.shiftKey) {
           const ids = connectedComponent(d.id, linksRef.current)
           const orig = new Map<string, { x: number; y: number }>()
           for (const id of ids) {
@@ -1014,6 +1038,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             if (n) { orig.set(id, { x: n.x, y: n.y }); n.fx = n.x; n.fy = n.y }
           }
           cluster = { ids, orig }
+        } else if (selNodesRef.current.size && !selNodesRef.current.has(d.id)) {
+          // Dragging a node outside the selection drops the selection.
+          selNodesRef.current.clear()
+          d3.select(svgRef.current).select('.multi-sel').selectAll('*').remove()
         }
       })
       .on('drag', function(event, d) {
@@ -2225,6 +2253,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Tick
     simulation.on('tick', () => {
       updateBoard()
+      if (selNodesRef.current.size) renderMultiSel()   // keep the selection rings on the nodes
       linkSel.attr('d', buildLinkPath)
 
       nodeSel.attr('transform', d => `translate(${snapToGrid(d.x)},${snapToGrid(d.y)})`)
@@ -2414,9 +2443,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
       .filter((event) => {
-        // While a drawing tool is active, block drag-pan (but keep wheel zoom).
+        // While a drawing tool OR rectangle-select mode is active, block drag-pan on empty
+        // canvas (keep wheel zoom) so the drag draws the marquee instead of panning.
         const mode = drawRef.current.mode
         if (mode && mode !== 'eraser' && event.type !== 'wheel') return false
+        if (marqueeModeRef.current && event.type !== 'wheel') return false
         return !event.ctrlKey && !event.button
       })
       .on('zoom', event => {
@@ -2425,6 +2456,56 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       })
 
     svg.call(zoom).on('dblclick.zoom', null)
+
+    // ── Rectangle multi-select of person nodes (range-select mode) ──
+    const multiSelLayer = container.append('g').attr('class', 'multi-sel').style('pointer-events', 'none')
+    const renderMultiSel = () => {
+      const items = nodesRef.current.filter(n => n.type !== 'union' && selNodesRef.current.has(n.id))
+      const sel = multiSelLayer.selectAll<SVGCircleElement, SimNode>('circle').data(items, (d: any) => d.id)
+      sel.exit().remove()
+      sel.enter().append('circle')
+        .attr('fill', 'rgba(37,99,235,0.06)').attr('stroke', '#2563eb').attr('stroke-width', 2)
+        .attr('stroke-dasharray', '4,3').attr('vector-effect', 'non-scaling-stroke')
+        .merge(sel as any)
+        .attr('cx', d => snapToGrid(d.x)).attr('cy', d => snapToGrid(d.y)).attr('r', d => getNodeRadius(d) + 7)
+    }
+    renderMultiSel()  // restore rings after a rebuild (selNodesRef persists)
+
+    const nodeMarquee = container.append('rect').attr('class', 'node-marquee')
+      .attr('fill', 'rgba(37,99,235,0.10)').attr('stroke', '#2563eb').attr('stroke-width', 1)
+      .attr('stroke-dasharray', '5,4').attr('vector-effect', 'non-scaling-stroke')
+      .style('pointer-events', 'none').style('display', 'none')
+    let nodeMarq: { sx: number; sy: number } | null = null
+    svg.on('pointerdown.marq', function(event: PointerEvent) {
+      if (!marqueeModeRef.current || event.target !== this) return   // only empty canvas
+      event.preventDefault()
+      ;(this as SVGSVGElement).setPointerCapture?.(event.pointerId)
+      const [x, y] = d3.pointer(event, container.node())
+      nodeMarq = { sx: x, sy: y }
+      nodeMarquee.attr('x', x).attr('y', y).attr('width', 0).attr('height', 0).style('display', null)
+    })
+    svg.on('pointermove.marq', function(event: PointerEvent) {
+      if (!nodeMarq) return
+      const [x, y] = d3.pointer(event, container.node())
+      nodeMarquee.attr('x', Math.min(nodeMarq.sx, x)).attr('y', Math.min(nodeMarq.sy, y))
+        .attr('width', Math.abs(x - nodeMarq.sx)).attr('height', Math.abs(y - nodeMarq.sy))
+    })
+    svg.on('pointerup.marq pointercancel.marq', function(event: PointerEvent) {
+      if (!nodeMarq) return
+      ;(this as SVGSVGElement).releasePointerCapture?.(event.pointerId)
+      const [x, y] = d3.pointer(event, container.node())
+      const x0 = Math.min(nodeMarq.sx, x), y0 = Math.min(nodeMarq.sy, y)
+      const x1 = Math.max(nodeMarq.sx, x), y1 = Math.max(nodeMarq.sy, y)
+      nodeMarq = null
+      nodeMarquee.style('display', 'none')
+      const next = new Set<string>()
+      for (const n of nodesRef.current) {
+        if (n.type === 'union') continue
+        if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1) next.add(n.id)
+      }
+      selNodesRef.current = next
+      renderMultiSel()
+    })
 
     // Double-click empty canvas → add person
     svg.on('dblclick', function(event) {
@@ -2473,6 +2554,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const el = e.target as HTMLElement | null
       const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
       if (e.key === 'Escape' && selRef.current.size) { selRef.current.clear(); renderSelection() }
+      // Rectangle node-selection: Esc clears it.
+      if (e.key === 'Escape' && selNodesRef.current.size) { selNodesRef.current.clear(); renderMultiSel() }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && drawRef.current.mode === 'select' && selRef.current.size) {
         e.preventDefault()
         const ids = [...selRef.current]; selRef.current.clear(); renderSelection()
@@ -2573,6 +2656,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       </div>
 
       <div className="absolute top-2 right-2 z-10 flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 md:gap-3 bg-white/95 p-1.5 md:p-2 rounded shadow max-w-[calc(100vw-4rem)]">
+        <button type="button" onClick={() => setMarqueeMode(m => !m)}
+          title="範囲選択：空白をドラッグでノードを矩形選択→選択したノードだけ一括移動（Escで解除）"
+          className={`shrink-0 rounded border px-2 py-0.5 text-sm ${marqueeMode ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+          範囲選択
+        </button>
         <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700 cursor-pointer">
           <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)}
             className="h-4 w-4 rounded text-blue-600" />
@@ -2617,6 +2705,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
               className="rounded border border-gray-300 text-sm px-1 py-0.5">
               <option value="lifespan">生没年</option>
               <option value="period">在位期間</option>
+            </select>
+            <span className="whitespace-nowrap" title="一直線の系譜を左右に折り返す列数（表示幅）">幅</span>
+            <select value={timelineCols} onChange={e => setTimelineCols(Number(e.target.value))}
+              className="rounded border border-gray-300 text-sm px-1 py-0.5" title="折り返し列数（少=細く長い／多=広く短い）">
+              {[2, 3, 4, 5, 6, 8, 10, 12].map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
         )}
