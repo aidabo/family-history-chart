@@ -1,5 +1,24 @@
 import { NodeShape } from '@/types/charts'
 
+// ┌─ ADDING A NODE SHAPE — conventions (so the node stays readable) ─────────────────┐
+// │ A node draws its NAME centred INSIDE the shape, with TITLE(肩書)/PERIOD(生没年)   │
+// │ around it and DESCRIPTION(メモ) beside it. For every shape:                       │
+// │  1. TEXT-SAFE: the shape behind the name must be transparent/light enough to read │
+// │     the centred name. Compose shapes from a BORDER + simple FILL/LINES only.      │
+// │     Do NOT add opaque emoji-art or photo/portrait frames — those were removed      │
+// │     from this picker because they hid the name (their types/rendering remain in    │
+// │     shapeArt.ts only for backward compatibility with old charts).                 │
+// │  2. SIZE-DRIVEN: honour `nodeSize` (round shapes) or bandWidth/bandHeight so the   │
+// │     shape scales; the label layout in DynastyNetwork measures its offsets from the │
+// │     shape extent + a small gap, so labels track the size automatically.            │
+// │  3. LABEL LAYOUT lives in DynastyNetwork's "NODE LABEL LAYOUT CONVENTION" block    │
+// │     (name inside / title above|right / period stacked|outer / description          │
+// │     below|left, horizontal|vertical). New round shapes get it for free via         │
+// │     drawCenteredName + lblOffMap; non-round shapes (like rect/band) need their own  │
+// │     branch in labelSel that mirrors those rules for both writing directions.       │
+// │ Register the shape in SHAPES below AND in NodeShape (types/charts.ts).             │
+// └───────────────────────────────────────────────────────────────────────────────────┘
+
 interface ShapePickerProps {
   value?: NodeShape
   onChange: (shape: NodeShape) => void
@@ -8,34 +27,17 @@ interface ShapePickerProps {
 
 const SHAPES: { shape: NodeShape; icon: string; title: string }[] = [
   { shape: 'circle',  icon: '●',  title: 'Circle (avatar)' },
-  { shape: 'rect',    icon: '▬',  title: 'Rectangle (card)' },
+  { shape: 'rect',    icon: '▭',  title: 'Rectangle (card)' },
   { shape: 'diamond', icon: '◆',  title: 'Diamond' },
   { shape: 'hexagon', icon: '⬡',  title: 'Hexagon' },
-  { shape: 'band',    icon: '━',  title: 'Band (dynasty era)' },
+  { shape: 'band',    icon: '▬',  title: 'Band (dynasty era)' },
   { shape: 'ellipse', icon: '⬭',  title: 'Ellipse (free)' },
   { shape: 'star',    icon: '★',  title: 'Star (hero / 英雄)' },
   { shape: 'shield',  icon: '🛡', title: 'Shield / 盾' },
-  { shape: 'bubble',  icon: '💬', title: 'Speech bubble / 吹き出し' },
-  { shape: 'tag',     icon: '🏷', title: 'Tag / ラベル' },
-  { shape: 'seal',    icon: '🔴', title: 'Seal / 印' },
-  // decorative Japanese/historical cards
-  { shape: 'kabuto',  icon: '⛩',  title: '武将 Busho (kabuto)' },
-  { shape: 'thinker', icon: '🗿', title: '思想家 Philosopher' },
-  { shape: 'manga',   icon: '💥', title: '漫画風 Manga' },
-  { shape: 'flyer',   icon: '📰', title: 'チラシ風 Retro flyer' },
-  { shape: 'scroll',  icon: '📜', title: '巻物 Scroll' },
-  { shape: 'castle',  icon: '🏯', title: '城 Castle' },
-  { shape: 'crest',   icon: '🎴', title: '家紋 Family crest' },
-  { shape: 'enso',    icon: '⭕', title: '禅円 Ensō' },
-  { shape: 'compass', icon: '🧭', title: '羅針盤 Compass' },
-  { shape: 'book',    icon: '📚', title: '和本 Japanese book' },
-  // portrait frames for people (photo + themed frame)
-  { shape: 'pGeneral', icon: '👤', title: '武将 肖像フレーム (General)' },
-  { shape: 'pNoble',   icon: '🌸', title: '姫 肖像フレーム (Noble)' },
-  { shape: 'pRoyal',   icon: '👑', title: '皇族 肖像フレーム (Royal)' },
-  { shape: 'pScholar', icon: '📖', title: '学者 肖像フレーム (Scholar)' },
-  { shape: 'pMonk',    icon: '☯', title: '僧 肖像フレーム (Monk)' },
-  { shape: 'pHero',    icon: '⭐', title: '英雄 肖像フレーム (Hero)' },
+  // NOTE: the decorative emoji-art shapes (bubble/tag/seal/kabuto/thinker/manga/flyer/
+  // scroll/castle/crest/enso/compass/book) and ALL portrait frames (pGeneral/pNoble/pRoyal/
+  // pScholar/pMonk/pHero) were removed from the picker — their art is opaque and hides/obscures
+  // the node text. The types + rendering remain for backward compatibility with existing charts.
 ]
 
 export function ShapePicker({ value = 'circle', onChange, label }: ShapePickerProps) {

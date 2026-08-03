@@ -60,11 +60,11 @@ export function AppearanceSection({ node, onChange }: Props) {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-0.5">
-              Band Height: {node.bandHeight ?? 20}px
+              Band Height: {node.bandHeight ?? 40}px
             </label>
             <input
-              type="range" min={10} max={60}
-              value={node.bandHeight ?? 20}
+              type="range" min={20} max={80}
+              value={node.bandHeight ?? 40}
               onChange={(e) => onChange({ bandHeight: Number(e.target.value) })}
               className="w-full"
             />
