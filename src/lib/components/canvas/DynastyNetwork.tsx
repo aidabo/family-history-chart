@@ -1157,6 +1157,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       let lifespan = ''
       if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
       else if (d.birth) lifespan = d.birth
+      else if (d.death) lifespan = `– ${d.death}`   // death-only (birth unknown)
       else if (d.age) lifespan = d.age
       const vName = resolveVertical(d, d.name)
       const vTitle = d.title ? resolveVertical(d, d.title) : false
@@ -1823,6 +1824,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         let lifespan = ''
         if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
         else if (d.birth) lifespan = d.birth
+        else if (d.death) lifespan = `– ${d.death}`   // death-only (birth unknown)
         else if (d.age) lifespan = d.age
         if (lifespan) {
           label.append('text').text(lifespan)
@@ -1856,6 +1858,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       let lifespan = ''
       if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
       else if (d.birth) lifespan = d.birth
+      else if (d.death) lifespan = `– ${d.death}`   // death-only (birth unknown)
       else if (d.age) lifespan = d.age
 
       const openProfile = (t: d3.Selection<SVGTextElement, unknown, null, undefined>) => {
