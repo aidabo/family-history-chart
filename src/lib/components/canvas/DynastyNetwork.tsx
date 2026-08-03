@@ -4,7 +4,17 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
-import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, type LayoutMode } from '@/utils/familyLayout'
+import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, type LayoutMode } from '@/utils/familyLayout'
+
+// Title shown on a node: "title(period)" when a 在位/期間 is set (e.g. 皇帝(626-649)),
+// otherwise just the title, or "(period)" when only a period is set.
+function displayTitle(d: { title?: string; period?: string }): string {
+  if (d.period) return d.title ? `${d.title}(${d.period})` : `(${d.period})`
+  return d.title || ''
+}
+function hasTitleText(d: { title?: string; period?: string }): boolean {
+  return !!(d.title || d.period)
+}
 import { UsersIcon } from '@heroicons/react/24/outline'
 
 // Resolve a field's text style: per-field override (nameStyle/titleStyle/descriptionStyle)
@@ -459,6 +469,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   // Parent-child wiring style. 'ortho' draws a shared horizontal "bus" (bracket) per parent
   // so siblings hang from one bar; only takes effect in 系図(tidy). Default straight (unchanged).
   const [edgeStyle, setEdgeStyle] = useState<'straight' | 'ortho'>('straight')
+  // 年表(timeline)の縦軸基準：'lifespan'=生没年（既定） / 'period'=在位期間(person.period)。
+  const [timelineBasis, setTimelineBasis] = useState<'lifespan' | 'period'>('lifespan')
+  // The birth/death fed to the timeline layout & axis: swap in the period's start/end when
+  // the basis is 'period' (so emperors line up by reign, not birth).
+  const tlBirth = (n: { birth?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodStart(n.period) : n.birth
+  const tlDeath = (n: { death?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodEnd(n.period) : n.death
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -539,9 +555,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       }
     },
     getViewSettings: (): ViewSettings => ({
-      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle,
+      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle, timelineBasis,
     }),
-  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle])
+  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis])
 
   // Restore saved toolbar/layout settings once when the page loads. Positions are already
   // stored at the saved spacing, so spacing only restores the slider baseline (no re-scale);
@@ -557,11 +573,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (typeof vs.showGrid === 'boolean') setShowGrid(vs.showGrid)
     if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
     if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
+    if (vs.timelineBasis === 'lifespan' || vs.timelineBasis === 'period') setTimelineBasis(vs.timelineBasis)
   }, [initialViewSettings])
 
   const runAutoLayout = useCallback((mode: LayoutMode) => {
     if (!simulationRef.current) return
-    const nodes = nodesRef.current.map(n => ({ id: n.id, type: n.type, gender: n.gender, birth: n.birth, death: n.death, name: n.name }))
+    // birth/death drive the timeline axis; swap in the period start/end when the basis is 'period'.
+    const nodes = nodesRef.current.map(n => ({ id: n.id, type: n.type, gender: n.gender, birth: tlBirth(n), death: tlDeath(n), name: n.name }))
     const links = linksRef.current.map(l => ({ source: l.source.id, target: l.target.id, type: l.type, label: l.label }))
     const resolved = mode === 'auto' ? pickAutoMode(nodes, links) : mode
     let positions: Record<string, { x: number; y: number }>
@@ -584,9 +602,18 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const t = computeFit(dimensions.width, dimensions.height)
       d3.select(svgRef.current).transition().duration(400).call(zoomRef.current.transform, t)
     }
-  }, [onBatchPositionChange, computeFit, dimensions])
+  }, [onBatchPositionChange, computeFit, dimensions, timelineBasis])
 
   const handleAutoLayout = useCallback(() => runAutoLayout(layoutMode), [runAutoLayout, layoutMode])
+
+  // Switching the timeline basis (生没年 ↔ 在位期間) re-arranges the timeline so nodes move
+  // to their new year rows. Skips the first mount (nothing to re-lay-out yet).
+  const tlBasisFirst = useRef(true)
+  useEffect(() => {
+    if (tlBasisFirst.current) { tlBasisFirst.current = false; return }
+    if (lastLayoutKind === 'timeline') runAutoLayout('timeline')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timelineBasis])
 
   // Spacing slider: scale every node's POSITION (coordinates) out/in from the content
   // centroid — nodes spread apart or draw closer without changing node size. Applied on
@@ -814,7 +841,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       // seen higher up is out of chronological order (e.g. after a manual drag) → drawn
       // in red so the user can spot and fix the misplaced node.
       const pts = nodes
-        .map(n => ({ yr: parseYear(n.birth), y: n.y }))
+        .map(n => ({ yr: parseYear(tlBirth(n)), y: n.y }))
         .filter((p): p is { yr: number; y: number } => p.yr != null)
         .sort((a, b) => a.y - b.y)
       if (pts.length) {
@@ -1176,7 +1203,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           return t
         }
         addCol(d.name || 'Unknown', fs, weight)
-        if (d.title) addCol(d.title, fs * 0.8)
+        if (hasTitleText(d)) addCol(displayTitle(d), fs * 0.8)
         if (lifespan) addCol(lifespan, fs * 0.75)
       } else {
         let ly = shapeBottom + fs + 4
@@ -1184,10 +1211,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           .attr('font-size', fs).attr('font-weight', weight).attr('fill', tc).attr('font-family', ff)
           .attr('pointer-events', 'none').text(d.name || 'Unknown')
         ly += fs * 1.3
-        if (d.title) {
+        if (hasTitleText(d)) {
           g.append('text').attr('text-anchor', 'middle').attr('y', ly)
             .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
-            .attr('pointer-events', 'none').text(d.title)
+            .attr('pointer-events', 'none').text(displayTitle(d))
           ly += fs * 1.1
         }
         if (lifespan) {
@@ -1866,8 +1893,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         if (resolveVertical(d, d.title || d.name)) {
           const halfW = shape === 'band' ? (d.bandWidth || 200) / 2 : s * 1.5
           let x = halfW + fs + 6
-          if (d.title) {
-            const t = label.append('text').text(d.title)
+          if (hasTitleText(d)) {
+            const t = label.append('text').text(displayTitle(d))
               .attr('text-anchor', 'middle').attr('x', x).attr('dominant-baseline', 'central')
               .attr('font-size', fs * 0.9).attr('fill', tc).attr('font-family', ff)
             applyVertical(t); x += fs * 1.5
@@ -1882,7 +1909,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         }
         const hh = shape === 'band' ? (d.bandHeight || 40) / 2 : s
         const lines: { text: string; size: number }[] = []
-        if (d.title) lines.push({ text: d.title, size: fs * 0.9 })
+        if (hasTitleText(d)) lines.push({ text: displayTitle(d), size: fs * 0.9 })
         if (lifespan) lines.push({ text: lifespan, size: fs * 0.8 })
         // Draw bottom-up so the lowest line sits just above the shape's top edge.
         let baseY = -(hh + 8)
@@ -1926,19 +1953,21 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       }
 
       // Title lives in nameLabelG (draggable + double-tap editable). Uses its own style.
-      if (d.title) {
+      // Shows "title(period)" via displayTitle; the double-click editor still edits raw title.
+      if (hasTitleText(d)) {
+        const tt = displayTitle(d)
         const tst = textStyleOf(d, 'title')
         const tsize = tst.size || 12
-        const vt = resolveVertical(d, d.title)
+        const vt = resolveVertical(d, tt)
         // Vertical SVG text hit-tests as a horizontal strip, so clicks on the column
         // miss. Add a transparent rect covering the actual (vertical) column.
         if (vt) {
-          const h = Math.max(1, [...d.title].length) * tsize * 1.05
+          const h = Math.max(1, [...tt].length) * tsize * 1.05
           nameLabelG.append('rect').attr('class', 'lbl-hit')
             .attr('x', -tsize * 0.75).attr('y', -h / 2).attr('width', tsize * 1.5).attr('height', h)
             .attr('fill', 'transparent')
         }
-        const t = nameLabelG.append('text').text(d.title)
+        const t = nameLabelG.append('text').text(tt)
           .attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
           .attr('font-size', tsize).attr('font-weight', tst.bold ? 'bold' : 'normal')
           .attr('fill', tst.color || tc).attr('font-family', tst.font || ff)
@@ -2461,7 +2490,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis])
 
   // Toggle the drawing capture surface / eraser hit-testing when the active tool changes,
   // without rebuilding the whole canvas (which would flash all nodes).
@@ -2578,6 +2607,16 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
               className="rounded border border-gray-300 text-sm px-1 py-0.5">
               <option value="straight">直線</option>
               <option value="ortho">直交</option>
+            </select>
+          </label>
+        )}
+        {(layoutMode === 'timeline' || lastLayoutKind === 'timeline') && (
+          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title="年表の縦軸基準：生没年 / 在位期間(period)">
+            <span className="whitespace-nowrap">年表</span>
+            <select value={timelineBasis} onChange={e => setTimelineBasis(e.target.value as 'lifespan' | 'period')}
+              className="rounded border border-gray-300 text-sm px-1 py-0.5">
+              <option value="lifespan">生没年</option>
+              <option value="period">在位期間</option>
             </select>
           </label>
         )}

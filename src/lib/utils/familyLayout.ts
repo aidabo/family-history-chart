@@ -84,6 +84,20 @@ export function formatYear(n: number): string {
   return n < 0 ? `前${-n}` : String(n)
 }
 
+// A 在位/期間 string like "626-649", "前221-前210", "明治1-明治45", or a single "626".
+// Return the START / END portion as a string (parseYear handles BC/和暦). Split on a range
+// separator; BC uses a "前" prefix so the ASCII "-" between the two years is unambiguous.
+export function periodStart(period?: string): string | undefined {
+  if (!period) return undefined
+  const s = period.trim(); if (!s) return undefined
+  return (s.split(/[-–—~〜]/)[0] || '').trim() || undefined
+}
+export function periodEnd(period?: string): string | undefined {
+  if (!period) return undefined
+  const parts = period.trim().split(/[-–—~〜]/)
+  return (parts[1] ?? parts[0] ?? '').trim() || undefined
+}
+
 const isUnion = (n: LayoutNode) => n.type === 'union'
 
 // Vertical (generation) edges: parent-child (incl. 養子/義理) and disciple/master.

@@ -52,13 +52,24 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
         />
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Title</label>
+        <label className="block text-xs text-gray-500 mb-0.5">Title 肩書</label>
         <input
           type="text"
           defaultValue={node.title ?? ''}
           onBlur={(e) => onChange({ title: e.target.value })}
           className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-0.5">Period 期間（在位など・例 626-649）</label>
+        <input
+          type="text"
+          defaultValue={node.period ?? ''}
+          onBlur={(e) => onChange({ period: e.target.value })}
+          placeholder="626-649 / 前221-前210"
+          className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+        />
+        <p className="mt-0.5 text-[10px] text-gray-400">表示は「肩書(期間)」。年表の基準に選べます（既定は生没年）。</p>
       </div>
       <div>
         <label className="block text-xs text-gray-500 mb-1">Gender</label>

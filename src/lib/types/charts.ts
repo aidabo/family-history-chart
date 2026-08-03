@@ -50,6 +50,7 @@ export interface PersonNode {
   noteShape?: NoteShape   // visual style for a type:'note' box
   name: string
   title?: string
+  period?: string   // 在位/期間（例 "626-649" / "前221-前210"）。表示は title(period)。年表の基準にも選べる
   gender?: 'male' | 'female' | 'other'
   birth?: string
   death?: string
@@ -157,6 +158,7 @@ export interface ViewSettings {
   showGrid?: boolean
   gridSize?: number
   edgeStyle?: 'straight' | 'ortho'  // parent-child wiring: straight line / orthogonal bus (系図 only)
+  timelineBasis?: 'lifespan' | 'period'  // 年表(timeline)の縦軸基準：生没年(既定) / 在位期間(period)
 }
 
 export interface ChartProps {
