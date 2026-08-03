@@ -22,7 +22,10 @@ const HEADER_ALIASES: Record<string, string> = {
   '義父': 'fatherStep', 'stepfather': 'fatherStep',
   '義母': 'motherStep', 'stepmother': 'motherStep',
   '肩書': 'title', '肩書き': 'title', '役職': 'title', 'title': 'title', 'role': 'title',
+  '期間': 'period', '在位': 'period', '在位期間': 'period', 'period': 'period', 'reign': 'period',
   '主君': 'lord', '君主': 'lord', '仕える': 'lord', 'lord': 'lord', 'liege': 'lord', 'master': 'lord',
+  '継承': 'succession', '繼承': 'succession', '继承': 'succession', 'succession': 'succession',
+  '朝代更换': 'dynastyChange', '朝代更替': 'dynastyChange', '换代': 'dynastyChange', 'custom': 'dynastyChange',
   'メモ': 'note', '説明': 'note', 'note': 'note', 'description': 'note',
   'id': 'id', 'ID': 'id',
 }
@@ -100,6 +103,7 @@ export function parseCsvToGraph(text: string): ParsedGraph {
     if (r.birth) p.birth = r.birth
     if (r.death) p.death = r.death
     if (r.title) p.title = r.title
+    if (r.period) p.period = r.period
     if (r.note) p.description = r.note
   }
 
@@ -175,6 +179,31 @@ export function parseCsvToGraph(text: string): ParsedGraph {
     }
   }
 
+  // 継承(succession): source=前の王(predecessor) → target=this person.
+  // For imperial lineage charts: within a dynasty, each emperor succeeds the previous one
+  // (father→son, brother→brother, uncle→nephew, 養子 etc. — all just "succession").
+  // Multiple predecessors allowed (`；` separated), e.g. an emperor who reigned twice.
+  for (const r of rows) {
+    const ref = refOf(r)
+    if (!ref) continue
+    for (const pred of splitRefs(r.succession)) {
+      ensure(pred)
+      relationships.push({ source: pred, target: ref, type: 'succession' })
+    }
+  }
+
+  // 朝代更换(dynasty change) → custom edge labelled 朝代更换.
+  // Cross-dynasty transitions: 禅让/易代/滅亡 between the last ruler of a dynasty and the
+  // first ruler of the next one (e.g. 漢献帝→魏文帝, 明思宗→清世祖). Multiple allowed.
+  for (const r of rows) {
+    const ref = refOf(r)
+    if (!ref) continue
+    for (const prev of splitRefs(r.dynastyChange)) {
+      ensure(prev)
+      relationships.push({ source: prev, target: ref, type: 'custom', label: '朝代更换' })
+    }
+  }
+
   return { persons: Array.from(persons.values()), relationships }
 }
 
@@ -197,10 +226,10 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string> }
+  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string>; succession: Set<string>; dynastyChange: Set<string> }
   const acc = new Map<string, Acc>()
   const get = (id: string): Acc => {
-    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set() }; acc.set(id, a) }
+    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set(), succession: new Set(), dynastyChange: new Set() }; acc.set(id, a) }
     return a
   }
   const addParent = (childId: string, parent?: PersonNode) => {
@@ -225,6 +254,14 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       // 君臣: target person serves the source (lord). Recorded in the 主君 column.
       const lord = byId.get(r.source)
       if (lord) get(r.target).lord.add(label(lord))
+    } else if (r.type === 'succession') {
+      // 継承: target succeeded the source. Recorded in the 継承 column.
+      const pred = byId.get(r.source)
+      if (pred) get(r.target).succession.add(label(pred))
+    } else if (r.type === 'custom' && r.label === '朝代更换') {
+      // 朝代更换: target's dynasty replaced the source's. Recorded in the 朝代更换 column.
+      const prev = byId.get(r.source)
+      if (prev) get(r.target).dynastyChange.add(label(prev))
     } else if (r.type === 'marriage' || r.type === 'remarriage' || r.type === 'partner') {
       // marriage via union: partners of the same union are each other's spouses
       if (r.type === 'partner') continue // handled below
@@ -244,7 +281,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '主君', 'メモ']
+  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', 'メモ']
   const genderJa = (g?: string) => g === 'male' ? '男' : g === 'female' ? '女' : g === 'other' ? 'その他' : ''
   const join = (s: Set<string>) => Array.from(s).filter(Boolean).join('；')
 
@@ -256,7 +293,8 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       label(p), genderJa(p.gender), p.birth ?? '', p.death ?? '',
       join(a?.father ?? new Set()), join(a?.mother ?? new Set()), join(a?.spouse ?? new Set()),
       join(a?.foster ?? new Set()), join(a?.step ?? new Set()),
-      p.title ?? '', join(a?.lord ?? new Set()), p.description ?? '',
+      p.title ?? '', p.period ?? '', join(a?.lord ?? new Set()), join(a?.succession ?? new Set()), join(a?.dynastyChange ?? new Set()),
+      p.description ?? '',
     ].map(csvCell).join(','))
   }
   return '﻿' + lines.join('\r\n')  // BOM for Excel
