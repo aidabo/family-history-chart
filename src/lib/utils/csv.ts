@@ -162,13 +162,16 @@ export function parseCsvToGraph(text: string): ParsedGraph {
   }
 
   // 主君(lord) → 君臣（主従）relationship: source=君(lord) → target=this person(臣).
-  // The role (臣/将/谋士) is carried by the person's 肩書(title). Multiple lords allowed.
+  // The edge is LABELLED with the person's 肩書(title) so the graph shows the role on the
+  // line itself (e.g. 劉邦 —大将軍→ 韓信, 劉邦 —軍師→ 張良); falls back to "君臣" when the
+  // title is empty. Multiple lords allowed (`；` separated).
   for (const r of rows) {
     const ref = refOf(r)
     if (!ref) continue
+    const role = (r.title || '').trim()
     for (const lord of splitRefs(r.lord)) {
       ensure(lord)
-      relationships.push({ source: lord, target: ref, type: 'liege' })
+      relationships.push({ source: lord, target: ref, type: 'liege', ...(role ? { label: role } : {}) })
     }
   }
 
