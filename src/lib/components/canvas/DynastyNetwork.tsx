@@ -243,7 +243,7 @@ function getNodeRadius(d: SimNode): number {
   }
   switch (d.shape) {
     case 'rect': return Math.hypot(s * 1.5, s)
-    case 'band': return Math.hypot((d.bandWidth || 200) / 2, (d.bandHeight || 30) / 2)
+    case 'band': return Math.hypot((d.bandWidth || 200) / 2, (d.bandHeight || 40) / 2)
     case 'ellipse': return s * 1.4
     case 'bubble': return Math.hypot(s * 1.4, s * 0.9)
     case 'tag': return Math.hypot(s * 1.3, s)
@@ -334,7 +334,7 @@ function getPortPositions(d: SimNode): Array<{ x: number; y: number }> {
       return [{ x: 0, y: -hh - 5 }, { x: 0, y: hh + 5 }, { x: hw + 5, y: 0 }, { x: -hw - 5, y: 0 }]
     }
     case 'band': {
-      const hw = (d.bandWidth || 200) / 2; const hh = (d.bandHeight || 30) / 2
+      const hw = (d.bandWidth || 200) / 2; const hh = (d.bandHeight || 40) / 2
       return [{ x: 0, y: -hh - 5 }, { x: 0, y: hh + 5 }, { x: hw + 5, y: 0 }, { x: -hw - 5, y: 0 }]
     }
     case 'ellipse':
@@ -723,7 +723,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         } else if (shape === 'hexagon') {
           cp.append('polygon').attr('points', hexPoints(s))
         } else if (shape === 'band') {
-          const bw = d.bandWidth || 200; const bh = d.bandHeight || 30
+          const bw = d.bandWidth || 200; const bh = d.bandHeight || 40
           cp.append('rect').attr('x', -bw / 2).attr('y', -bh / 2).attr('width', bw).attr('height', bh).attr('rx', 4)
         } else if (shape === 'ellipse') {
           cp.append('ellipse').attr('rx', s * 1.4).attr('ry', s)
@@ -1364,7 +1364,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         }
         drawCenteredName(g as any, d, s)
       } else if (shape === 'band') {
-        const bw = d.bandWidth || 200; const bh = d.bandHeight || 30
+        const bw = d.bandWidth || 200; const bh = d.bandHeight || 40
         g.append('rect').attr('class', 'selection-ring')
           .attr('x', -bw / 2 - 4).attr('y', -bh / 2 - 4)
           .attr('width', bw + 8).attr('height', bh + 8)
@@ -1554,6 +1554,28 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     nodeSel.selectAll<SVGCircleElement, unknown>('.port-handle').call(portDrag)
 
     // ── Label / description offset maps ─────────────────────────────────────────
+    // ┌─ NODE LABEL LAYOUT CONVENTION (read this before adding a new shape) ────────┐
+    // │ Each node shows: NAME (centred inside the shape), TITLE (肩書/役割), PERIOD  │
+    // │ (生没年), and DESCRIPTION (メモ). Default placement, per writing direction:  │
+    // │                          horizontal            vertical (縦書き)            │
+    // │   name        → inside the shape (drawCenteredName), any orientation         │
+    // │   title       → ABOVE the shape                → RIGHT of the shape          │
+    // │   period      → below the title (stacked)      → column beside title, OUTER  │
+    // │   description → BELOW the shape                → LEFT of the shape            │
+    // │                                                                             │
+    // │ SIZE-RELATIVE: every default offset is measured from the shape's own extent  │
+    // │   (s2 = nodeSize for round shapes; use the shape's half-width/height for     │
+    // │   rect/band) PLUS a small gap — so the gap to the node stays ~constant when   │
+    // │   the node is resized. Never hard-code an absolute offset; always add to s2. │
+    // │ EXPLICIT WINS: a saved drag offset (labelOffsetX/Y, periodOffsetX/Y,          │
+    // │   descriptionOffsetX/Y) or an explicit labelPosition/descriptionPosition is   │
+    // │   respected as-is (those are absolute and intentionally do NOT auto-scale).  │
+    // │ SHAPES MUST BE TEXT-SAFE: a shape drawn behind the name must be transparent   │
+    // │   enough to read the centred name (that's why opaque emoji-art / portrait     │
+    // │   frames were dropped from the ShapePicker). Keep new shapes border+fill只.   │
+    // │ rect/band render their own title+period in the labelSel rect/band branch      │
+    // │   (they have a non-round extent); round shapes use lblOffMap/periodOffMap.    │
+    // └─────────────────────────────────────────────────────────────────────────────┘
     const lblOffMap = new Map<string, { x: number; y: number }>()
     for (const nd of nodes) {
       if (nd.labelOffsetX != null || nd.labelOffsetY != null) {
@@ -1565,7 +1587,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         if (shape2 === 'rect') {
           lblOffMap.set(nd.id, { x: 0, y: s2 + 15 + fs2 * 0.5 })
         } else if (shape2 === 'band') {
-          lblOffMap.set(nd.id, { x: 0, y: (nd.bandHeight || 30) / 2 + 12 + fs2 * 0.5 })
+          lblOffMap.set(nd.id, { x: 0, y: (nd.bandHeight || 40) / 2 + 12 + fs2 * 0.5 })
+        } else if (resolveVertical(nd, nd.title || nd.name) && !nd.labelPosition) {
+          // 縦書きの既定位置：タイトル（＋生没年）をノードの右へ（伝統的な縦書きの配置）。
+          // s2 基準＋小さなクリアランスでノードに重ならないように。
+          lblOffMap.set(nd.id, { x: s2 + fs2 * 1.5 + 8, y: 0 })
         } else {
           const lp2 = nd.labelPosition || 'above'
           const defs2: Record<string, { x: number; y: number }> = {
@@ -1588,9 +1614,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       } else {
         const base = lblOffMap.get(nd.id) ?? { x: 0, y: 0 }
         const fs2 = nd.labelFontSize || 12
-        // Default: just below the title (or beside it, left column, when vertical).
+        // Default: just below the title (or beside it as an adjacent column when vertical —
+        // on the OUTER side of the title so it doesn't overlap the node: right→further right).
         if (!nd.title) periodOffMap.set(nd.id, { x: base.x, y: base.y })
-        else if (resolveVertical(nd, nd.title)) periodOffMap.set(nd.id, { x: base.x - fs2 * 1.6, y: base.y })
+        else if (resolveVertical(nd, nd.title)) {
+          const dir = base.x > 0 ? 1 : -1
+          periodOffMap.set(nd.id, { x: base.x + dir * fs2 * 1.6, y: base.y })
+        }
         else periodOffMap.set(nd.id, { x: base.x, y: base.y + fs2 * 1.5 })
       }
     }
@@ -1602,8 +1632,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         descOffMap.set(nd.id, { x: nd.descriptionOffsetX ?? 0, y: nd.descriptionOffsetY ?? 0 })
       } else {
         const s2 = nd.type === 'union' ? 12 : (nd.nodeSize || 40)
-        const pos2 = nd.descriptionPosition || 'below'
-        descOffMap.set(nd.id, pos2 === 'below' ? { x: 0, y: s2 + 40 } : { x: s2 + 20, y: -s2 })
+        if (resolveVertical(nd, nd.description) && !nd.descriptionPosition) {
+          // 縦書きの既定位置はノードの左（中央揃えボックスなので中心を左へ寄せる）。少し近め。
+          descOffMap.set(nd.id, { x: -(s2 + 50), y: 0 })
+        } else {
+          const pos2 = nd.descriptionPosition || 'below'
+          descOffMap.set(nd.id, pos2 === 'below' ? { x: 0, y: s2 + 40 } : { x: s2 + 20, y: -s2 })
+        }
       }
     }
 
@@ -1818,24 +1853,44 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         return
       }
 
-      // rect/band: lifespan + title below shape (name is inline in shape)
+      // rect/band: the name is drawn INSIDE the shape, so stack title + lifespan ABOVE the
+      // shape (title on top, lifespan just above the shape edge) — never over the name.
       if (shape === 'rect' || shape === 'band') {
-        let lineY = 0
         let lifespan = ''
         if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
         else if (d.birth) lifespan = d.birth
         else if (d.death) lifespan = `– ${d.death}`   // death-only (birth unknown)
         else if (d.age) lifespan = d.age
-        if (lifespan) {
-          label.append('text').text(lifespan)
-            .attr('text-anchor', 'middle').attr('y', lineY).attr('dominant-baseline', 'central')
-            .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
-          lineY += fs * 1.3
+        // Vertical writing: title + period as columns to the RIGHT of the shape, matching the
+        // other shapes' 縦書き layout (name stays inside). Horizontal: stacked above the shape.
+        if (resolveVertical(d, d.title || d.name)) {
+          const halfW = shape === 'band' ? (d.bandWidth || 200) / 2 : s * 1.5
+          let x = halfW + fs + 6
+          if (d.title) {
+            const t = label.append('text').text(d.title)
+              .attr('text-anchor', 'middle').attr('x', x).attr('dominant-baseline', 'central')
+              .attr('font-size', fs * 0.9).attr('fill', tc).attr('font-family', ff)
+            applyVertical(t); x += fs * 1.5
+          }
+          if (lifespan) {
+            const l = label.append('text').text(lifespan)
+              .attr('text-anchor', 'middle').attr('x', x).attr('dominant-baseline', 'central')
+              .attr('font-size', fs * 0.8).attr('fill', tc).attr('font-family', ff)
+            applyVertical(l)
+          }
+          return
         }
-        if (d.title) {
-          label.append('text').text(d.title)
-            .attr('text-anchor', 'middle').attr('y', lineY).attr('dominant-baseline', 'central')
-            .attr('font-size', fs * 0.9).attr('fill', tc).attr('font-family', ff)
+        const hh = shape === 'band' ? (d.bandHeight || 40) / 2 : s
+        const lines: { text: string; size: number }[] = []
+        if (d.title) lines.push({ text: d.title, size: fs * 0.9 })
+        if (lifespan) lines.push({ text: lifespan, size: fs * 0.8 })
+        // Draw bottom-up so the lowest line sits just above the shape's top edge.
+        let baseY = -(hh + 8)
+        for (let i = lines.length - 1; i >= 0; i--) {
+          label.append('text').text(lines[i].text)
+            .attr('text-anchor', 'middle').attr('y', baseY).attr('dominant-baseline', 'central')
+            .attr('font-size', lines[i].size).attr('fill', tc).attr('font-family', ff)
+          baseY -= fs * 1.15
         }
         return
       }
