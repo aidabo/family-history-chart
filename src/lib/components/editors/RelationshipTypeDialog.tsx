@@ -32,6 +32,7 @@ const OPTIONS: Option[] = [
   { id: 'succession',        label: '継承 Succession →',      type: 'succession',   swap: false, canUnion: true },
   { id: 'friend',            label: '親友 Friend',            type: 'friend',       swap: false, canUnion: true },
   { id: 'ally',              label: '同盟 Ally',              type: 'ally',         swap: false, canUnion: true },
+  { id: 'liege',             label: '君臣 Lord→Vassal 主従 →', type: 'liege',       swap: false, canUnion: true },
   { id: 'master',            label: '師匠 Master →',          type: 'master',       swap: false, canUnion: true },
   { id: 'disciple',          label: '弟子 Disciple →',        type: 'disciple',     swap: false, canUnion: true },
   { id: 'comrade',           label: '戦友 Comrade',           type: 'comrade',      swap: false, canUnion: true },

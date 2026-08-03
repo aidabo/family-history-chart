@@ -11,6 +11,7 @@ export type RelationType =
   | 'parent-child' | 'marriage' | 'remarriage' | 'partner' | 'sibling'
   | 'succession' | 'ally' | 'rival' | 'mentor' | 'enemy' | 'friend' | 'custom'
   | 'master' | 'disciple' | 'comrade'
+  | 'liege'   // 君臣（主従）: source=君(lord) → target=臣(vassal). Roles 臣/将/谋士 via title.
 
 export type EpisodeType = 'event' | 'article' | 'episode' | 'note'
 

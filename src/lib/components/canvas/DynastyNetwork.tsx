@@ -924,6 +924,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       d.type === 'master'       ? '#c2410c' :
       d.type === 'disciple'     ? '#ca8a04' :
       d.type === 'comrade'      ? '#0d9488' :
+      d.type === 'liege'        ? '#9333ea' :
       d.type === 'enemy'        ? '#dc2626' :
       d.type === 'friend'       ? '#22c55e' : '#94a3b8'
     )
@@ -945,6 +946,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         if (d.type === 'parent-child') return 'url(#arrow)'
         if (d.type === 'marriage' || d.type === 'remarriage') return 'url(#marriage-dot)'
         if (d.type === 'succession') return 'url(#succession-circle)'
+        if (d.type === 'liege') return 'url(#arrow)'   // 君→臣 direction
         if (d.type === 'sibling') return 'url(#sibling-square)'
         if (d.type === 'partner') return 'url(#partner-dot)'
         return null
@@ -1803,7 +1805,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           'marriage': '結婚', 'remarriage': '再婚', 'sibling': '兄弟姉妹',
           'parent-child': '親子', 'succession': '継承', 'friend': '親友',
           'ally': '同盟', 'mentor': '師弟', 'master': '師匠', 'disciple': '弟子',
-          'comrade': '戦友', 'rival': '対立', 'enemy': '敵対', 'custom': '',
+          'comrade': '戦友', 'rival': '対立', 'enemy': '敵対', 'custom': '', 'liege': '君臣',
         }
         const utype = UNION_LABEL[d.marriage?.type ?? 'marriage'] ?? '結婚'
         txt.append('tspan').text(d.marriage?.label || utype).attr('x', 0).attr('dy', 0)
@@ -2071,6 +2073,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       'master':       '師匠',
       'disciple':     '弟子',
       'comrade':      '戦友',
+      'liege':        '君臣',
       'enemy':        '敵対',
       'friend':       '親友',
     }

@@ -22,6 +22,7 @@ const HEADER_ALIASES: Record<string, string> = {
   '義父': 'fatherStep', 'stepfather': 'fatherStep',
   '義母': 'motherStep', 'stepmother': 'motherStep',
   '肩書': 'title', '肩書き': 'title', '役職': 'title', 'title': 'title', 'role': 'title',
+  '主君': 'lord', '君主': 'lord', '仕える': 'lord', 'lord': 'lord', 'liege': 'lord', 'master': 'lord',
   'メモ': 'note', '説明': 'note', 'note': 'note', 'description': 'note',
   'id': 'id', 'ID': 'id',
 }
@@ -160,6 +161,17 @@ export function parseCsvToGraph(text: string): ParsedGraph {
     }
   }
 
+  // 主君(lord) → 君臣（主従）relationship: source=君(lord) → target=this person(臣).
+  // The role (臣/将/谋士) is carried by the person's 肩書(title). Multiple lords allowed.
+  for (const r of rows) {
+    const ref = refOf(r)
+    if (!ref) continue
+    for (const lord of splitRefs(r.lord)) {
+      ensure(lord)
+      relationships.push({ source: lord, target: ref, type: 'liege' })
+    }
+  }
+
   return { persons: Array.from(persons.values()), relationships }
 }
 
@@ -182,10 +194,10 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string> }
+  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string> }
   const acc = new Map<string, Acc>()
   const get = (id: string): Acc => {
-    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set() }; acc.set(id, a) }
+    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set() }; acc.set(id, a) }
     return a
   }
   const addParent = (childId: string, parent?: PersonNode) => {
@@ -206,6 +218,10 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
         else if (r.label === '義理') get(child).step.add(label(src))
         else addParent(child, src)
       }
+    } else if (r.type === 'liege') {
+      // 君臣: target person serves the source (lord). Recorded in the 主君 column.
+      const lord = byId.get(r.source)
+      if (lord) get(r.target).lord.add(label(lord))
     } else if (r.type === 'marriage' || r.type === 'remarriage' || r.type === 'partner') {
       // marriage via union: partners of the same union are each other's spouses
       if (r.type === 'partner') continue // handled below
@@ -225,7 +241,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', 'メモ']
+  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '主君', 'メモ']
   const genderJa = (g?: string) => g === 'male' ? '男' : g === 'female' ? '女' : g === 'other' ? 'その他' : ''
   const join = (s: Set<string>) => Array.from(s).filter(Boolean).join('；')
 
@@ -237,7 +253,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       label(p), genderJa(p.gender), p.birth ?? '', p.death ?? '',
       join(a?.father ?? new Set()), join(a?.mother ?? new Set()), join(a?.spouse ?? new Set()),
       join(a?.foster ?? new Set()), join(a?.step ?? new Set()),
-      p.title ?? '', p.description ?? '',
+      p.title ?? '', join(a?.lord ?? new Set()), p.description ?? '',
     ].map(csvCell).join(','))
   }
   return '﻿' + lines.join('\r\n')  // BOM for Excel

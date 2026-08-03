@@ -24,6 +24,7 @@ const TYPE_OPTIONS: { value: RelType; label: string }[] = [
   { value: 'succession',   label: '継承 Succession' },
   { value: 'friend',       label: '親友 Friend' },
   { value: 'ally',         label: '同盟 Ally' },
+  { value: 'liege',        label: '君臣 Lord→Vassal 主従' },
   { value: 'master',       label: '師匠 Master' },
   { value: 'disciple',     label: '弟子 Disciple' },
   { value: 'comrade',      label: '戦友 Comrade' },
