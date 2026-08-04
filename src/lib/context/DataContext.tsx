@@ -49,6 +49,7 @@ interface DataContextValue extends DataState {
   addPerson: (person: Partial<PersonNode>) => PersonNode
   addNote: (x?: number, y?: number) => PersonNode
   updatePerson: (id: string, updates: Partial<PersonNode>) => void
+  updateAllPersons: (updates: Partial<PersonNode>) => void
   deletePerson: (id: string) => void
   dissolveUnion: (unionId: string) => void
   updatePersonPosition: (id: string, x: number, y: number) => void
@@ -352,6 +353,16 @@ export function DataProvider({
     setSelectedNode((prev) => (prev?.id === id ? { ...prev, ...updates } : prev))
   }
 
+  // Apply the same appearance updates to every real person node at once (excludes the
+  // union/note helper nodes). Backs the chart-wide Shape / Node Size settings.
+  const updateAllPersons = (updates: Partial<PersonNode>) => {
+    setData((prev) => ({
+      ...prev,
+      persons: prev.persons.map((p) => (p.type === 'union' || p.type === 'note' ? p : { ...p, ...updates })),
+    }))
+    setSelectedNode((prev) => (prev && prev.type !== 'union' && prev.type !== 'note' ? { ...prev, ...updates } : prev))
+  }
+
   // Dissolve a union: remove the union node + its partner edges, restore a direct
   // edge between the two partners, and reconnect the union's children to BOTH partners.
   const dissolveUnion = (unionId: string) => {
@@ -527,6 +538,7 @@ export function DataProvider({
         addPerson,
         addNote,
         updatePerson,
+        updateAllPersons,
         deletePerson,
         dissolveUnion,
         updatePersonPosition,

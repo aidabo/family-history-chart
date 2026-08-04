@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
+import { ShapePicker } from '@/components/ui/ShapePicker'
 import { VerticalTextMode } from '@/types/charts'
 import { useDataContext } from '@/context/DataContext'
 
@@ -40,10 +41,18 @@ export default function ChartSettingsDialog({
   onZoomChange,
   onFit,
 }: ChartSettingsDialogProps) {
-  const { t } = useDataContext()
+  const { t, updateAllPersons } = useDataContext()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadErr, setUploadErr] = useState<string | null>(null)
+  // Chart-wide shape / node size — same controls as a single node's Appearance, but each
+  // change applies to EVERY node at once (overwriting per-node values). No single "current"
+  // value exists across mixed nodes, so these start at the defaults and act as "set all to".
+  const [gShape, setGShape] = useState<string>('circle')
+  const [gSize, setGSize] = useState(30)
+  const [gBandW, setGBandW] = useState(200)
+  const [gBandH, setGBandH] = useState(40)
+  const gIsBand = gShape === 'band'
 
   const handlePickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -245,6 +254,43 @@ export default function ChartSettingsDialog({
           <p className="text-xs text-gray-500 mt-1">
             {t('Vertical text note','name・title・説明に適用。ノード個別に上書きも可能です（各人物の Appearance）。')}
           </p>
+        </section>
+
+        {/* ⑤ ノード（シェイプ・サイズ）— same controls as a single node's Appearance, applied
+            to EVERY node at once. Handy for restyling the whole chart in one go. */}
+        <section className="mt-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">{t('Node style section','⑤ ノード（全体のシェイプ・サイズ）')}</h3>
+          <p className="text-xs text-gray-500 mb-2">{t('Apply to all nodes note','選択すると全ノードへ一括適用します（各ノードの個別設定は上書きされます）。')}</p>
+          <ShapePicker value={gShape} onChange={(shape) => { setGShape(shape); updateAllPersons({ shape }) }} />
+          {gIsBand ? (
+            <div className="mt-3 space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">{t('Band Width','Band Width')}: {gBandW}px</label>
+                <input type="range" min={50} max={400} value={gBandW}
+                  onChange={(e) => setGBandW(Number(e.target.value))}
+                  onMouseUp={(e) => updateAllPersons({ bandWidth: Number((e.currentTarget as HTMLInputElement).value) })}
+                  onTouchEnd={(e) => updateAllPersons({ bandWidth: Number((e.currentTarget as HTMLInputElement).value) })}
+                  className="w-full accent-blue-600" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">{t('Band Height','Band Height')}: {gBandH}px</label>
+                <input type="range" min={20} max={80} value={gBandH}
+                  onChange={(e) => setGBandH(Number(e.target.value))}
+                  onMouseUp={(e) => updateAllPersons({ bandHeight: Number((e.currentTarget as HTMLInputElement).value) })}
+                  onTouchEnd={(e) => updateAllPersons({ bandHeight: Number((e.currentTarget as HTMLInputElement).value) })}
+                  className="w-full accent-blue-600" />
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <label className="block text-xs text-gray-500 mb-0.5">{t('Node Size','Node Size')}: {gSize}px</label>
+              <input type="range" min={10} max={160} value={gSize}
+                onChange={(e) => setGSize(Number(e.target.value))}
+                onMouseUp={(e) => updateAllPersons({ nodeSize: Number((e.currentTarget as HTMLInputElement).value) })}
+                onTouchEnd={(e) => updateAllPersons({ nodeSize: Number((e.currentTarget as HTMLInputElement).value) })}
+                className="w-full accent-blue-600" />
+            </div>
+          )}
         </section>
       </div>
     </div>
