@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { PersonNode } from '@/types/charts'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   node: PersonNode
@@ -19,6 +20,7 @@ function readAsDataURL(file: File): Promise<string> {
 }
 
 export function IdentitySection({ node, onChange, onUpload }: Props) {
+  const { t } = useDataContext()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +36,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
       const url = onUpload ? await onUpload(file) : await readAsDataURL(file)
       onChange({ image: url })
     } catch {
-      setError('アップロード失敗')
+      setError(t('Upload failed', 'アップロード失敗'))
     } finally {
       setUploading(false)
     }
@@ -43,7 +45,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
   return (
     <div className="space-y-2">
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Name</label>
+        <label className="block text-xs text-gray-500 mb-0.5">{t('Name', 'Name')}</label>
         <input
           type="text"
           defaultValue={node.name}
@@ -52,7 +54,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
         />
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Title 肩書</label>
+        <label className="block text-xs text-gray-500 mb-0.5">{t('Title', 'Title 肩書')}</label>
         <input
           type="text"
           defaultValue={node.title ?? ''}
@@ -61,18 +63,18 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
         />
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Period 期間（在位など・例 626-649）</label>
+        <label className="block text-xs text-gray-500 mb-0.5">{t('Period', 'Period 期間（在位など・例 626-649）')}</label>
         <input
           type="text"
           defaultValue={node.period ?? ''}
           onBlur={(e) => onChange({ period: e.target.value })}
-          placeholder="626-649 / 前221-前210"
+          placeholder={t('Period placeholder', '626-649 / 前221-前210')}
           className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
-        <p className="mt-0.5 text-[10px] text-gray-400">表示は「肩書(期間)」。年表の基準に選べます（既定は生没年）。</p>
+        <p className="mt-0.5 text-[10px] text-gray-400">{t('Period hint', '表示は「肩書(期間)」。年表の基準に選べます（既定は生没年）。')}</p>
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Gender</label>
+        <label className="block text-xs text-gray-500 mb-1">{t('Gender', 'Gender')}</label>
         <div className="flex gap-1">
           {(['male', 'female', 'other'] as const).map((g) => (
             <button
@@ -91,7 +93,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="block text-xs text-gray-500 mb-0.5">Birth</label>
+          <label className="block text-xs text-gray-500 mb-0.5">{t('Birth', 'Birth')}</label>
           <input
             type="text"
             defaultValue={node.birth ?? ''}
@@ -101,7 +103,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-0.5">Death</label>
+          <label className="block text-xs text-gray-500 mb-0.5">{t('Death', 'Death')}</label>
           <input
             type="text"
             defaultValue={node.death ?? ''}
@@ -112,7 +114,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
         </div>
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Image / Video</label>
+        <label className="block text-xs text-gray-500 mb-0.5">{t('Image / Video', 'Image / Video')}</label>
         <div className="flex items-center gap-2">
           {node.image && (
             /\.(mp4|webm|ogg|mov)(\?|#|$)/i.test(node.image) ? (
@@ -134,7 +136,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
             key={node.id + '_img'}
             type="text"
             defaultValue={node.image ?? ''}
-            placeholder="https://... または アップロード"
+            placeholder={t('Image URL placeholder', 'https://... または アップロード')}
             onBlur={(e) => onChange({ image: e.target.value })}
             className="flex-1 min-w-0 text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
@@ -143,9 +145,9 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className="shrink-0 text-xs px-2 py-1.5 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-60"
-            title="画像ファイルをアップロード"
+            title={t('Upload image title', '画像ファイルをアップロード')}
           >
-            {uploading ? '…' : '⬆ Upload'}
+            {uploading ? '…' : t('Upload button', '⬆ Upload')}
           </button>
           <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFile} />
         </div>
@@ -155,13 +157,13 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
             onClick={() => onChange({ image: '' })}
             className="mt-1 text-[11px] text-gray-400 hover:text-red-500"
           >
-            画像を削除
+            {t('Remove image', '画像を削除')}
           </button>
         )}
         {error && <p className="text-[11px] text-red-500 mt-0.5">{error}</p>}
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Profile URL</label>
+        <label className="block text-xs text-gray-500 mb-0.5">{t('Profile URL', 'Profile URL')}</label>
         <input
           type="text"
           defaultValue={node.profileUrl ?? ''}

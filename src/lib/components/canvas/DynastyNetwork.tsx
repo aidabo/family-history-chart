@@ -152,6 +152,7 @@ interface DynastyNetworkProps {
   backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
   verticalText?: VerticalTextMode  // chart-wide vertical writing mode (default 'off')
   locale?: string                  // UI locale (ja/zh/en) — drives edge/relationship labels on the canvas
+  t?: (key: string, fallback?: string) => string   // i18n translator; single-locale (no trilingual dup) for toolbar UI
   editable?: boolean               // enable in-place (double-click) editing of name/description
   onInlineEdit?: (req: InlineEditRequest) => void  // double-click → host renders an overlay editor
   // Whiteboard / annotation drawing layer
@@ -421,6 +422,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   backgroundOpacity,
   verticalText,
   locale,
+  t = (_k, f) => f ?? _k,
   editable,
   onInlineEdit,
   drawings,
@@ -2660,22 +2662,22 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       </div>
 
       <div className="absolute top-2 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
-        title="登場人物の総数（メモ・結婚ノードを除く）">
+        title={t('People count tip', '登場人物の総数（メモ・結婚ノードを除く）')}>
         <UsersIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
         <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note').length}</span>
-        <span>人</span>
+        <span>{t('people', '人')}</span>
       </div>
 
       <div className="absolute top-2 right-2 z-10 flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 md:gap-3 bg-white/95 p-1.5 md:p-2 rounded shadow max-w-[calc(100vw-4rem)]">
         <button type="button" onClick={() => setMarqueeMode(m => !m)}
-          title="範囲選択：空白をドラッグでノードを矩形選択→選択したノードだけ一括移動（Escで解除）"
+          title={t('Range Select tip', '範囲選択：空白をドラッグでノードを矩形選択→選択したノードだけ一括移動（Escで解除）')}
           className={`shrink-0 rounded border px-2 py-0.5 text-sm ${marqueeMode ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
-          範囲選択
+          {t('Range Select', '範囲選択')}
         </button>
         <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700 cursor-pointer">
           <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)}
             className="h-4 w-4 rounded text-blue-600" />
-          Grid
+          {t('Grid', 'Grid')}
         </label>
         <select value={gridSize} onChange={e => setGridSize(Number(e.target.value))}
           className="shrink-0 rounded border border-gray-300 text-sm px-1 py-0.5">
@@ -2686,46 +2688,46 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           <option value={50}>50px</option>
         </select>
         <div className="flex shrink-0 items-center rounded border border-gray-300 overflow-hidden">
-          <button onClick={handleAutoLayout} title="選択したモードで自動整列"
+          <button onClick={handleAutoLayout} title={t('Auto arrange tip', '選択したモードで自動整列')}
             className="whitespace-nowrap px-2 py-1 text-sm bg-white text-gray-700 hover:bg-gray-50 border-r border-gray-300">
-            Auto Layout
+            {t('Auto Layout', 'Auto Layout')}
           </button>
           <select value={layoutMode}
             onChange={e => { const m = e.target.value as LayoutMode; setLayoutMode(m); runAutoLayout(m) }}
-            title="レイアウトモード" className="text-sm px-1 py-1 bg-white text-gray-700 focus:outline-none">
-            <option value="auto">自動</option>
-            <option value="force">関係図(集約)</option>
-            <option value="tidy">系図(構造)</option>
-            <option value="timeline">年表(timeline)</option>
+            title={t('Layout Mode', 'レイアウトモード')} className="text-sm px-1 py-1 bg-white text-gray-700 focus:outline-none">
+            <option value="auto">{t('Auto', '自動')}</option>
+            <option value="force">{t('Network (cluster)', '関係図(集約)')}</option>
+            <option value="tidy">{t('Pedigree (structure)', '系図(構造)')}</option>
+            <option value="timeline">{t('Timeline', '年表(timeline)')}</option>
           </select>
         </div>
         {(layoutMode === 'tidy' || lastLayoutKind === 'tidy') && (
-          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title="親子の配線（系図のみ）：直線／直交バス">
-            <span className="whitespace-nowrap">配線</span>
+          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title={t('Wiring tip', '親子の配線（系図のみ）：直線／直交バス')}>
+            <span className="whitespace-nowrap">{t('Wiring', '配線')}</span>
             <select value={edgeStyle} onChange={e => setEdgeStyle(e.target.value as 'straight' | 'ortho')}
               className="rounded border border-gray-300 text-sm px-1 py-0.5">
-              <option value="straight">直線</option>
-              <option value="ortho">直交</option>
+              <option value="straight">{t('Straight', '直線')}</option>
+              <option value="ortho">{t('Orthogonal', '直交')}</option>
             </select>
           </label>
         )}
         {(layoutMode === 'timeline' || lastLayoutKind === 'timeline') && (
-          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title="年表の縦軸基準：生没年 / 在位期間(period)">
-            <span className="whitespace-nowrap">年表</span>
+          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title={t('Timeline axis tip', '年表の縦軸基準：生没年 / 在位期間(period)')}>
+            <span className="whitespace-nowrap">{t('Timeline Axis', '年表')}</span>
             <select value={timelineBasis} onChange={e => setTimelineBasis(e.target.value as 'lifespan' | 'period')}
               className="rounded border border-gray-300 text-sm px-1 py-0.5">
-              <option value="lifespan">生没年</option>
-              <option value="period">在位期間</option>
+              <option value="lifespan">{t('Birth–Death', '生没年')}</option>
+              <option value="period">{t('Reign Period', '在位期間')}</option>
             </select>
-            <span className="whitespace-nowrap" title="一直線の系譜を左右に折り返す列数（表示幅）">幅</span>
+            <span className="whitespace-nowrap" title={t('Width tip', '一直線の系譜を左右に折り返す列数（表示幅）')}>{t('Width', '幅')}</span>
             <select value={timelineCols} onChange={e => setTimelineCols(Number(e.target.value))}
-              className="rounded border border-gray-300 text-sm px-1 py-0.5" title="折り返し列数（少=細く長い／多=広く短い）">
+              className="rounded border border-gray-300 text-sm px-1 py-0.5" title={t('Wrap columns tip', '折り返し列数（少=細く長い／多=広く短い）')}>
               {[2, 3, 4, 5, 6, 8, 10, 12].map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
         )}
-        <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title="ノードの間隔（座標）を拡大／縮小">
-          <span className="whitespace-nowrap">間隔</span>
+        <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title={t('Spacing tip', 'ノードの間隔（座標）を拡大／縮小')}>
+          <span className="whitespace-nowrap">{t('Spacing', '間隔')}</span>
           <input type="range" min={0.4} max={2.5} step={0.05} value={spacing}
             onChange={e => setSpacing(Number(e.target.value))}
             onMouseUp={() => applySpacing(spacing)} onTouchEnd={() => applySpacing(spacing)}

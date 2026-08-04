@@ -5,6 +5,7 @@ import { PersonNode } from '@/types/charts'
 import { ShapePicker } from '@/components/ui/ShapePicker'
 import { ColorPicker } from '@/components/ui/ColorPicker'
 import { FontSelector } from '@/components/ui/FontSelector'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   node: PersonNode
@@ -23,6 +24,7 @@ const SHAPE_LABEL: Record<string, string> = {
 }
 
 export function AppearanceSection({ node, onChange }: Props) {
+  const { t } = useDataContext()
   const isBand = node.shape === 'band'
   const [shapeOpen, setShapeOpen] = useState(false)
 
@@ -35,7 +37,7 @@ export function AppearanceSection({ node, onChange }: Props) {
           onClick={() => setShapeOpen((o) => !o)}
           className="flex items-center justify-between w-full px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
         >
-          <span>Shape: <span className="text-gray-800">{SHAPE_LABEL[node.shape ?? 'circle'] ?? node.shape}</span></span>
+          <span>{t('Shape', 'Shape')}: <span className="text-gray-800">{SHAPE_LABEL[node.shape ?? 'circle'] ?? node.shape}</span></span>
           <span className="text-gray-400">{shapeOpen ? '▲' : '▼'}</span>
         </button>
         {shapeOpen && (
@@ -49,7 +51,7 @@ export function AppearanceSection({ node, onChange }: Props) {
         <>
           <div>
             <label className="block text-xs text-gray-500 mb-0.5">
-              Band Width: {node.bandWidth ?? 200}px
+              {t('Band Width', 'Band Width')}: {node.bandWidth ?? 200}px
             </label>
             <input
               type="range" min={50} max={400}
@@ -60,7 +62,7 @@ export function AppearanceSection({ node, onChange }: Props) {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-0.5">
-              Band Height: {node.bandHeight ?? 40}px
+              {t('Band Height', 'Band Height')}: {node.bandHeight ?? 40}px
             </label>
             <input
               type="range" min={20} max={80}
@@ -73,7 +75,7 @@ export function AppearanceSection({ node, onChange }: Props) {
       ) : (
         <div>
           <label className="block text-xs text-gray-500 mb-0.5">
-            Node Size: {node.nodeSize ?? 30}px
+            {t('Node Size', 'Node Size')}: {node.nodeSize ?? 30}px
           </label>
           <input
             type="range" min={10} max={160}
@@ -84,15 +86,15 @@ export function AppearanceSection({ node, onChange }: Props) {
         </div>
       )}
 
-      <ColorPicker value={node.bgColor} onChange={(bgColor) => onChange({ bgColor })} label="Background Color" />
-      <ColorPicker value={node.borderColor} onChange={(borderColor) => onChange({ borderColor })} label="Border Color" />
-      <ColorPicker value={node.labelColor} onChange={(labelColor) => onChange({ labelColor })} label="Label Color" />
-      <FontSelector value={node.fontFamily} onChange={(fontFamily) => onChange({ fontFamily })} label="Font Family" />
+      <ColorPicker value={node.bgColor} onChange={(bgColor) => onChange({ bgColor })} label={t('Background Color', 'Background Color')} />
+      <ColorPicker value={node.borderColor} onChange={(borderColor) => onChange({ borderColor })} label={t('Border Color', 'Border Color')} />
+      <ColorPicker value={node.labelColor} onChange={(labelColor) => onChange({ labelColor })} label={t('Label Color', 'Label Color')} />
+      <FontSelector value={node.fontFamily} onChange={(fontFamily) => onChange({ fontFamily })} label={t('Font Family', 'Font Family')} />
 
       <div>
         <div className="flex items-center justify-between mb-0.5">
           <label className="text-xs text-gray-500">
-            Label Size: {node.labelFontSize ?? 12}px
+            {t('Label Size', 'Label Size')}: {node.labelFontSize ?? 12}px
           </label>
           <button
             type="button"
@@ -102,9 +104,9 @@ export function AppearanceSection({ node, onChange }: Props) {
                 ? 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
                 : 'bg-blue-500 text-white border-blue-500'
             }`}
-            title="名前を太字にする"
+            title={t('Bold label title', '名前を太字にする')}
           >
-            B 太字
+            {t('Bold button', 'B 太字')}
           </button>
         </div>
         <input
@@ -117,12 +119,12 @@ export function AppearanceSection({ node, onChange }: Props) {
 
       {/* Vertical writing (縦書き) override */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">縦書き（縦書き）</label>
+        <label className="block text-xs text-gray-500 mb-1">{t('Vertical writing', '縦書き（縦書き）')}</label>
         <div className="grid grid-cols-3 gap-1">
           {([
-            [undefined, '継承'],
-            ['on', '縦'],
-            ['off', '横'],
+            [undefined, t('Inherit', '継承')],
+            ['on',      t('Vertical', '縦')],
+            ['off',     t('Horizontal', '横')],
           ] as [('on' | 'off' | undefined), string][]).map(([val, label]) => (
             <button
               key={label}
@@ -138,20 +140,20 @@ export function AppearanceSection({ node, onChange }: Props) {
             </button>
           ))}
         </div>
-        <p className="text-[11px] text-gray-400 mt-0.5">継承＝チャートの設定に従う</p>
+        <p className="text-[11px] text-gray-400 mt-0.5">{t('Inherit chart setting hint', '継承＝チャートの設定に従う')}</p>
       </div>
 
       {/* Label position picker */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="text-xs text-gray-500">Label Position</label>
+          <label className="text-xs text-gray-500">{t('Label Position', 'Label Position')}</label>
           {(node.labelOffsetX != null || node.labelOffsetY != null) && (
             <button
               type="button"
               onClick={() => onChange({ labelOffsetX: undefined, labelOffsetY: undefined })}
               className="text-xs text-blue-500 hover:text-blue-700 underline"
             >
-              Reset drag
+              {t('Reset drag', 'Reset drag')}
             </button>
           )}
         </div>
@@ -176,12 +178,12 @@ export function AppearanceSection({ node, onChange }: Props) {
             )
           })}
         </div>
-        <p className="text-xs text-gray-400 mt-1">Drag label on canvas to reposition freely</p>
+        <p className="text-xs text-gray-400 mt-1">{t('Label drag hint', 'Drag label on canvas to reposition freely')}</p>
       </div>
 
       {/* Label background */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Label Background</label>
+        <label className="block text-xs text-gray-500 mb-1">{t('Label Background', 'Label Background')}</label>
         <div className="flex gap-1 mb-1.5">
           {(['none', 'rect', 'pill'] as const).map((val) => (
             <button
@@ -197,7 +199,7 @@ export function AppearanceSection({ node, onChange }: Props) {
                   : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
               }`}
             >
-              {val === 'none' ? 'None' : val.charAt(0).toUpperCase() + val.slice(1)}
+              {val === 'none' ? t('None', 'None') : val === 'rect' ? t('Rect', 'Rect') : t('Pill', 'Pill')}
             </button>
           ))}
         </div>
@@ -205,7 +207,7 @@ export function AppearanceSection({ node, onChange }: Props) {
           <ColorPicker
             value={node.labelBgColor || 'rgba(255,255,255,0.9)'}
             onChange={(c) => onChange({ labelBgColor: c })}
-            label="BG Color"
+            label={t('BG Color', 'BG Color')}
           />
         )}
       </div>

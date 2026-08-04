@@ -60,7 +60,7 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
   const handleOpen = (pageId: string) => onOpen(pageId)
 
   const handleDelete = async (pageId: string) => {
-    if (!window.confirm('Delete this chart page?')) return
+    if (!window.confirm(t('Delete chart page confirm','Delete this chart page?'))) return
     await deletePage(pageId)
     setPages((prev) => prev.filter((p) => p.id !== pageId))
   }
@@ -82,9 +82,9 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
   // persons, relationships, drawings, viewSettings, background, … — is included), then
   // register it as a brand-new page with "copy" appended to the id and title.
   const handleDuplicate = async (pageId: string) => {
-    setNotice('複製中…')
+    setNotice(t('Duplicating…','複製中…'))
     const full = await loadPage(pageId)
-    if (!full) { setNotice(null); alert('複製元の取得に失敗しました。'); return }
+    if (!full) { setNotice(null); alert(t('Duplicate fetch failed','複製元の取得に失敗しました。')); return }
     let newId = `${full.id}-copy`
     for (let n = 2; pages.some((p) => p.id === newId); n++) newId = `${full.id}-copy-${n}`
     const copy: PageProps = {
@@ -100,7 +100,7 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
       setTimeout(() => setNotice(null), 3000)
     } else {
       setNotice(null)
-      alert('複製に失敗しました。')
+      alert(t('Duplicate failed','複製に失敗しました。'))
     }
   }
 

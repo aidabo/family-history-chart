@@ -2,6 +2,7 @@
 
 import { PersonNode } from '@/types/charts'
 import { ColorPicker } from '@/components/ui/ColorPicker'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   node: PersonNode
@@ -9,15 +10,16 @@ interface Props {
 }
 
 export function DescriptionSection({ node, onChange }: Props) {
+  const { t } = useDataContext()
   return (
     <div className="space-y-3">
       <div>
-        <label className="block text-xs text-gray-500 mb-0.5">Description</label>
+        <label className="block text-xs text-gray-500 mb-0.5">{t('Description', 'Description')}</label>
         <textarea
           defaultValue={node.description ?? ''}
           onBlur={(e) => onChange({ description: e.target.value })}
           rows={3}
-          placeholder="Add a description..."
+          placeholder={t('Add description placeholder', 'Add a description...')}
           className="w-full text-sm border border-gray-300 rounded px-2 py-1 resize-y focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </div>
@@ -25,14 +27,14 @@ export function DescriptionSection({ node, onChange }: Props) {
       {/* Default position (initial snap, overridden by drag) */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="text-xs text-gray-500">Default Position</label>
+          <label className="text-xs text-gray-500">{t('Default Position', 'Default Position')}</label>
           {(node.descriptionOffsetX != null || node.descriptionOffsetY != null) && (
             <button
               type="button"
               onClick={() => onChange({ descriptionOffsetX: undefined, descriptionOffsetY: undefined })}
               className="text-xs text-blue-500 hover:text-blue-700 underline"
             >
-              Reset drag
+              {t('Reset drag', 'Reset drag')}
             </button>
           )}
         </div>
@@ -54,12 +56,12 @@ export function DescriptionSection({ node, onChange }: Props) {
             </label>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">Drag description on canvas to reposition</p>
+        <p className="text-xs text-gray-400 mt-1">{t('Drag description hint', 'Drag description on canvas to reposition')}</p>
       </div>
 
       <div>
         <label className="block text-xs text-gray-500 mb-0.5">
-          Width: {node.descriptionWidth ?? 160}px
+          {t('Width', 'Width')}: {node.descriptionWidth ?? 160}px
         </label>
         <input
           type="range" min={80} max={300}
@@ -67,7 +69,7 @@ export function DescriptionSection({ node, onChange }: Props) {
           onChange={(e) => onChange({ descriptionWidth: Number(e.target.value) })}
           className="w-full"
         />
-        <p className="text-[11px] text-gray-400 mt-0.5">画面上の青ハンドルでも調整可（横書き＝右端で幅、縦書き＝下端で高さ）。枠は文字にフィットします。</p>
+        <p className="text-[11px] text-gray-400 mt-0.5">{t('Description width hint', '画面上の青ハンドルでも調整可（横書き＝右端で幅、縦書き＝下端で高さ）。枠は文字にフィットします。')}</p>
       </div>
 
       {/* Frame (border) toggle */}
@@ -78,12 +80,12 @@ export function DescriptionSection({ node, onChange }: Props) {
           onChange={(e) => onChange({ descriptionBorder: e.target.checked })}
           className="accent-blue-600"
         />
-        枠を表示
+        {t('Show border', '枠を表示')}
       </label>
 
       {/* Description background */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Background</label>
+        <label className="block text-xs text-gray-500 mb-1">{t('Background', 'Background')}</label>
         <div className="flex gap-1 mb-1.5">
           {(['none', 'rect', 'pill'] as const).map((val) => (
             <button
@@ -99,7 +101,7 @@ export function DescriptionSection({ node, onChange }: Props) {
                   : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
               }`}
             >
-              {val === 'none' ? 'None' : val.charAt(0).toUpperCase() + val.slice(1)}
+              {val === 'none' ? t('None', 'None') : val === 'rect' ? t('Rect', 'Rect') : t('Pill', 'Pill')}
             </button>
           ))}
         </div>
@@ -107,7 +109,7 @@ export function DescriptionSection({ node, onChange }: Props) {
           <ColorPicker
             value={node.descriptionBgColor || 'rgba(255,255,255,0.9)'}
             onChange={(c) => onChange({ descriptionBgColor: c })}
-            label="BG Color"
+            label={t('BG Color', 'BG Color')}
           />
         )}
       </div>

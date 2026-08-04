@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { PersonNode, RelationType } from '@/types/charts'
+import { useDataContext } from '@/context/DataContext'
 
 const TYPE_OPTIONS: { value: RelationType; label: string }[] = [
   { value: 'marriage',     label: '結婚 Marriage' },
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function UnionCard({ union, partners, children, position, onUpdate, onDissolve, onDelete, onClose }: Props) {
+  const { t } = useDataContext()
   const iw = typeof window !== 'undefined' ? window.innerWidth : 1200
   const ih = typeof window !== 'undefined' ? window.innerHeight : 800
 
@@ -67,7 +69,7 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
 
   const type: RelationType = union.marriage?.type ?? 'marriage'
   const isMarriage = type === 'marriage' || type === 'remarriage'
-  const partnerNames = partners.map((p) => p.name || '(無名)').join('  —  ') || '(未接続)'
+  const partnerNames = partners.map((p) => p.name || t('Unnamed', '(無名)')).join('  —  ') || t('Unconnected', '(未接続)')
 
   const patch = (m: Partial<NonNullable<PersonNode['marriage']>>) =>
     onUpdate(union.id, { marriage: { ...union.marriage, ...m } })
@@ -90,7 +92,7 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
           onClick={onClose}
           onMouseDown={(e) => e.stopPropagation()}
           className="text-gray-400 hover:text-gray-600 text-xl leading-none transition-colors"
-          title="Close"
+          title={t('Close', 'Close')}
         >
           ×
         </button>
@@ -98,11 +100,11 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
 
       <div className="px-3 py-3 space-y-3">
         <p className="text-[11px] text-gray-400 -mt-1">
-          中間(union)ノードは表示・レイアウト用の補助です。下記は元の実関係（上の2者間）。
+          {t('Union node hint', '中間(union)ノードは表示・レイアウト用の補助です。下記は元の実関係（上の2者間）。')}
         </p>
 
         <div>
-          <label className="block text-xs text-gray-500 mb-0.5">関係 Type</label>
+          <label className="block text-xs text-gray-500 mb-0.5">{t('Relation Type label', '関係 Type')}</label>
           <select
             value={type}
             onChange={(e) => patch({ type: e.target.value as RelationType })}
@@ -115,12 +117,12 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
         </div>
 
         <div>
-          <label className="block text-xs text-gray-500 mb-0.5">Label (任意)</label>
+          <label className="block text-xs text-gray-500 mb-0.5">{t('Label optional', 'Label (任意)')}</label>
           <input
             type="text"
             defaultValue={union.marriage?.label ?? ''}
             onBlur={(e) => patch({ label: e.target.value })}
-            placeholder="例: 初婚 / 継室"
+            placeholder={t('Union label placeholder', '例: 初婚 / 継室')}
             className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-400"
           />
         </div>
@@ -128,7 +130,7 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
         {isMarriage && (
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-500 mb-0.5">開始 Start</label>
+              <label className="block text-xs text-gray-500 mb-0.5">{t('Start', '開始 Start')}</label>
               <input
                 type="text"
                 defaultValue={union.marriage?.start ?? ''}
@@ -138,7 +140,7 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-0.5">終了 End</label>
+              <label className="block text-xs text-gray-500 mb-0.5">{t('End', '終了 End')}</label>
               <input
                 type="text"
                 defaultValue={union.marriage?.end ?? ''}
@@ -152,7 +154,7 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
 
         {children.length > 0 && (
           <div className="text-xs text-gray-500">
-            子 ({children.length}): <span className="text-gray-700">{children.map((c) => c.name || '(無名)').join(', ')}</span>
+            {t('Children', '子')} ({children.length}): <span className="text-gray-700">{children.map((c) => c.name || t('Unnamed', '(無名)')).join(', ')}</span>
           </div>
         )}
 
@@ -160,16 +162,16 @@ export function UnionCard({ union, partners, children, position, onUpdate, onDis
           <button
             onClick={() => onDissolve(union.id)}
             className="flex-1 text-xs py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-            title="union を解除して直接線に戻す（子は両親へ再接続）"
+            title={t('Dissolve union hint', 'union を解除して直接線に戻す（子は両親へ再接続）')}
           >
-            union解除
+            {t('Dissolve union', 'union解除')}
           </button>
           <button
             onClick={() => onDelete(union.id)}
             className="flex-1 text-xs py-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
-            title="union と付随する線をすべて削除"
+            title={t('Delete union hint', 'union と付随する線をすべて削除')}
           >
-            削除
+            {t('Delete union button', '削除')}
           </button>
         </div>
       </div>

@@ -192,6 +192,7 @@ function InlineEditOverlay({
   onCancel: () => void
   onDelete?: () => void
 }) {
+  const { t } = useDataContext()
   const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const committed = useRef(false)
@@ -306,52 +307,52 @@ function InlineEditOverlay({
       {/* Floating toolbar */}
       <div ref={tbRef} className="absolute z-[51] flex flex-wrap items-center gap-0.5 rounded-md border border-gray-200 bg-white px-1 py-0.5 shadow-lg"
         style={{ left: tb.left, top: tb.top, maxWidth: 'calc(100vw - 16px)' }}>
-        {btn(false, () => setSizeBy(-1), 'フォント小', <span>A−</span>)}
+        {btn(false, () => setSizeBy(-1), t('Smaller font','フォント小'), <span>A−</span>)}
         <span className="w-5 text-center text-xs text-gray-600">{size}</span>
-        {btn(false, () => setSizeBy(1), 'フォント大', <span className="font-bold">A+</span>)}
-        {btn(bold, toggleBold, '太字', <span className="font-bold">B</span>)}
-        {btn(vertOn, toggleVertical, '縦書き（この項目のみ）', <span className="text-xs">縦</span>)}
-        <button type="button" title="文字色" onMouseDown={(e) => e.preventDefault()}
+        {btn(false, () => setSizeBy(1), t('Larger font','フォント大'), <span className="font-bold">A+</span>)}
+        {btn(bold, toggleBold, t('Bold','太字'), <span className="font-bold">B</span>)}
+        {btn(vertOn, toggleVertical, t('Vertical text (this field only)','縦書き（この項目のみ）'), <span className="text-xs">{t('Vertical abbrev','縦')}</span>)}
+        <button type="button" title={t('Text color','文字色')} onMouseDown={(e) => e.preventDefault()}
           onClick={() => setPicker(picker === 'text' ? null : 'text')}
           className="flex h-7 w-7 items-center justify-center rounded hover:bg-gray-100">
           <span className="font-bold underline" style={{ color: color || '#333' }}>A</span>
         </button>
-        <button type="button" title="背景色" onMouseDown={(e) => e.preventDefault()}
+        <button type="button" title={t('Text background color','背景色')} onMouseDown={(e) => e.preventDefault()}
           onClick={() => setPicker(picker === 'bg' ? null : 'bg')}
           className="h-6 w-6 rounded border border-gray-300" style={{ background: bg || '#fff' }} />
         <div className="w-28"><FontSelector value={font} onChange={pickFont} /></div>
         {isNote && (
           <select
-            title="メモの形（各風）"
+            title={t('Note shape','メモの形（各風）')}
             value={noteShape}
             onMouseDown={(e) => e.stopPropagation()}
             onChange={(e) => { const v = e.target.value as typeof noteShape; setNoteShape(v); onSettings({ noteShape: v }) }}
             className="rounded border border-gray-300 px-1 py-0.5 text-xs"
           >
-            <option value="plain">無地</option>
-            <option value="sticky">付箋</option>
-            <option value="bubble">吹き出し</option>
-            <option value="oval">楕円</option>
-            <option value="cloud">雲（思考）</option>
-            <option value="burst">集中（強調）</option>
-            <option value="card">カード</option>
-            <option value="banner">バナー</option>
+            <option value="plain">{t('Plain','無地')}</option>
+            <option value="sticky">{t('Sticky note','付箋')}</option>
+            <option value="bubble">{t('Speech bubble','吹き出し')}</option>
+            <option value="oval">{t('Oval','楕円')}</option>
+            <option value="cloud">{t('Cloud (thought)','雲（思考）')}</option>
+            <option value="burst">{t('Burst (emphasis)','集中（強調）')}</option>
+            <option value="card">{t('Card','カード')}</option>
+            <option value="banner">{t('Banner','バナー')}</option>
           </select>
         )}
         {isNote && onDelete && (
-          <button type="button" title="メモを削除" onMouseDown={(e) => e.preventDefault()}
+          <button type="button" title={t('Delete memo','メモを削除')} onMouseDown={(e) => e.preventDefault()}
             onClick={() => { committed.current = true; onDelete() }}
             className="flex h-6 w-6 items-center justify-center rounded border border-red-300 text-red-600 hover:bg-red-50">
             <TrashIcon className="h-4 w-4" />
           </button>
         )}
         {isDesc && <>
-          {btn(align === 'left', () => setAlignment('left'), '左揃え', <Bars3BottomLeftIcon className="h-4 w-4" />)}
-          {btn(align === 'center', () => setAlignment('center'), '中央', <Bars3Icon className="h-4 w-4" />)}
-          {btn(align === 'right', () => setAlignment('right'), '右揃え', <Bars3BottomRightIcon className="h-4 w-4" />)}
+          {btn(align === 'left', () => setAlignment('left'), t('Align left','左揃え'), <Bars3BottomLeftIcon className="h-4 w-4" />)}
+          {btn(align === 'center', () => setAlignment('center'), t('Center','中央'), <Bars3Icon className="h-4 w-4" />)}
+          {btn(align === 'right', () => setAlignment('right'), t('Align right','右揃え'), <Bars3BottomRightIcon className="h-4 w-4" />)}
         </>}
-        {btn(picker === 'deform', () => setPicker(picker === 'deform' ? null : 'deform'), '変形（回転・傾き・伸縮・反転）',
-          <span className="text-xs">変形</span>)}
+        {btn(picker === 'deform', () => setPicker(picker === 'deform' ? null : 'deform'), t('Transform (rotate / skew / scale / flip)','変形（回転・傾き・伸縮・反転）'),
+          <span className="text-xs">{t('Transform','変形')}</span>)}
       </div>
 
       {/* Color popovers */}
@@ -365,7 +366,7 @@ function InlineEditOverlay({
           <ColorPickerPopover value={bg} onChange={pickBg} onClose={() => setPicker(null)}>
             {isDesc && (
               <div className="mt-2 flex items-center gap-2">
-                <span className="text-xs text-gray-600">透明度</span>
+                <span className="text-xs text-gray-600">{t('Opacity','透明度')}</span>
                 <input type="range" min={0} max={1} step={0.05} value={bgOpacity}
                   onChange={(e) => changeBgOpacity(Number(e.target.value))} className="flex-1 accent-blue-600" />
                 <span className="w-8 text-right text-[10px] text-gray-600">{Math.round(bgOpacity * 100)}%</span>
@@ -378,22 +379,22 @@ function InlineEditOverlay({
         <div className="absolute z-[52] w-56 rounded-lg border border-gray-300 bg-white p-3 shadow-xl"
           style={{ left: tb.left, top: tb.top + tb.h + 4 }} onMouseDown={(e) => e.stopPropagation()}>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-600">変形</span>
-            <button type="button" onClick={() => setPicker(null)} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100" title="閉じる">×</button>
+            <span className="text-xs font-medium text-gray-600">{t('Transform','変形')}</span>
+            <button type="button" onClick={() => setPicker(null)} className="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100" title={t('Dismiss','閉じる')}>×</button>
           </div>
-          <label className="text-xs text-gray-500">回転 {rot}°</label>
+          <label className="text-xs text-gray-500">{t('Rotation','回転')} {rot}°</label>
           <input type="range" min={-180} max={180} step={5} value={rot} onChange={(e) => setRotation(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
-          <label className="text-xs text-gray-500">傾き {skew}°</label>
+          <label className="text-xs text-gray-500">{t('Skew','傾き')} {skew}°</label>
           <input type="range" min={-45} max={45} step={1} value={skew} onChange={(e) => setSkewV(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
-          <label className="text-xs text-gray-500">横比 {Math.abs(scaleX).toFixed(1)}×</label>
+          <label className="text-xs text-gray-500">{t('Scale X','横比')} {Math.abs(scaleX).toFixed(1)}×</label>
           <input type="range" min={0.5} max={2} step={0.1} value={Math.abs(scaleX)} onChange={(e) => setScaleXV(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
-          <label className="text-xs text-gray-500">縦比 {Math.abs(scaleY).toFixed(1)}×</label>
+          <label className="text-xs text-gray-500">{t('Scale Y','縦比')} {Math.abs(scaleY).toFixed(1)}×</label>
           <input type="range" min={0.5} max={2} step={0.1} value={Math.abs(scaleY)} onChange={(e) => setScaleYV(Number(e.target.value))} className="mb-2 w-full accent-blue-600" />
           <div className="flex gap-2">
-            <button type="button" onClick={flipH} className={`flex-1 rounded border px-2 py-1 text-xs ${scaleX < 0 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>左右反転</button>
-            <button type="button" onClick={flipV} className={`flex-1 rounded border px-2 py-1 text-xs ${scaleY < 0 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>上下反転</button>
+            <button type="button" onClick={flipH} className={`flex-1 rounded border px-2 py-1 text-xs ${scaleX < 0 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{t('Flip horizontal','左右反転')}</button>
+            <button type="button" onClick={flipV} className={`flex-1 rounded border px-2 py-1 text-xs ${scaleY < 0 ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>{t('Flip vertical','上下反転')}</button>
           </div>
-          <button type="button" onClick={resetTf} className="mt-2 w-full rounded border border-gray-300 py-1 text-xs text-gray-600 hover:bg-gray-50">変形をリセット</button>
+          <button type="button" onClick={resetTf} className="mt-2 w-full rounded border border-gray-300 py-1 text-xs text-gray-600 hover:bg-gray-50">{t('Reset transform','変形をリセット')}</button>
         </div>
       )}
 
@@ -449,6 +450,7 @@ const HELP_SECTIONS: { title: L3; rows: { k: L3; d: L3 }[] }[] = [
 ]
 
 function HelpDialog({ onClose, locale }: { onClose: () => void; locale?: string }) {
+  const { t } = useDataContext()
   const primary = normLocale(locale)
   const order = [primary, ...(['ja', 'zh', 'en'] as const).filter((l) => l !== primary)]
   const guide = (loc: 'ja' | 'zh' | 'en', idx: number) => (
@@ -474,7 +476,7 @@ function HelpDialog({ onClose, locale }: { onClose: () => void; locale?: string 
       <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-800">{HELP_HEADING[primary]}</h2>
-          <button onClick={onClose} className="text-xl leading-none text-gray-400 hover:text-gray-600" title="閉じる">×</button>
+          <button onClick={onClose} className="text-xl leading-none text-gray-400 hover:text-gray-600" title={t('Dismiss','閉じる')}>×</button>
         </div>
         {order.map((loc, idx) => guide(loc, idx))}
       </div>
@@ -800,13 +802,13 @@ export default function FamilyChartEditor({
   }
 
   const handleClear = () => {
-    if (window.confirm('Clear all data? This cannot be undone.')) clearPage()
+    if (window.confirm(t('Clear all confirm','Clear all data? This cannot be undone.'))) clearPage()
   }
 
   const [reloading, setReloading] = useState(false)
   const handleReload = async () => {
     if (!id) return
-    if (!window.confirm('保存前の変更は破棄され、最後に保存した内容を再読み込みします。よろしいですか？')) return
+    if (!window.confirm(t('Reload confirm','保存前の変更は破棄され、最後に保存した内容を再読み込みします。よろしいですか？'))) return
     setReloading(true)
     setSelectedNode(null)
     setSelectedRelationship(null)
@@ -850,7 +852,7 @@ export default function FamilyChartEditor({
       if (isCsv) {
         const { parseCsvToGraph } = await import('@/utils/csv')
         const { persons: cp, relationships: cr } = parseCsvToGraph(text)
-        if (!cp.length) { alert('CSV にデータが見つかりません（docs/csv-format.md 参照）。'); e.target.value = ''; return }
+        if (!cp.length) { alert(t('CSV no data','CSV にデータが見つかりません（docs/csv-format.md 参照）。')); e.target.value = ''; return }
         mergeGraph(cp as Record<string, unknown>[], cr as Record<string, unknown>[])
         alert(`CSV インポート完了: ${cp.filter((p) => p.type !== 'union').length}人 を追加しました。`)
       } else {
@@ -859,7 +861,7 @@ export default function FamilyChartEditor({
         const persons_ = Array.isArray(src.persons) ? src.persons : []
         const rels_ = Array.isArray(src.relationships) ? src.relationships : []
         if (persons_.length === 0 && rels_.length === 0) {
-          alert('インポート対象が見つかりません（docs/import-schema.md 参照）。')
+          alert(t('Import no data','インポート対象が見つかりません（docs/import-schema.md 参照）。'))
           e.target.value = ''; return
         }
         mergeGraph(persons_, rels_)
@@ -867,7 +869,7 @@ export default function FamilyChartEditor({
       }
     } catch (err) {
       console.error('import error:', err)
-      alert('インポート失敗：ファイル形式を確認してください（JSON: docs/import-schema.md / CSV: docs/csv-format.md）。')
+      alert(t('Import failed','インポート失敗：ファイル形式を確認してください（JSON: docs/import-schema.md / CSV: docs/csv-format.md）。'))
     }
     e.target.value = ''
   }, [mergeGraph])
@@ -1036,12 +1038,12 @@ export default function FamilyChartEditor({
             <button
               onClick={() => onBack()}
               className="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
-              title="Back to list"
+              title={t('Back to list','Back to list')}
             >
               <ArrowLeftIcon className="h-5 w-5" />
             </button>
             <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-gray-800">
-              {currentPage?.title || 'Chart Editor'}
+              {currentPage?.title || t('Chart Editor','Chart Editor')}
             </h1>
           </div>
           <div className="relative">
@@ -1056,7 +1058,7 @@ export default function FamilyChartEditor({
               ) : (
                 <CloudArrowDownIcon className="h-4 w-4" />
               )}
-              <span className="fc-tb-label">Save</span>
+              <span className="fc-tb-label">{t('Save', 'Save')}</span>
             </button>
             {saveStatus && (
               <div
@@ -1071,28 +1073,28 @@ export default function FamilyChartEditor({
           <button
             onClick={() => setPreviewing(true)}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"
-            title="Preview (check the result, then return to editing)"
+            title={t('Preview (check the result, then return to editing)', 'Preview（結果を確認して編集に戻る）')}
           >
             <EyeIcon className="h-4 w-4" />
-            <span className="fc-tb-label">Preview</span>
+            <span className="fc-tb-label">{t('Preview', 'Preview')}</span>
           </button>
           <div className="relative">
             <button
               onClick={() => setExportMenu((o) => !o)}
               className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-              title="エクスポート（JSON / CSV）"
+              title={t('Export (JSON / CSV)', 'エクスポート（JSON / CSV）')}
             >
               <ArrowDownTrayIcon className="h-4 w-4" />
-              <span className="fc-tb-label">Export</span>
+              <span className="fc-tb-label">{t('Export', 'Export')}</span>
             </button>
             {exportMenu && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setExportMenu(false)} />
                 <div className="absolute right-0 top-full z-40 mt-1 w-40 rounded-md border border-gray-200 bg-white py-1 shadow-lg">
                   <button className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100"
-                    onClick={() => { setExportMenu(false); handleExport() }}>JSON（図全体）</button>
+                    onClick={() => { setExportMenu(false); handleExport() }}>{t('JSON (whole chart)', 'JSON（図全体）')}</button>
                   <button className="block w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100"
-                    onClick={() => { setExportMenu(false); handleExportCsv() }}>CSV（人物・関係）</button>
+                    onClick={() => { setExportMenu(false); handleExportCsv() }}>{t('CSV (people & relations)', 'CSV（人物・関係）')}</button>
                 </div>
               </>
             )}
@@ -1100,10 +1102,10 @@ export default function FamilyChartEditor({
           <button
             onClick={() => importInputRef.current?.click()}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-            title="インポート（JSON / CSV）"
+            title={t('Import (JSON / CSV)', 'インポート（JSON / CSV）')}
           >
             <ArrowUpTrayIcon className="h-4 w-4" />
-            <span className="fc-tb-label">Import</span>
+            <span className="fc-tb-label">{t('Import', 'Import')}</span>
           </button>
           <button
             onClick={() => {
@@ -1111,40 +1113,40 @@ export default function FamilyChartEditor({
               setSettingsOpen(true)
             }}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-            title="設定（背景・DPI・ビューポート）"
+            title={t('Settings (background / DPI / viewport)', '設定（背景・DPI・ビューポート）')}
           >
             <Cog6ToothIcon className="h-4 w-4" />
-            <span className="fc-tb-label">設定</span>
+            <span className="fc-tb-label">{t('Settings', '設定')}</span>
           </button>
           <button
             onClick={handlePdfExport}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-            title="Print / Export as PDF"
+            title={t('Print / Export as PDF', '印刷 / PDF 出力')}
           >
             <PrinterIcon className="h-4 w-4" />
-            <span className="fc-tb-label">PDF</span>
+            <span className="fc-tb-label">{t('PDF', 'PDF')}</span>
           </button>
           <button
             onClick={handleReload}
             disabled={reloading}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200 disabled:opacity-60"
-            title="再読み込み（保存済みの内容に戻す）"
+            title={t('Reload (revert to the last saved content)', '再読み込み（保存済みの内容に戻す）')}
           >
             <ArrowPathIcon className={`h-4 w-4 ${reloading ? 'animate-spin' : ''}`} />
-            <span className="fc-tb-label">Reload</span>
+            <span className="fc-tb-label">{t('Reload', 'Reload')}</span>
           </button>
           <button
             onClick={() => setHelpOpen(true)}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
-            title="操作方法・ショートカット"
+            title={t('Controls & Shortcuts', '操作方法・ショートカット')}
           >
             <QuestionMarkCircleIcon className="h-4 w-4" />
-            <span className="fc-tb-label">ヘルプ</span>
+            <span className="fc-tb-label">{t('Help', 'ヘルプ')}</span>
           </button>
           <button
             onClick={handleClear}
             className="p-1.5 md:p-2 rounded-lg text-red-500 hover:bg-red-50 flex-shrink-0"
-            title="Clear all"
+            title={t('Clear all','Clear all')}
           >
             <TrashIcon className="h-5 w-5" />
           </button>
@@ -1170,6 +1172,7 @@ export default function FamilyChartEditor({
           backgroundOpacity={backgroundOpacity}
           verticalText={verticalText}
           locale={locale}
+          t={t}
           editable={!isViewMode}
           persons={persons}
           relationships={relationships}
@@ -1227,12 +1230,12 @@ export default function FamilyChartEditor({
             style={{ cursor: 'crosshair' }}
           >
             <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm px-4 py-2 rounded-full shadow pointer-events-auto">
-              Click a node to connect — or{' '}
+              {t('Click node to connect instruction','Click a node to connect — or')}{' '}
               <button
                 onClick={() => setConnectState({ active: false, sourceId: null })}
                 className="underline ml-1"
               >
-                Cancel (Esc)
+                {t('Cancel (Esc)','Cancel (Esc)')}
               </button>
             </div>
           </div>
@@ -1296,7 +1299,7 @@ export default function FamilyChartEditor({
           <button
             onClick={() => netRef.current?.addPersonAtCenter()}
             className="absolute bottom-6 left-6 z-20 w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
-            title="Add person (or double-click canvas)"
+            title={t('Add person title','Add person (or double-click canvas)')}
           >
             <PlusIcon className="h-6 w-6" />
           </button>
@@ -1307,10 +1310,10 @@ export default function FamilyChartEditor({
           <button
             onClick={handleAddNote}
             className="absolute bottom-20 left-6 z-20 h-12 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow-lg flex items-center gap-1 text-sm transition-colors"
-            title="メモ（注釈）を追加"
+            title={t('Add a memo (annotation)', 'メモ（注釈）を追加')}
           >
             <DocumentPlusIcon className="h-5 w-5" />
-            <span className="fc-tb-label">メモ</span>
+            <span className="fc-tb-label">{t('Memo', 'メモ')}</span>
           </button>
         )}
 
@@ -1323,10 +1326,10 @@ export default function FamilyChartEditor({
               className={`absolute bottom-36 left-6 z-20 h-12 px-3 rounded-full shadow-lg flex items-center gap-1 text-sm transition-colors ${
                 wbOpen || drawMode ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300'
               }`}
-              title="ホワイトボード（手描き・注釈）"
+              title={t('Whiteboard (freehand / annotation)', 'ホワイトボード（手描き・注釈）')}
             >
               <PencilIcon className="h-5 w-5" />
-              <span className="fc-tb-label">お絵かき</span>
+              <span className="fc-tb-label">{t('Draw', 'お絵かき')}</span>
             </button>
 
             {/* Tool panel */}
@@ -1338,14 +1341,14 @@ export default function FamilyChartEditor({
                 {/* Tools */}
                 <div className="flex flex-wrap gap-1.5">
                   {([
-                    ['select', '⬚', '選択・移動'],
-                    ['pen', '✏️', 'ペン'],
-                    ['highlighter', '🖍️', 'マーカー'],
-                    ['line', '／', '直線'],
-                    ['arrow', '↗', '矢印'],
-                    ['rect', '▭', '矩形'],
-                    ['ellipse', '◯', '楕円'],
-                    ['eraser', '🧽', '消しゴム'],
+                    ['select', '⬚', t('Select / Move','選択・移動')],
+                    ['pen', '✏️', t('Pen','ペン')],
+                    ['highlighter', '🖍️', t('Marker','マーカー')],
+                    ['line', '／', t('Line','直線')],
+                    ['arrow', '↗', t('Arrow','矢印')],
+                    ['rect', '▭', t('Rectangle','矩形')],
+                    ['ellipse', '◯', t('Ellipse','楕円')],
+                    ['eraser', '🧽', t('Eraser','消しゴム')],
                   ] as [DrawTool | 'eraser' | 'select', string, string][]).map(([tool, icon, label]) => (
                     <button
                       key={tool}
@@ -1389,21 +1392,21 @@ export default function FamilyChartEditor({
                   <button
                     onClick={undoDraw} disabled={!canUndoDraw}
                     className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-gray-100 text-xs text-gray-700 hover:bg-gray-200 disabled:opacity-40"
-                    title="元に戻す (Ctrl+Z)"
+                    title={t('Undo (Ctrl+Z)','元に戻す (Ctrl+Z)')}
                   >
-                    <ArrowUturnLeftIcon className="h-4 w-4" /><span className="fc-tb-label">戻す</span>
+                    <ArrowUturnLeftIcon className="h-4 w-4" /><span className="fc-tb-label">{t('Undo', '戻す')}</span>
                   </button>
                   <button
                     onClick={redoDraw} disabled={!canRedoDraw}
                     className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-gray-100 text-xs text-gray-700 hover:bg-gray-200 disabled:opacity-40"
-                    title="やり直し (Ctrl+Shift+Z)"
+                    title={t('Redo (Ctrl+Shift+Z)','やり直し (Ctrl+Shift+Z)')}
                   >
-                    <ArrowUturnRightIcon className="h-4 w-4" /><span className="fc-tb-label">やり直し</span>
+                    <ArrowUturnRightIcon className="h-4 w-4" /><span className="fc-tb-label">{t('Redo', 'やり直し')}</span>
                   </button>
                   <button
-                    onClick={() => { if (window.confirm('手描き注釈をすべて消去しますか？')) clearDrawings() }}
+                    onClick={() => { if (window.confirm(t('Clear drawings confirm','手描き注釈をすべて消去しますか？'))) clearDrawings() }}
                     className="flex h-9 items-center justify-center rounded-lg bg-red-50 px-2 text-red-600 hover:bg-red-100"
-                    title="すべて消去"
+                    title={t('Erase all drawings','すべて消去')}
                   >
                     <TrashIcon className="h-4 w-4" />
                   </button>
@@ -1420,7 +1423,7 @@ export default function FamilyChartEditor({
             className="absolute bottom-8 right-8 z-20 flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg"
           >
             <ArrowLeftCircleIcon className="h-5 w-5" />
-            Edit Mode
+            {t('Edit Mode','Edit Mode')}
           </button>
         )}
 

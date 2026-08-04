@@ -1,6 +1,7 @@
 'use client'
 
 import { PersonNode, Relationship, RelationType } from '@/types/charts'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   node: PersonNode
@@ -63,10 +64,55 @@ interface DisplayRel {
 }
 
 export function RelationshipsSection({ node, relationships, persons, onRemove, onStartConnect }: Props) {
+  const { t } = useDataContext()
   const getName = (id: string) => persons.find((p) => p.id === id)?.name ?? id
   const isUnionId = (id: string) => persons.find((p) => p.id === id)?.type === 'union'
   const unionType = (id: string): RelationType =>
     persons.find((p) => p.id === id)?.marriage?.type ?? 'marriage'
+
+  // Translated badge label for a relationship type
+  const badge = (type: string): string => {
+    switch (type) {
+      case 'parent-child': return t('PC badge', 'P–C')
+      case 'marriage':     return t('Marriage', '結婚')
+      case 'remarriage':   return t('Remarriage', '再婚')
+      case 'partner':      return t('Partner badge', 'Par')
+      case 'sibling':      return t('Sibling badge', '兄弟')
+      case 'succession':   return t('Succession', '継承')
+      case 'friend':       return t('Friend', '親友')
+      case 'ally':         return t('Ally', '同盟')
+      case 'mentor':       return t('Mentor', '師弟')
+      case 'master':       return t('Master', '師匠')
+      case 'disciple':     return t('Disciple', '弟子')
+      case 'comrade':      return t('Comrade', '戦友')
+      case 'rival':        return t('Rival', '対立')
+      case 'enemy':        return t('Enemy', '敵対')
+      case 'custom':       return t('Custom badge', 'Cus')
+      default:             return TYPE_LABEL[type] ?? type
+    }
+  }
+
+  // Translated full relationship word for union-mediated descriptions
+  const relWord = (type: string): string => {
+    switch (type) {
+      case 'marriage':     return t('Marriage', '結婚')
+      case 'remarriage':   return t('Remarriage', '再婚')
+      case 'sibling':      return t('Sibling', '兄弟姉妹')
+      case 'succession':   return t('Succession', '継承')
+      case 'friend':       return t('Friend', '親友')
+      case 'ally':         return t('Ally', '同盟')
+      case 'mentor':       return t('Mentor', '師弟')
+      case 'rival':        return t('Rival', '対立')
+      case 'enemy':        return t('Enemy', '敵対')
+      case 'master':       return t('Master', '師匠')
+      case 'disciple':     return t('Disciple', '弟子')
+      case 'comrade':      return t('Comrade', '戦友')
+      case 'parent-child': return t('Parent-child pair', '親子')
+      case 'custom':       return t('Custom rel', '関係')
+      case 'partner':      return t('Partner', 'パートナー')
+      default:             return type
+    }
+  }
 
   const items: DisplayRel[] = []
   const seen = new Set<string>()
@@ -82,19 +128,19 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
     const otherName = getName(otherId)
     let text: string
     switch (r.type) {
-      case 'marriage':     text = `結婚: ${otherName}`; break
-      case 'remarriage':   text = `再婚: ${otherName}`; break
-      case 'parent-child': text = r.source === node.id ? `子: ${otherName}` : `親: ${otherName}`; break
-      case 'sibling':      text = `兄弟姉妹: ${otherName}`; break
-      case 'succession':   text = `継承: ${otherName}`; break
-      case 'friend':       text = `親友: ${otherName}`; break
-      case 'ally':         text = `同盟: ${otherName}`; break
-      case 'mentor':       text = r.source === node.id ? `師: ${otherName}` : `弟子: ${otherName}`; break
-      case 'master':       text = r.source === node.id ? `弟子: ${otherName}` : `師匠: ${otherName}`; break
-      case 'disciple':     text = r.source === node.id ? `師匠: ${otherName}` : `弟子: ${otherName}`; break
-      case 'comrade':      text = `戦友: ${otherName}`; break
-      case 'rival':        text = `対立: ${otherName}`; break
-      case 'enemy':        text = `敵対: ${otherName}`; break
+      case 'marriage':     text = `${t('Marriage', '結婚')}: ${otherName}`; break
+      case 'remarriage':   text = `${t('Remarriage', '再婚')}: ${otherName}`; break
+      case 'parent-child': text = r.source === node.id ? `${t('Child', '子')}: ${otherName}` : `${t('Parent', '親')}: ${otherName}`; break
+      case 'sibling':      text = `${t('Sibling', '兄弟姉妹')}: ${otherName}`; break
+      case 'succession':   text = `${t('Succession', '継承')}: ${otherName}`; break
+      case 'friend':       text = `${t('Friend', '親友')}: ${otherName}`; break
+      case 'ally':         text = `${t('Ally', '同盟')}: ${otherName}`; break
+      case 'mentor':       text = r.source === node.id ? `${t('Teacher', '師')}: ${otherName}` : `${t('Disciple', '弟子')}: ${otherName}`; break
+      case 'master':       text = r.source === node.id ? `${t('Disciple', '弟子')}: ${otherName}` : `${t('Master', '師匠')}: ${otherName}`; break
+      case 'disciple':     text = r.source === node.id ? `${t('Master', '師匠')}: ${otherName}` : `${t('Disciple', '弟子')}: ${otherName}`; break
+      case 'comrade':      text = `${t('Comrade', '戦友')}: ${otherName}`; break
+      case 'rival':        text = `${t('Rival', '対立')}: ${otherName}`; break
+      case 'enemy':        text = `${t('Enemy', '敵対')}: ${otherName}`; break
       default:             text = `${r.label ?? r.type}: ${otherName}`
     }
     push({ key: r.id, badgeType: r.type, text, removeId: r.id })
@@ -110,14 +156,14 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
       push({
         key: `sp_${uid}_${se.source}`,
         badgeType: ut,
-        text: `${REL_WORD[ut] ?? '関係'}: ${getName(se.source)}`,
+        text: `${relWord(ut)}: ${getName(se.source)}`,
         removeId: pe.id,
-        removeTitle: 'この関係(union)を削除',
+        removeTitle: t('Remove union', 'この関係(union)を削除'),
       })
     }
     // Children hanging off this union
     for (const ke of relationships.filter((r) => r.type === 'parent-child' && r.source === uid)) {
-      push({ key: `ch_${ke.id}`, badgeType: 'parent-child', text: `子: ${getName(ke.target)}`, removeId: ke.id })
+      push({ key: `ch_${ke.id}`, badgeType: 'parent-child', text: `${t('Child', '子')}: ${getName(ke.target)}`, removeId: ke.id })
     }
   }
 
@@ -125,25 +171,25 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
   for (const pue of relationships.filter((r) => r.type === 'parent-child' && r.target === node.id && isUnionId(r.source))) {
     const uid = pue.source
     for (const pae of relationships.filter((r) => r.type === 'partner' && r.target === uid)) {
-      push({ key: `par_${uid}_${pae.source}`, badgeType: 'parent-child', text: `親: ${getName(pae.source)}`, removeId: pue.id })
+      push({ key: `par_${uid}_${pae.source}`, badgeType: 'parent-child', text: `${t('Parent', '親')}: ${getName(pae.source)}`, removeId: pue.id })
     }
   }
 
   return (
     <div className="space-y-2">
       {items.length === 0 && (
-        <p className="text-xs text-gray-400 italic py-1">No relationships yet.</p>
+        <p className="text-xs text-gray-400 italic py-1">{t('No relationships yet', 'No relationships yet.')}</p>
       )}
       {items.map((it) => (
         <div key={it.key} className="flex items-center gap-2">
           <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${TYPE_BADGE[it.badgeType] ?? 'bg-gray-100 text-gray-600'}`}>
-            {TYPE_LABEL[it.badgeType] ?? it.badgeType}
+            {badge(it.badgeType)}
           </span>
           <span className="flex-1 truncate text-sm text-gray-700">{it.text}</span>
           <button
             onClick={() => onRemove(it.removeId)}
             className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-base leading-none px-0.5"
-            title={it.removeTitle ?? 'Remove'}
+            title={it.removeTitle ?? t('Remove', 'Remove')}
           >
             ×
           </button>
@@ -153,7 +199,7 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
         onClick={onStartConnect}
         className="w-full mt-1 text-xs text-blue-600 hover:text-blue-800 border border-dashed border-blue-300 hover:border-blue-500 rounded py-1.5 transition-colors"
       >
-        + Add Relationship
+        {t('Add Relationship', '+ Add Relationship')}
       </button>
     </div>
   )

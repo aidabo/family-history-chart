@@ -7,6 +7,7 @@ import { AppearanceSection } from '@/components/editors/AppearanceSection'
 import { DescriptionSection } from '@/components/editors/DescriptionSection'
 import { RelationshipsSection } from '@/components/editors/RelationshipsSection'
 import { EpisodesSection } from '@/components/editors/EpisodesSection'
+import { useDataContext } from '@/context/DataContext'
 
 interface NodeCardProps {
   node: PersonNode
@@ -46,6 +47,7 @@ export function NodeCard({
   onUpdate, onClose, onDelete, onUploadFile, onStartConnect, onRemoveRelationship,
   onAddEpisode, onUpdateEpisode, onDeleteEpisode,
 }: NodeCardProps) {
+  const { t } = useDataContext()
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi))
   const iw = typeof window !== 'undefined' ? window.innerWidth : 1200
   const ih = typeof window !== 'undefined' ? window.innerHeight : 800
@@ -101,7 +103,7 @@ export function NodeCard({
           onClick={() => onDelete(node.id)}
           onMouseDown={(e) => e.stopPropagation()}
           className="text-gray-400 hover:text-red-500 text-base leading-none transition-colors px-1"
-          title="この人物を削除 (Delete / Backspace)"
+          title={t('Delete person button title', 'この人物を削除 (Delete / Backspace)')}
         >
           🗑
         </button>
@@ -109,7 +111,7 @@ export function NodeCard({
           onClick={onClose}
           onMouseDown={(e) => e.stopPropagation()}
           className="text-gray-400 hover:text-gray-600 text-xl leading-none transition-colors"
-          title="Close (Esc)"
+          title={t('Close Esc', 'Close (Esc)')}
         >
           ×
         </button>
@@ -121,16 +123,16 @@ export function NodeCard({
           even when the card opens low on a phone. Uses dvh so the mobile address bar is excluded. */}
       <div key={node.id} className="overflow-y-auto overscroll-contain"
         style={{ maxHeight: `min(calc(100dvh - ${Math.max(0, pos.y)}px - 64px), 80vh)` }}>
-        <AccordionSection title="Identity">
+        <AccordionSection title={t('Identity', 'Identity')}>
           <IdentitySection node={node} onChange={handleChange} onUpload={onUploadFile} />
         </AccordionSection>
-        <AccordionSection title="Appearance">
+        <AccordionSection title={t('Appearance', 'Appearance')}>
           <AppearanceSection node={node} onChange={handleChange} />
         </AccordionSection>
-        <AccordionSection title="Description">
+        <AccordionSection title={t('Description', 'Description')}>
           <DescriptionSection node={node} onChange={handleChange} />
         </AccordionSection>
-        <AccordionSection title="Episodes">
+        <AccordionSection title={t('Episodes', 'Episodes')}>
           <EpisodesSection
             personId={node.id}
             episodes={episodes}
@@ -139,7 +141,7 @@ export function NodeCard({
             onDelete={onDeleteEpisode}
           />
         </AccordionSection>
-        <AccordionSection title="Relationships">
+        <AccordionSection title={t('Relationships', 'Relationships')}>
           <RelationshipsSection
             node={node}
             relationships={relationships}

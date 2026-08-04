@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { PersonNode, Relationship } from '@/types/charts'
 import { relationLabelMulti } from '@/utils/relationLabels'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   sourceId: string
@@ -44,6 +45,7 @@ const OPTIONS: Option[] = [
 ]
 
 export function RelationshipTypeDialog({ sourceId, targetId, persons, initialX, initialY, onConfirm, onCancel }: Props) {
+  const { t } = useDataContext()
   const [selected, setSelected] = useState<Option>(OPTIONS[0])
   const [label, setLabel] = useState('')
   const [start, setStart] = useState('')
@@ -112,7 +114,7 @@ export function RelationshipTypeDialog({ sourceId, targetId, persons, initialX, 
           onMouseDown={startDrag}
         >
           <div>
-            <h3 className="text-sm font-semibold text-gray-800">関係を追加 / Add Relationship</h3>
+            <h3 className="text-sm font-semibold text-gray-800">{t('Add Relationship dialog title', '関係を追加 / Add Relationship')}</h3>
             <p className="text-xs text-gray-500 mt-0.5">
               <span className="font-medium text-gray-700">{getName(sourceId)}</span>
               {' → '}
@@ -155,17 +157,17 @@ export function RelationshipTypeDialog({ sourceId, targetId, persons, initialX, 
                 onChange={(e) => setUseUnionNode(e.target.checked)}
                 className="accent-blue-500 h-3.5 w-3.5"
               />
-              <span className="text-gray-600">中間ノード作成（線の折り曲げに便利）</span>
+              <span className="text-gray-600">{t('Create intermediate node hint', '中間ノード作成（線の折り曲げに便利）')}</span>
             </label>
           )}
 
           <div>
-            <label className="block text-xs text-gray-500 mb-0.5">Label (任意)</label>
+            <label className="block text-xs text-gray-500 mb-0.5">{t('Label optional', 'Label (任意)')}</label>
             <input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. adopted / 養子"
+              placeholder={t('Label example placeholder', 'e.g. adopted / 養子')}
               className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
           </div>
@@ -173,22 +175,22 @@ export function RelationshipTypeDialog({ sourceId, targetId, persons, initialX, 
           {isMarriage && (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs text-gray-500 mb-0.5">開始 Start</label>
+                <label className="block text-xs text-gray-500 mb-0.5">{t('Start', '開始 Start')}</label>
                 <input
                   type="text"
                   value={start}
                   onChange={(e) => setStart(e.target.value)}
-                  placeholder="e.g. 1950"
+                  placeholder={t('Start year example', 'e.g. 1950')}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-0.5">終了 End</label>
+                <label className="block text-xs text-gray-500 mb-0.5">{t('End', '終了 End')}</label>
                 <input
                   type="text"
                   value={end}
                   onChange={(e) => setEnd(e.target.value)}
-                  placeholder="e.g. 1980"
+                  placeholder={t('End year example', 'e.g. 1980')}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
                 />
               </div>
@@ -201,13 +203,13 @@ export function RelationshipTypeDialog({ sourceId, targetId, persons, initialX, 
             onClick={onCancel}
             className="flex-1 text-sm py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
           >
-            Cancel
+            {t('Cancel', 'Cancel')}
           </button>
           <button
             onClick={handleConfirm}
             className="flex-1 text-sm py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors font-medium"
           >
-            Confirm
+            {t('Confirm', 'Confirm')}
           </button>
         </div>
       </div>

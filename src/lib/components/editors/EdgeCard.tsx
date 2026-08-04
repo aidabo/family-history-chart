@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Relationship, PersonNode } from '@/types/charts'
 import { ColorPicker } from '@/components/ui/ColorPicker'
 import { relationLabelMulti } from '@/utils/relationLabels'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   relationship: Relationship
@@ -24,6 +25,7 @@ const TYPE_OPTIONS: RelType[] = [
 ]
 
 export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, onConvertToUnion, onClose }: Props) {
+  const { t } = useDataContext()
   const iw = typeof window !== 'undefined' ? window.innerWidth : 1200
   const ih = typeof window !== 'undefined' ? window.innerHeight : 800
 
@@ -79,7 +81,7 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
           onClick={onClose}
           onMouseDown={(e) => e.stopPropagation()}
           className="text-gray-400 hover:text-gray-600 text-xl leading-none transition-colors"
-          title="Close"
+          title={t('Close', 'Close')}
         >
           ×
         </button>
@@ -87,7 +89,7 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
 
       <div className="px-3 py-3 space-y-3 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 48px)' }}>
         <div>
-          <label className="block text-xs text-gray-500 mb-0.5">Type</label>
+          <label className="block text-xs text-gray-500 mb-0.5">{t('Type', 'Type')}</label>
           <select
             value={relationship.type}
             onChange={(e) => onUpdate(relationship.id, { type: e.target.value as RelType })}
@@ -109,12 +111,12 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
               onChange={(e) => { if (e.target.checked) onConvertToUnion(relationship) }}
               className="accent-blue-500 h-3.5 w-3.5"
             />
-            <span className="text-gray-700">中間ノード(union)を作成 — 子を分岐できる</span>
+            <span className="text-gray-700">{t('Create intermediate node', '中間ノード(union)を作成 — 子を分岐できる')}</span>
           </label>
         )}
 
         <div>
-          <label className="block text-xs text-gray-500 mb-0.5">Label</label>
+          <label className="block text-xs text-gray-500 mb-0.5">{t('Label', 'Label')}</label>
           <input
             type="text"
             defaultValue={relationship.label ?? ''}
@@ -126,12 +128,12 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
         <ColorPicker
           value={relationship.color}
           onChange={(color) => onUpdate(relationship.id, { color })}
-          label="Color"
+          label={t('Color', 'Color')}
         />
 
         <div>
           <label className="block text-xs text-gray-500 mb-1">
-            Line Width: {relationship.width ?? 1}
+            {t('Line Width', 'Line Width')}: {relationship.width ?? 1}
           </label>
           <input
             type="range" min={1} max={6} step={1}
@@ -144,7 +146,7 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
         {isMarriage && (
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-500 mb-0.5">開始 Start</label>
+              <label className="block text-xs text-gray-500 mb-0.5">{t('Start', '開始 Start')}</label>
               <input
                 type="text"
                 defaultValue={relationship.start ?? ''}
@@ -153,7 +155,7 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-0.5">終了 End</label>
+              <label className="block text-xs text-gray-500 mb-0.5">{t('End', '終了 End')}</label>
               <input
                 type="text"
                 defaultValue={relationship.end ?? ''}
@@ -168,7 +170,7 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
           onClick={() => onDelete(relationship.id)}
           className="w-full text-xs py-1.5 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
         >
-          Delete Relationship
+          {t('Delete Relationship', 'Delete Relationship')}
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
 import { VerticalTextMode } from '@/types/charts'
+import { useDataContext } from '@/context/DataContext'
 
 interface ChartSettingsDialogProps {
   open: boolean
@@ -39,6 +40,7 @@ export default function ChartSettingsDialog({
   onZoomChange,
   onFit,
 }: ChartSettingsDialogProps) {
+  const { t } = useDataContext()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadErr, setUploadErr] = useState<string | null>(null)
@@ -60,7 +62,7 @@ export default function ChartSettingsDialog({
       const url = await uploadFile(file)
       if (url) onBackgroundImageChange(url)
     } catch (err) {
-      setUploadErr('アップロードに失敗しました')
+      setUploadErr(t('Background image upload failed','アップロードに失敗しました'))
       console.error('background image upload error:', err)
     } finally {
       setUploading(false)
@@ -85,12 +87,12 @@ export default function ChartSettingsDialog({
       {/* Dialog panel */}
       <div className="relative bg-white rounded-xl shadow-2xl w-96 max-h-[90vh] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-800">設定</h2>
+          <h2 className="text-lg font-semibold text-gray-800">{t('Settings','設定')}</h2>
           <button
             type="button"
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl"
-            aria-label="Close"
+            aria-label={t('Close','Close')}
           >
             ×
           </button>
@@ -98,10 +100,10 @@ export default function ChartSettingsDialog({
 
         {/* ① 背景 */}
         <section className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">① 背景</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('Background section','① 背景')}</h3>
 
           {/* 背景色 */}
-          <p className="text-xs text-gray-500 mb-1">背景色</p>
+          <p className="text-xs text-gray-500 mb-1">{t('Background color','背景色')}</p>
           {/* Inline — not floating; ColorPickerPopover without onClose so it stays open */}
           <ColorPickerPopover
             value={background}
@@ -109,13 +111,13 @@ export default function ChartSettingsDialog({
           />
 
           {/* 背景画像 */}
-          <p className="text-xs text-gray-500 mt-4 mb-1">背景画像</p>
+          <p className="text-xs text-gray-500 mt-4 mb-1">{t('Background image','背景画像')}</p>
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={backgroundImage ?? ''}
               onChange={(e) => onBackgroundImageChange(e.target.value)}
-              placeholder="画像URL または アップロード"
+              placeholder={t('Image URL or upload','画像URL または アップロード')}
               className="flex-1 min-w-0 rounded border border-gray-300 text-sm px-2 py-1"
             />
             <button
@@ -124,14 +126,14 @@ export default function ChartSettingsDialog({
               disabled={uploading}
               className="shrink-0 px-2 py-1 text-sm rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-700 disabled:opacity-60"
             >
-              {uploading ? '...' : 'アップロード'}
+              {uploading ? '...' : t('Upload file','アップロード')}
             </button>
             {backgroundImage && (
               <button
                 type="button"
                 onClick={() => onBackgroundImageChange('')}
                 className="shrink-0 flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Remove background image"
+                aria-label={t('Remove background image','Remove background image')}
               >
                 ×
               </button>
@@ -158,7 +160,7 @@ export default function ChartSettingsDialog({
           )}
 
           {/* 不透明度 */}
-          <p className="text-xs text-gray-500 mt-4 mb-1">不透明度（背景色・画像に適用）</p>
+          <p className="text-xs text-gray-500 mt-4 mb-1">{t('Opacity (background color / image)','不透明度（背景色・画像に適用）')}</p>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -177,7 +179,7 @@ export default function ChartSettingsDialog({
 
         {/* ② DPI */}
         <section className="mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">② DPI（サムネイル・印刷解像度）</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">{t('DPI section','② DPI（サムネイル・印刷解像度）')}</h3>
           <div className="flex items-center gap-3">
             <input
               type="range"
@@ -191,13 +193,13 @@ export default function ChartSettingsDialog({
             <span className="text-sm font-mono w-12 text-right text-gray-700">{dpi} dpi</span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            値が大きいほどサムネイルと印刷が鮮明になります（150 dpi = A4景観 1754×1240px）。
+            {t('DPI description','値が大きいほどサムネイルと印刷が鮮明になります（150 dpi = A4景観 1754×1240px）。')}
           </p>
         </section>
 
         {/* ③ ビューポート */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">③ ビューポート</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">{t('Viewport section','③ ビューポート')}</h3>
           <div className="flex items-center gap-3 mb-3">
             <span className="text-xs text-gray-600 w-14 shrink-0">{zoom.toFixed(2)}×</span>
             <input
@@ -215,18 +217,18 @@ export default function ChartSettingsDialog({
             onClick={onFit}
             className="w-full py-2 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-sm text-gray-700 transition-colors"
           >
-            全体にフィット
+            {t('Fit to content','全体にフィット')}
           </button>
         </section>
 
         {/* ④ 縦書き */}
         <section className="mt-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">④ 縦書き（縦書き）</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">{t('Vertical text section','④ 縦書き（縦書き）')}</h3>
           <div className="flex flex-col gap-1.5">
             {([
-              ['off', '横書き（既定）'],
-              ['cjk', '縦書き：日本語・中国語のみ自動'],
-              ['on', '縦書き：すべて'],
+              ['off', t('Horizontal writing (default)','横書き（既定）')],
+              ['cjk', t('Vertical writing: CJK auto','縦書き：日本語・中国語のみ自動')],
+              ['on', t('Vertical writing: all','縦書き：すべて')],
             ] as [VerticalTextMode, string][]).map(([val, label]) => (
               <label key={val} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                 <input
@@ -241,7 +243,7 @@ export default function ChartSettingsDialog({
             ))}
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            name・title・説明に適用。ノード個別に上書きも可能です（各人物の Appearance）。
+            {t('Vertical text note','name・title・説明に適用。ノード個別に上書きも可能です（各人物の Appearance）。')}
           </p>
         </section>
       </div>

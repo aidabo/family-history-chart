@@ -1,4 +1,5 @@
 import { useState, useRef, ChangeEvent, useEffect } from 'react'
+import { useDataContext } from '@/context/DataContext'
 
 type PageInfoDialogProps = {
   open: boolean
@@ -15,6 +16,7 @@ export function PageInfoDialog({
   initialData = { title: '', image: '', status: 'draft', category: '' },
   onImageUpload,
 }: PageInfoDialogProps) {
+  const { t } = useDataContext()
   const [title, setTitle] = useState(initialData.title)
   const [image, setImage] = useState(initialData.image)
   const [status, setStatus] = useState<'published' | 'draft'>(initialData.status ?? 'draft')
@@ -39,9 +41,9 @@ export function PageInfoDialog({
   const validate = () => {
     const errs = { title: '', image: '' }
     let ok = true
-    if (!title.trim()) { errs.title = 'Title is required'; ok = false }
+    if (!title.trim()) { errs.title = t('Title required','Title is required'); ok = false }
     if (image && !/^(https?:\/\/|data:image\/)/.test(image)) {
-      errs.image = 'Please provide a valid image URL or upload an image'; ok = false
+      errs.image = t('Image URL required','Please provide a valid image URL or upload an image'); ok = false
     }
     setErrors(errs)
     return ok
@@ -72,7 +74,7 @@ export function PageInfoDialog({
     if (onImageUpload) {
       setIsUploading(true)
       try { setImage(await onImageUpload(file)) }
-      catch { setErrors((prev) => ({ ...prev, image: 'Upload failed' })) }
+      catch { setErrors((prev) => ({ ...prev, image: t('Image upload failed','Upload failed') })) }
       finally { setIsUploading(false) }
     } else {
       setImage('')
@@ -95,54 +97,54 @@ export function PageInfoDialog({
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">
-              {initialData.title ? 'Edit Page' : 'Create New Page'}
+              {initialData.title ? t('Edit Page','Edit Page') : t('Create New Page','Create New Page')}
             </h2>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-xl leading-none">×</button>
           </div>
 
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Page Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('Page Title','Page Title')}</label>
               <input
                 type="text" value={title} onChange={(e) => setTitle(e.target.value)}
                 className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-blue-500 ${errors.title ? 'border-red-500' : 'border-gray-300'}`}
-                placeholder="Enter page title"
+                placeholder={t('Enter page title','Enter page title')}
               />
               {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title}</p>}
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('Status','Status')}</label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as 'published' | 'draft')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500"
               >
-                <option value="draft">Draft</option>
-                <option value="published">Published</option>
+                <option value="draft">{t('Draft','Draft')}</option>
+                <option value="published">{t('Published','Published')}</option>
               </select>
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('Category','Category')}</label>
               <input
                 type="text" value={category} onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500"
-                placeholder="e.g. Dynasty, Imperial, Modern"
+                placeholder={t('Category placeholder','e.g. Dynasty, Imperial, Modern')}
               />
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Page Image</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('Page Image','Page Image')}</label>
               <div className="flex gap-2">
                 <input
                   type="text" value={image} onChange={(e) => setImage(e.target.value)}
                   className={`flex-grow px-3 py-2 border rounded-md focus:outline-none ${errors.image ? 'border-red-500' : 'border-gray-300'}`}
-                  placeholder="Image URL or upload file"
+                  placeholder={t('Image URL or upload file','Image URL or upload file')}
                 />
                 <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}
                   className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-gray-700 disabled:opacity-50">
-                  {isUploading ? 'Uploading…' : 'Upload'}
+                  {isUploading ? t('Uploading…','Uploading…') : t('Upload','Upload')}
                 </button>
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
               </div>
@@ -158,7 +160,7 @@ export function PageInfoDialog({
                     }}
                   />
                   <button type="button" onClick={() => { setImage(''); setPreviewImage(null); setUploadedImage(null) }}
-                    className="mt-1 text-xs text-red-500 hover:text-red-700">Remove</button>
+                    className="mt-1 text-xs text-red-500 hover:text-red-700">{t('Remove image','Remove')}</button>
                 </div>
               )}
             </div>
@@ -166,11 +168,11 @@ export function PageInfoDialog({
             <div className="flex justify-end gap-3">
               <button type="button" onClick={() => { reset(); onClose() }}
                 className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
-                Cancel
+                {t('Cancel','Cancel')}
               </button>
               <button type="submit" disabled={isUploading}
                 className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
-                {initialData.title ? 'Update' : 'Create'}
+                {initialData.title ? t('Update','Update') : t('Create','Create')}
               </button>
             </div>
           </form>

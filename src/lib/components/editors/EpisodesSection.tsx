@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Episode, EpisodeType } from '@/types/charts'
+import { useDataContext } from '@/context/DataContext'
 
 interface Props {
   personId: string
@@ -29,6 +30,7 @@ function AddForm({ personId, onAdd, onClose }: {
   onAdd: Props['onAdd']
   onClose: () => void
 }) {
+  const { t } = useDataContext()
   const [type, setType] = useState<EpisodeType>('event')
   const [title, setTitle] = useState('')
   const [date, setDate] = useState('')
@@ -51,35 +53,35 @@ function AddForm({ personId, onAdd, onClose }: {
   return (
     <div className="mt-2 border border-blue-200 rounded-lg p-3 bg-blue-50/40 space-y-2">
       <div className="flex gap-1 flex-wrap">
-        {EPISODE_TYPES.map((t) => (
+        {EPISODE_TYPES.map((epType) => (
           <button
-            key={t.value}
+            key={epType.value}
             type="button"
-            onClick={() => setType(t.value)}
+            onClick={() => setType(epType.value)}
             className={`text-xs px-2 py-0.5 rounded-full border font-medium transition-colors ${
-              type === t.value ? t.color : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+              type === epType.value ? epType.color : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
             }`}
           >
-            {t.label}
+            {t(epType.label, epType.label)}
           </button>
         ))}
       </div>
       <input
         type="text"
-        placeholder="Title *"
+        placeholder={t('Episode title placeholder', 'Title *')}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
       />
       <input
         type="text"
-        placeholder="Date (e.g. 2024-01)"
+        placeholder={t('Episode date placeholder', 'Date (e.g. 2024-01)')}
         value={date}
         onChange={(e) => setDate(e.target.value)}
         className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
       />
       <textarea
-        placeholder="Excerpt / summary…"
+        placeholder={t('Episode excerpt placeholder', 'Excerpt / summary…')}
         value={excerpt}
         onChange={(e) => setExcerpt(e.target.value)}
         rows={2}
@@ -87,7 +89,7 @@ function AddForm({ personId, onAdd, onClose }: {
       />
       <input
         type="url"
-        placeholder="URL (optional)"
+        placeholder={t('Episode URL placeholder', 'URL (optional)')}
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -98,7 +100,7 @@ function AddForm({ personId, onAdd, onClose }: {
           onClick={onClose}
           className="flex-1 text-xs py-1.5 border border-gray-300 rounded text-gray-600 hover:bg-gray-50 transition-colors"
         >
-          Cancel
+          {t('Cancel', 'Cancel')}
         </button>
         <button
           type="button"
@@ -106,7 +108,7 @@ function AddForm({ personId, onAdd, onClose }: {
           disabled={!title.trim()}
           className="flex-1 text-xs py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 font-medium transition-colors"
         >
-          Add
+          {t('Add episode', 'Add')}
         </button>
       </div>
     </div>
@@ -120,6 +122,7 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
   onUpdate: (id: string, u: Partial<Episode>) => void
   onDelete: (id: string) => void
 }) {
+  const { t } = useDataContext()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(episode.title)
@@ -146,7 +149,7 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
         onClick={() => { setOpen((o) => !o); setEditing(false) }}
       >
         <span className={`text-xs px-1.5 py-0.5 rounded border font-medium shrink-0 ${cfg.color}`}>
-          {cfg.label}
+          {t(cfg.label, cfg.label)}
         </span>
         <span className="flex-1 truncate text-sm font-medium text-gray-800">{episode.title}</span>
         {episode.date && (
@@ -157,7 +160,7 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(episode.id) }}
           className="shrink-0 text-gray-300 hover:text-red-400 transition-colors text-base leading-none"
-          title="Delete"
+          title={t('Delete episode title', 'Delete')}
         >
           ×
         </button>
@@ -171,26 +174,26 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Title"
+                placeholder={t('Title placeholder', 'Title')}
                 className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
               <input
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                placeholder="Date"
+                placeholder={t('Date placeholder', 'Date')}
                 className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
               <textarea
                 value={excerpt}
                 onChange={(e) => setExcerpt(e.target.value)}
-                placeholder="Excerpt…"
+                placeholder={t('Excerpt placeholder', 'Excerpt…')}
                 rows={3}
                 className="w-full text-sm border border-gray-300 rounded px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="URL"
+                placeholder={t('URL placeholder', 'URL')}
                 className="w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
               />
               <div className="flex gap-2">
@@ -199,14 +202,14 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
                   onClick={() => setEditing(false)}
                   className="flex-1 text-xs py-1 border border-gray-300 rounded text-gray-600 hover:bg-white transition-colors"
                 >
-                  Cancel
+                  {t('Cancel', 'Cancel')}
                 </button>
                 <button
                   type="button"
                   onClick={handleSave}
                   className="flex-1 text-xs py-1 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium transition-colors"
                 >
-                  Save
+                  {t('Save episode', 'Save')}
                 </button>
               </div>
             </>
@@ -215,7 +218,7 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
               {episode.excerpt ? (
                 <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">{episode.excerpt}</p>
               ) : (
-                <p className="text-xs text-gray-400 italic">No excerpt yet.</p>
+                <p className="text-xs text-gray-400 italic">{t('No excerpt yet', 'No excerpt yet.')}</p>
               )}
               <div className="flex items-center gap-3">
                 {episode.url && (
@@ -226,7 +229,7 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
                     onClick={(e) => e.stopPropagation()}
                     className="text-xs text-blue-600 hover:underline flex items-center gap-0.5"
                   >
-                    ↗ View
+                    {t('View link', '↗ View')}
                   </a>
                 )}
                 <button
@@ -234,7 +237,7 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
                   onClick={(e) => { e.stopPropagation(); setEditing(true) }}
                   className="text-xs text-gray-500 hover:text-gray-700 ml-auto transition-colors"
                 >
-                  Edit
+                  {t('Edit episode', 'Edit')}
                 </button>
               </div>
             </>
@@ -248,13 +251,14 @@ function EpisodeCard({ episode, onUpdate, onDelete }: {
 // ── main export ───────────────────────────────────────────────────────────────
 
 export function EpisodesSection({ personId, episodes, onAdd, onUpdate, onDelete }: Props) {
+  const { t } = useDataContext()
   const [showForm, setShowForm] = useState(false)
   const mine = episodes.filter((e) => e.personId === personId)
 
   return (
     <div className="space-y-2">
       {mine.length === 0 && !showForm && (
-        <p className="text-xs text-gray-400 italic py-1">No episodes or articles yet.</p>
+        <p className="text-xs text-gray-400 italic py-1">{t('No episodes yet', 'No episodes or articles yet.')}</p>
       )}
       {mine.map((ep) => (
         <EpisodeCard key={ep.id} episode={ep} onUpdate={onUpdate} onDelete={onDelete} />
@@ -268,7 +272,7 @@ export function EpisodesSection({ personId, episodes, onAdd, onUpdate, onDelete 
           onClick={() => setShowForm(true)}
           className="w-full mt-1 text-xs text-blue-600 hover:text-blue-800 border border-dashed border-blue-300 hover:border-blue-500 rounded py-1.5 transition-colors"
         >
-          + Add Episode / Article
+          {t('Add Episode', '+ Add Episode / Article')}
         </button>
       )}
     </div>
