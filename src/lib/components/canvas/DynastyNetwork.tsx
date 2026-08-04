@@ -555,29 +555,36 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
     return { minX, minY, maxX, maxY }
   }
-  // Keyframes [current → start → end] as d3.interpolateZoom "views" [cx, cy, worldWidth].
-  // Including the CURRENT view as the first keyframe means the first painted frame equals
-  // what's already on screen — no jump/blink. H/V keep the current zoom (k); zoom mode
-  // sweeps min (fit-all) → max. `cur` is the live transform captured after fullscreen settles.
-  const cinemaKeyframes = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number, cur: d3.ZoomTransform) => {
-    const V = (a: number[]) => a as [number, number, number]
+  // Build the camera interpolator (t → view [cx, cy, worldWidth]). We do our OWN linear
+  // interpolation instead of d3.interpolateZoom, because interpolateZoom deliberately
+  // zooms OUT-then-IN to travel between far-apart points — which showed up as unwanted
+  // zooming in horizontal/vertical scroll. H/V here keep the CURRENT zoom and just pan
+  // straight from the current position toward the far edge (like holding an arrow key).
+  // Zoom mode changes scale: current → min (fit-all) → max, panning nothing.
+  const cinemaInterp = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number, cur: d3.ZoomTransform): ((t: number) => [number, number, number]) => {
+    const lerp = (a: number, c: number, t: number) => a + (c - a) * t
+    const lerpV = (A: number[], C: number[], t: number): [number, number, number] => [lerp(A[0], C[0], t), lerp(A[1], C[1], t), lerp(A[2], C[2], t)]
     const k = cur.k || 1
     const curCx = (vw / 2 - cur.x) / k, curCy = (vh / 2 - cur.y) / k
-    const curView = V([curCx, curCy, vw / k])
-    const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY)
-    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, aspect = vw / vh
+    const W = vw / k
+    const curView = [curCx, curCy, W]
     if (mode === 'vertical') {
-      const W = vw / k, halfH = (vh / k) / 2         // keep current zoom
-      return { curView, startV: V([curCx, Math.min(curCy, b.minY + halfH), W]), endV: V([curCx, Math.max(curCy, b.maxY - halfH), W]) }
+      const halfH = (vh / k) / 2
+      const end = [curCx, Math.max(curCy, b.maxY - halfH), W]   // scroll down to the bottom
+      return t => lerpV(curView, end, t)
     }
     if (mode === 'zoom') {
-      const Wmin = Math.max(cw, ch * aspect) * 1.05  // fit-all (min zoom)
-      const Wmax = vw / 4                             // scaleExtent max (max zoom)
-      return { curView, startV: V([cx, cy, Wmin]), endV: V([cx, cy, Wmax]) }
+      const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY)
+      const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, aspect = vw / vh
+      const minV = [cx, cy, Math.max(cw, ch * aspect) * 1.05]   // fit-all (min zoom)
+      const maxV = [cx, cy, vw / 4]                              // scaleExtent max (max zoom)
+      const L = 0.18                                             // lead-in: current → min
+      return t => (t < L ? lerpV(curView, minV, t / L) : lerpV(minV, maxV, (t - L) / (1 - L)))
     }
-    // horizontal (default): keep current zoom, pan left → right
-    const W = vw / k, halfW = W / 2
-    return { curView, startV: V([Math.min(curCx, b.minX + halfW), curCy, W]), endV: V([Math.max(curCx, b.maxX - halfW), curCy, W]) }
+    // horizontal (default): keep current zoom, pan straight to the right edge
+    const halfW = W / 2
+    const end = [Math.max(curCx, b.maxX - halfW), curCy, W]
+    return t => lerpV(curView, end, t)
   }
   const applyCinemaView = (view: [number, number, number], vw: number, vh: number) => {
     if (!svgRef.current || !zoomRef.current) return
@@ -610,13 +617,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const svgEl = svgRef.current
       const vw = svgEl?.clientWidth || dimensions.width
       const vh = svgEl?.clientHeight || dimensions.height
-      const { curView, startV, endV } = cinemaKeyframes(cinemaMode, b, vw, vh, currentTransform.current)
-      // Piecewise path: a short eased lead-in from the current view to the sweep start,
-      // then the sweep. t=0 → current view, so the first painted frame never jumps.
-      const iLead = d3.interpolateZoom(curView, startV)
-      const iSweep = d3.interpolateZoom(startV, endV)
-      const L = 0.15
-      const interp = (t: number) => (t < L ? iLead(t / L) : iSweep((t - L) / (1 - L))) as [number, number, number]
+      // Straight linear pan/zoom starting from the current view (t=0 = on-screen → no blink).
+      const interp = cinemaInterp(cinemaMode, b, vw, vh, currentTransform.current)
       const ease = cinemaLinear ? (x: number) => x : (x: number) => -(Math.cos(Math.PI * x) - 1) / 2
       cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp, ease }
       applyCinemaView(interp(0), vw, vh)              // paint current view first — no blink
