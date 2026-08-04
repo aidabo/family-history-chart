@@ -1020,16 +1020,17 @@ export default function FamilyChartEditor({
     <div className="w-full h-full flex flex-col overflow-hidden bg-gray-50">
       {/* Top toolbar */}
       {!isViewMode && (
-        <header className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-2 bg-white border-b border-gray-200 shadow-sm z-20 flex-shrink-0">
-          <button
-            onClick={() => onBack()}
-            className="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
-            title="Back to list"
-          >
-            <ArrowLeftIcon className="h-5 w-5" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-semibold text-gray-800 truncate">
+        <header className="flex flex-wrap items-center justify-end gap-1 gap-y-1.5 md:gap-2 px-2 md:px-4 py-2 bg-white border-b border-gray-200 shadow-sm z-20 flex-shrink-0">
+          {/* Back + title: full width on mobile (own row above the buttons), inline on desktop. */}
+          <div className="flex items-center gap-1 md:gap-2 min-w-0 basis-full md:basis-auto md:flex-1">
+            <button
+              onClick={() => onBack()}
+              className="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
+              title="Back to list"
+            >
+              <ArrowLeftIcon className="h-5 w-5" />
+            </button>
+            <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-gray-800">
               {currentPage?.title || 'Chart Editor'}
             </h1>
           </div>
