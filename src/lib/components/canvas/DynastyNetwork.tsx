@@ -457,10 +457,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [cinemaOpen, setCinemaOpen] = useState(false)
   const [cinemaMode, setCinemaMode] = useState<'horizontal' | 'vertical' | 'zoom'>('horizontal')
   const [cinemaDur, setCinemaDur] = useState(15)       // sweep duration, seconds
+  const [cinemaLinear, setCinemaLinear] = useState(false)  // 等速 (linear) vs eased
   const [cinemaPlaying, setCinemaPlaying] = useState(false)
   const [cinemaPaused, setCinemaPaused] = useState(false)
   const cinemaPausedRef = useRef(false)
-  const cinemaRef = useRef<{ raf: number; startTs: number; elapsed: number; dur: number; vw: number; vh: number; interp: (t: number) => [number, number, number] } | null>(null)
+  const cinemaRef = useRef<{ raf: number; startTs: number; elapsed: number; dur: number; vw: number; vh: number; interp: (t: number) => [number, number, number]; ease: (x: number) => number } | null>(null)
   const marqueeModeRef = useRef(false)
   marqueeModeRef.current = marqueeMode
   const selNodesRef = useRef<Set<string>>(new Set())
@@ -554,24 +555,29 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
     return { minX, minY, maxX, maxY }
   }
-  // Two d3.interpolateZoom "views" [cx, cy, worldWidth] for the given mode.
-  const cinemaViews = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number): [[number, number, number], [number, number, number]] => {
+  // Keyframes [current → start → end] as d3.interpolateZoom "views" [cx, cy, worldWidth].
+  // Including the CURRENT view as the first keyframe means the first painted frame equals
+  // what's already on screen — no jump/blink. H/V keep the current zoom (k); zoom mode
+  // sweeps min (fit-all) → max. `cur` is the live transform captured after fullscreen settles.
+  const cinemaKeyframes = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number, cur: d3.ZoomTransform) => {
+    const V = (a: number[]) => a as [number, number, number]
+    const k = cur.k || 1
+    const curCx = (vw / 2 - cur.x) / k, curCy = (vh / 2 - cur.y) / k
+    const curView = V([curCx, curCy, vw / k])
     const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY)
-    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2
-    const aspect = vw / vh
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, aspect = vw / vh
     if (mode === 'vertical') {
-      const W = cw * 1.1                       // fit content width
-      const halfH = (W / aspect) / 2
-      return [[cx, Math.min(cy, b.minY + halfH), W], [cx, Math.max(cy, b.maxY - halfH), W]]
+      const W = vw / k, halfH = (vh / k) / 2         // keep current zoom
+      return { curView, startV: V([curCx, Math.min(curCy, b.minY + halfH), W]), endV: V([curCx, Math.max(curCy, b.maxY - halfH), W]) }
     }
     if (mode === 'zoom') {
-      const fitW = Math.max(cw, ch * aspect) * 1.1
-      return [[cx, cy, fitW], [cx, cy, fitW / 3]]   // fit-all → zoom into centre
+      const Wmin = Math.max(cw, ch * aspect) * 1.05  // fit-all (min zoom)
+      const Wmax = vw / 4                             // scaleExtent max (max zoom)
+      return { curView, startV: V([cx, cy, Wmin]), endV: V([cx, cy, Wmax]) }
     }
-    // horizontal (default): fit content height, pan left → right
-    const W = ch * aspect * 1.1
-    const halfW = W / 2
-    return [[Math.min(cx, b.minX + halfW), cy, W], [Math.max(cx, b.maxX - halfW), cy, W]]
+    // horizontal (default): keep current zoom, pan left → right
+    const W = vw / k, halfW = W / 2
+    return { curView, startV: V([Math.min(curCx, b.minX + halfW), curCy, W]), endV: V([Math.max(curCx, b.maxX - halfW), curCy, W]) }
   }
   const applyCinemaView = (view: [number, number, number], vw: number, vh: number) => {
     if (!svgRef.current || !zoomRef.current) return
@@ -587,8 +593,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (!st.startTs) st.startTs = ts - st.elapsed
     st.elapsed = ts - st.startTs
     const raw = Math.min(1, st.elapsed / (st.dur * 1000))
-    const t = -(Math.cos(Math.PI * raw) - 1) / 2   // easeInOutSine — gentle start/stop
-    applyCinemaView(st.interp(t), st.vw, st.vh)
+    applyCinemaView(st.interp(st.ease(raw)), st.vw, st.vh)
     if (raw < 1) st.raf = requestAnimationFrame(cinemaTick)
     else stopCinema()
   }
@@ -605,8 +610,16 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const svgEl = svgRef.current
       const vw = svgEl?.clientWidth || dimensions.width
       const vh = svgEl?.clientHeight || dimensions.height
-      const [s, e] = cinemaViews(cinemaMode, b, vw, vh)
-      cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp: d3.interpolateZoom(s, e) }
+      const { curView, startV, endV } = cinemaKeyframes(cinemaMode, b, vw, vh, currentTransform.current)
+      // Piecewise path: a short eased lead-in from the current view to the sweep start,
+      // then the sweep. t=0 → current view, so the first painted frame never jumps.
+      const iLead = d3.interpolateZoom(curView, startV)
+      const iSweep = d3.interpolateZoom(startV, endV)
+      const L = 0.15
+      const interp = (t: number) => (t < L ? iLead(t / L) : iSweep((t - L) / (1 - L))) as [number, number, number]
+      const ease = cinemaLinear ? (x: number) => x : (x: number) => -(Math.cos(Math.PI * x) - 1) / 2
+      cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp, ease }
+      applyCinemaView(interp(0), vw, vh)              // paint current view first — no blink
       cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
     }
     const begin = () => setTimeout(kick, 320)   // let the resize observer update dimensions
@@ -2904,6 +2917,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             <input type="range" min={5} max={60} step={1} value={cinemaDur}
               onChange={e => setCinemaDur(Number(e.target.value))} className="flex-1 accent-rose-500" />
             <span className="w-8 text-right tabular-nums">{cinemaDur}s</span>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={cinemaLinear} onChange={e => setCinemaLinear(e.target.checked)}
+              className="accent-rose-500 h-3.5 w-3.5" />
+            {t('Cinema linear', '等速（linear）')}
           </label>
           <button onClick={startCinema}
             className="w-full text-sm py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600 font-medium">
