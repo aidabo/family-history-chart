@@ -461,8 +461,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [cinemaPlaying, setCinemaPlaying] = useState(false)
   const [cinemaPaused, setCinemaPaused] = useState(false)
   const [cinemaCover, setCinemaCover] = useState(false)   // opaque cover that hides the fullscreen-resize rebuild flash
-  const cinemaPausedRef = useRef(false)
-  const cinemaRef = useRef<{ raf: number; startTs: number; elapsed: number; dur: number; vw: number; vh: number; interp: (t: number) => [number, number, number]; ease: (x: number) => number } | null>(null)
+  const cinemaAnimRef = useRef<Animation | null>(null)   // the running Web Animations API animation
   const marqueeModeRef = useRef(false)
   marqueeModeRef.current = marqueeMode
   const selNodesRef = useRef<Set<string>>(new Set())
@@ -556,60 +555,37 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
     return { minX, minY, maxX, maxY }
   }
-  // Build the camera interpolator (t → view [cx, cy, worldWidth]). We do our OWN linear
-  // interpolation instead of d3.interpolateZoom, because interpolateZoom deliberately
-  // zooms OUT-then-IN to travel between far-apart points — which showed up as unwanted
-  // zooming in horizontal/vertical scroll. H/V here keep the CURRENT zoom and just pan
-  // straight from the current position toward the far edge (like holding an arrow key).
-  // Zoom mode changes scale: current → min (fit-all) → max, panning nothing.
-  const cinemaInterp = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number, cur: d3.ZoomTransform): ((t: number) => [number, number, number]) => {
-    const lerp = (a: number, c: number, t: number) => a + (c - a) * t
-    const lerpV = (A: number[], C: number[], t: number): [number, number, number] => [lerp(A[0], C[0], t), lerp(A[1], C[1], t), lerp(A[2], C[2], t)]
+  // A view [cx, cy, worldWidth] → the CSS transform that centres it in a vw×vh viewport.
+  // (transform-origin is 0 0, matching the SVG "translate(...) scale(k)" convention.)
+  const cinemaCss = (view: number[], vw: number, vh: number) => {
+    const [cx, cy, w] = view
+    const k = vw / w
+    return `translate(${vw / 2 - cx * k}px, ${vh / 2 - cy * k}px) scale(${k})`
+  }
+  // Keyframes (CSS transforms) for the sweep. H/V keep the CURRENT zoom and pan straight
+  // from the current position to the far edge (pure origin move); zoom mode goes
+  // current → fit-all → max. The animation itself is run by the Web Animations API so the
+  // browser/compositor interpolates it — no per-frame JS, no main-thread jank / jumping.
+  const cinemaFrames = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number, cur: d3.ZoomTransform): Keyframe[] => {
     const k = cur.k || 1
     const curCx = (vw / 2 - cur.x) / k, curCy = (vh / 2 - cur.y) / k
     const W = vw / k
     const curView = [curCx, curCy, W]
+    const css = (v: number[]) => cinemaCss(v, vw, vh)
     if (mode === 'vertical') {
       const halfH = (vh / k) / 2
-      const end = [curCx, Math.max(curCy, b.maxY - halfH), W]   // scroll down to the bottom
-      return t => lerpV(curView, end, t)
+      return [{ transform: css(curView) }, { transform: css([curCx, Math.max(curCy, b.maxY - halfH), W]) }]
     }
     if (mode === 'zoom') {
       const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY)
       const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, aspect = vw / vh
       const minV = [cx, cy, Math.max(cw, ch * aspect) * 1.05]   // fit-all (min zoom)
-      const maxV = [cx, cy, vw / 4]                              // scaleExtent max (max zoom)
-      const L = 0.18                                             // lead-in: current → min
-      return t => (t < L ? lerpV(curView, minV, t / L) : lerpV(minV, maxV, (t - L) / (1 - L)))
+      const maxV = [cx, cy, vw / 4]                             // scaleExtent max (max zoom)
+      return [{ transform: css(curView), offset: 0 }, { transform: css(minV), offset: 0.18 }, { transform: css(maxV), offset: 1 }]
     }
     // horizontal (default): keep current zoom, pan straight to the right edge
     const halfW = W / 2
-    const end = [Math.max(curCx, b.maxX - halfW), curCy, W]
-    return t => lerpV(curView, end, t)
-  }
-  // Apply a cinema frame as a CSS transform on the zoom-container <g> (NOT the d3 zoom
-  // attribute). With will-change:transform the browser rasterizes the group once and
-  // moves that layer on the GPU each frame — so the grid pattern, node shadow filter and
-  // portrait clip-paths are not re-rasterized per frame (that was the "blink"/flicker).
-  const applyCinemaView = (view: [number, number, number], vw: number, vh: number) => {
-    const g = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
-    if (!g) return
-    const [cx, cy, w] = view
-    const k = vw / w
-    const x = vw / 2 - cx * k, y = vh / 2 - cy * k
-    g.style.transformOrigin = '0 0'
-    g.style.transform = `translate(${x}px, ${y}px) scale(${k})`
-  }
-  const cinemaTick = (ts: number) => {
-    const st = cinemaRef.current
-    if (!st) return
-    if (cinemaPausedRef.current) return       // loop halts; resume restarts it
-    if (!st.startTs) st.startTs = ts - st.elapsed
-    st.elapsed = ts - st.startTs
-    const raw = Math.min(1, st.elapsed / (st.dur * 1000))
-    applyCinemaView(st.interp(st.ease(raw)), st.vw, st.vh)
-    if (raw < 1) st.raf = requestAnimationFrame(cinemaTick)
-    else stopCinema()
+    return [{ transform: css(curView) }, { transform: css([Math.max(curCx, b.maxX - halfW), curCy, W]) }]
   }
   const startCinema = () => {
     const b = cinemaBounds()
@@ -618,22 +594,21 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     setCinemaPlaying(true)
     setCinemaPaused(false)
     setCinemaCover(true)            // hide the fullscreen-resize rebuild flash
-    cinemaPausedRef.current = false
     const el = containerRef.current
     const kick = () => {
+      const g = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
+      if (!g) { stopCinema(); return }
       // Measure AFTER fullscreen/resize settles so the sweep uses the real viewport.
-      const svgEl = svgRef.current
-      const vw = svgEl?.clientWidth || dimensions.width
-      const vh = svgEl?.clientHeight || dimensions.height
-      // Straight linear pan/zoom starting from the current view (t=0 = on-screen → no blink).
-      const interp = cinemaInterp(cinemaMode, b, vw, vh, currentTransform.current)
-      const ease = cinemaLinear ? (x: number) => x : (x: number) => -(Math.cos(Math.PI * x) - 1) / 2
-      const g0 = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
-      if (g0) g0.style.willChange = 'transform'       // promote to a GPU layer → no per-frame re-raster
-      cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp, ease }
-      applyCinemaView(interp(0), vw, vh)              // paint current view first — no blink
-      cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
-      requestAnimationFrame(() => setCinemaCover(false))  // fade the cover away once the settled view is painted
+      const vw = svgRef.current?.clientWidth || dimensions.width
+      const vh = svgRef.current?.clientHeight || dimensions.height
+      const frames = cinemaFrames(cinemaMode, b, vw, vh, currentTransform.current)
+      g.style.transformOrigin = '0 0'
+      g.style.willChange = 'transform'
+      g.style.transform = String((frames[0] as { transform: string }).transform)  // start = current view (no jump)
+      const anim = g.animate(frames, { duration: cinemaDur * 1000, easing: cinemaLinear ? 'linear' : 'ease-in-out', fill: 'forwards' })
+      anim.onfinish = () => stopCinema()
+      cinemaAnimRef.current = anim
+      requestAnimationFrame(() => setCinemaCover(false))  // fade the cover away once the view is painted
     }
     const begin = () => setTimeout(kick, 450)   // let the resize observer update dimensions (cover hides this)
     if (el && el.requestFullscreen && !document.fullscreenElement) {
@@ -641,10 +616,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     } else begin()
   }
   const stopCinema = () => {
-    const st = cinemaRef.current
-    if (st?.raf) cancelAnimationFrame(st.raf)
-    cinemaRef.current = null
-    cinemaPausedRef.current = false
+    const a = cinemaAnimRef.current
+    if (a) { a.onfinish = null; try { a.cancel() } catch { /* already done */ } }
+    cinemaAnimRef.current = null
     setCinemaPlaying(false)
     setCinemaPaused(false)
     setCinemaCover(false)
@@ -659,13 +633,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
   }
   const toggleCinemaPause = () => {
-    const p = !cinemaPausedRef.current
-    cinemaPausedRef.current = p
-    setCinemaPaused(p)
-    if (!p && cinemaRef.current) {          // resume — rebase timing, restart loop
-      cinemaRef.current.startTs = 0
-      cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
-    }
+    const a = cinemaAnimRef.current
+    if (!a) return
+    if (a.playState === 'paused') { a.play(); setCinemaPaused(false) }
+    else { a.pause(); setCinemaPaused(true) }
   }
   // Keyboard (Space = pause/resume, Esc = stop) + stop when the user leaves fullscreen.
   useEffect(() => {
