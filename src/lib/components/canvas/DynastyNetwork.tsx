@@ -462,6 +462,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [cinemaPaused, setCinemaPaused] = useState(false)
   const [cinemaCover, setCinemaCover] = useState(false)   // opaque cover that hides the fullscreen-resize rebuild flash
   const cinemaAnimRef = useRef<Animation | null>(null)   // the running Web Animations API animation
+  const cinemaHiddenRef = useRef<{ grid: SVGElement | null; filtered: SVGElement[] } | null>(null)  // elements temporarily lightened during playback
   const marqueeModeRef = useRef(false)
   marqueeModeRef.current = marqueeMode
   const selNodesRef = useRef<Set<string>>(new Set())
@@ -602,6 +603,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const vw = svgRef.current?.clientWidth || dimensions.width
       const vh = svgRef.current?.clientHeight || dimensions.height
       const frames = cinemaFrames(cinemaMode, b, vw, vh, currentTransform.current)
+      // Let the compositor cache the layer: an SVG subtree with live filters / a <pattern>
+      // grid can't be layer-cached, so it re-rasterizes on the main thread every frame and
+      // stutters in dense regions. Drop the grid + shadow filters for the duration; the
+      // post-stop rebuild (or restore below) puts them back.
+      const grid = g.querySelector('.grid-bg') as SVGElement | null
+      if (grid) grid.style.display = 'none'
+      const filtered = Array.from(g.querySelectorAll('[filter]')) as SVGElement[]
+      filtered.forEach(el => { el.setAttribute('data-cinema-filter', el.getAttribute('filter') || ''); el.removeAttribute('filter') })
+      cinemaHiddenRef.current = { grid, filtered }
       g.style.transformOrigin = '0 0'
       g.style.willChange = 'transform'
       g.style.transform = String((frames[0] as { transform: string }).transform)  // start = current view (no jump)
@@ -623,6 +633,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     setCinemaPaused(false)
     setCinemaCover(false)
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    // Restore the grid + shadow filters that were dropped for compositing.
+    const h = cinemaHiddenRef.current
+    if (h) {
+      if (h.grid) h.grid.style.display = ''
+      h.filtered.forEach(el => { const f = el.getAttribute('data-cinema-filter'); if (f) el.setAttribute('filter', f); el.removeAttribute('data-cinema-filter') })
+      cinemaHiddenRef.current = null
+    }
     // Drop the CSS transform + GPU hint so the d3 zoom attribute drives the view again.
     const g = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
     if (g) { g.style.transform = ''; g.style.willChange = ''; g.style.transformOrigin = '' }
