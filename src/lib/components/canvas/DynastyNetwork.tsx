@@ -16,7 +16,7 @@ function displayTitle(d: { title?: string; period?: string }): string {
 function hasTitleText(d: { title?: string; period?: string }): boolean {
   return !!(d.title || d.period)
 }
-import { UsersIcon, AdjustmentsHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { UsersIcon, AdjustmentsHorizontalIcon, XMarkIcon, FilmIcon } from '@heroicons/react/24/outline'
 
 // Resolve a field's text style: per-field override (nameStyle/titleStyle/descriptionStyle)
 // falling back to the node-level defaults (labelColor/labelFontSize/fontFamily/labelBold).
@@ -451,6 +451,16 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   // On mobile the canvas toolbar is collapsed behind a toggle icon to save space
   // (it overlaps the host header otherwise). Desktop (md+) always shows it inline.
   const [toolbarOpen, setToolbarOpen] = useState(false)
+  // Cinematic auto-pan for screen recording: a fullscreen, smoothly-animated camera
+  // sweep across the chart. Setup panel (mode + speed) shows in normal mode; during
+  // playback all UI is hidden — control via keyboard (Space = pause, Esc = stop).
+  const [cinemaOpen, setCinemaOpen] = useState(false)
+  const [cinemaMode, setCinemaMode] = useState<'horizontal' | 'vertical' | 'zoom'>('horizontal')
+  const [cinemaDur, setCinemaDur] = useState(15)       // sweep duration, seconds
+  const [cinemaPlaying, setCinemaPlaying] = useState(false)
+  const [cinemaPaused, setCinemaPaused] = useState(false)
+  const cinemaPausedRef = useRef(false)
+  const cinemaRef = useRef<{ raf: number; startTs: number; elapsed: number; dur: number; vw: number; vh: number; interp: (t: number) => [number, number, number] } | null>(null)
   const marqueeModeRef = useRef(false)
   marqueeModeRef.current = marqueeMode
   const selNodesRef = useRef<Set<string>>(new Set())
@@ -530,6 +540,119 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       d3.select(svgRef.current).transition().duration(250).call(zoomRef.current.transform, t)
     }
   }, [dimensions, computeFit])
+
+  // ── Cinematic auto-pan (fullscreen, for screen recording) ────────────────────
+  // Content bounding box in world coords (same padding as computeFit).
+  const cinemaBounds = () => {
+    const nodes = nodesRef.current
+    if (!nodes.length) return null
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const n of nodes) {
+      const r = getNodeRadius(n) + 30
+      minX = Math.min(minX, n.x - r); minY = Math.min(minY, n.y - r)
+      maxX = Math.max(maxX, n.x + r); maxY = Math.max(maxY, n.y + r)
+    }
+    return { minX, minY, maxX, maxY }
+  }
+  // Two d3.interpolateZoom "views" [cx, cy, worldWidth] for the given mode.
+  const cinemaViews = (mode: string, b: { minX: number; minY: number; maxX: number; maxY: number }, vw: number, vh: number): [[number, number, number], [number, number, number]] => {
+    const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY)
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2
+    const aspect = vw / vh
+    if (mode === 'vertical') {
+      const W = cw * 1.1                       // fit content width
+      const halfH = (W / aspect) / 2
+      return [[cx, Math.min(cy, b.minY + halfH), W], [cx, Math.max(cy, b.maxY - halfH), W]]
+    }
+    if (mode === 'zoom') {
+      const fitW = Math.max(cw, ch * aspect) * 1.1
+      return [[cx, cy, fitW], [cx, cy, fitW / 3]]   // fit-all → zoom into centre
+    }
+    // horizontal (default): fit content height, pan left → right
+    const W = ch * aspect * 1.1
+    const halfW = W / 2
+    return [[Math.min(cx, b.minX + halfW), cy, W], [Math.max(cx, b.maxX - halfW), cy, W]]
+  }
+  const applyCinemaView = (view: [number, number, number], vw: number, vh: number) => {
+    if (!svgRef.current || !zoomRef.current) return
+    const [cx, cy, w] = view
+    const k = vw / w
+    const tr = d3.zoomIdentity.translate(vw / 2 - cx * k, vh / 2 - cy * k).scale(k)
+    d3.select(svgRef.current).call(zoomRef.current.transform, tr)
+  }
+  const cinemaTick = (ts: number) => {
+    const st = cinemaRef.current
+    if (!st) return
+    if (cinemaPausedRef.current) return       // loop halts; resume restarts it
+    if (!st.startTs) st.startTs = ts - st.elapsed
+    st.elapsed = ts - st.startTs
+    const raw = Math.min(1, st.elapsed / (st.dur * 1000))
+    const t = -(Math.cos(Math.PI * raw) - 1) / 2   // easeInOutSine — gentle start/stop
+    applyCinemaView(st.interp(t), st.vw, st.vh)
+    if (raw < 1) st.raf = requestAnimationFrame(cinemaTick)
+    else stopCinema()
+  }
+  const startCinema = () => {
+    const b = cinemaBounds()
+    if (!b) return
+    setCinemaOpen(false)
+    setCinemaPlaying(true)
+    setCinemaPaused(false)
+    cinemaPausedRef.current = false
+    const el = containerRef.current
+    const kick = () => {
+      // Measure AFTER fullscreen/resize settles so the sweep uses the real viewport.
+      const svgEl = svgRef.current
+      const vw = svgEl?.clientWidth || dimensions.width
+      const vh = svgEl?.clientHeight || dimensions.height
+      const [s, e] = cinemaViews(cinemaMode, b, vw, vh)
+      cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp: d3.interpolateZoom(s, e) }
+      cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
+    }
+    const begin = () => setTimeout(kick, 320)   // let the resize observer update dimensions
+    if (el && el.requestFullscreen && !document.fullscreenElement) {
+      el.requestFullscreen().then(begin).catch(begin)
+    } else begin()
+  }
+  const stopCinema = () => {
+    const st = cinemaRef.current
+    if (st?.raf) cancelAnimationFrame(st.raf)
+    cinemaRef.current = null
+    cinemaPausedRef.current = false
+    setCinemaPlaying(false)
+    setCinemaPaused(false)
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    // Restore a sensible view after the sweep.
+    if (svgRef.current && zoomRef.current) {
+      const t = computeFit(dimensions.width, dimensions.height)
+      d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.transform, t)
+    }
+  }
+  const toggleCinemaPause = () => {
+    const p = !cinemaPausedRef.current
+    cinemaPausedRef.current = p
+    setCinemaPaused(p)
+    if (!p && cinemaRef.current) {          // resume — rebase timing, restart loop
+      cinemaRef.current.startTs = 0
+      cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
+    }
+  }
+  // Keyboard (Space = pause/resume, Esc = stop) + stop when the user leaves fullscreen.
+  useEffect(() => {
+    if (!cinemaPlaying) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); toggleCinemaPause() }
+      else if (e.key === 'Escape') { stopCinema() }
+    }
+    const onFsChange = () => { if (!document.fullscreenElement) stopCinema() }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('fullscreenchange', onFsChange)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cinemaPlaying])
 
   // Expose imperative handle — declared after computeFit so it can reference it.
   useImperativeHandle(ref, () => ({
@@ -2652,6 +2775,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           }}
         />
       )}
+      {!cinemaPlaying && (
       <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 bg-white p-2 rounded shadow">
         <button onClick={handleZoomIn}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50"
@@ -2662,15 +2786,24 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         <button onClick={handleResetZoom}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-50"
           aria-label="Reset Zoom">↺</button>
+        <button onClick={() => setCinemaOpen(o => !o)}
+          title={t('Cinema tip', '録画向けの自動スクロール（全画面）')} aria-label={t('Cinema', 'シネマ再生')}
+          className={`w-8 h-8 flex items-center justify-center rounded border ${cinemaOpen ? 'border-rose-500 bg-rose-500 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+          <FilmIcon className="w-4 h-4" />
+        </button>
       </div>
+      )}
 
+      {!cinemaPlaying && (
       <div className="absolute top-2 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
         title={t('People count tip', '登場人物の総数（メモ・結婚ノードを除く）')}>
         <UsersIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
         <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note').length}</span>
         <span>{t('people', '人')}</span>
       </div>
+      )}
 
+      {!cinemaPlaying && (
       <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
         {/* Mobile-only toggle: collapse the toolbar to an icon so it doesn't overlap the host header */}
         <button type="button" onClick={() => setToolbarOpen(o => !o)}
@@ -2745,6 +2878,40 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         </label>
         </div>
       </div>
+      )}
+
+      {/* Cinematic playback setup — shown only in normal mode; hidden during the sweep. */}
+      {cinemaOpen && !cinemaPlaying && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col gap-2 bg-white/95 p-3 rounded-lg shadow-lg border border-gray-200 w-[min(92vw,20rem)]">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-800 flex items-center gap-1">
+              <FilmIcon className="w-4 h-4 text-rose-500" />{t('Cinema', 'シネマ再生')}
+            </span>
+            <button onClick={() => setCinemaOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          </div>
+          <div className="flex gap-1">
+            {([['horizontal', t('Cinema mode horizontal', '横スクロール')],
+               ['vertical', t('Cinema mode vertical', '縦スクロール')],
+               ['zoom', t('Cinema mode zoom', 'ズーム')]] as const).map(([m, label]) => (
+              <button key={m} onClick={() => setCinemaMode(m)}
+                className={`flex-1 text-xs py-1 rounded border ${cinemaMode === m ? 'border-rose-500 bg-rose-500 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-700">
+            <span className="whitespace-nowrap">{t('Cinema speed', '速度（秒）')}</span>
+            <input type="range" min={5} max={60} step={1} value={cinemaDur}
+              onChange={e => setCinemaDur(Number(e.target.value))} className="flex-1 accent-rose-500" />
+            <span className="w-8 text-right tabular-nums">{cinemaDur}s</span>
+          </label>
+          <button onClick={startCinema}
+            className="w-full text-sm py-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600 font-medium">
+            ▶ {t('Cinema fullscreen play', '全画面で再生')}
+          </button>
+          <p className="text-[11px] text-gray-500 text-center">{t('Cinema keys hint', 'Space：一時停止 / Esc：終了')}</p>
+        </div>
+      )}
 
       <svg ref={svgRef} width={dimensions.width} height={dimensions.height}
         className="fc-canvas-svg cursor-move relative z-[1]" />
