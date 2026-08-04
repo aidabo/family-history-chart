@@ -756,7 +756,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const tlBasisFirst = useRef(true)
   useEffect(() => {
     if (tlBasisFirst.current) { tlBasisFirst.current = false; return }
-    if (lastLayoutKind === 'timeline') runAutoLayout('timeline')
+    // Never re-lay-out in preview / view — saved positions must be shown as-is.
+    if (editable && lastLayoutKind === 'timeline') runAutoLayout('timeline')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timelineBasis, timelineCols])
 
@@ -2813,7 +2814,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       </div>
       )}
 
-      {!cinemaPlaying && (
+      {/* Layout toolbar is edit-only: in preview / view the saved node positions are shown
+          as-is, so the auto-layout / timeline controls (which would re-lay-out and discard
+          manual adjustments) are hidden. */}
+      {editable && !cinemaPlaying && (
       <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
         {/* Mobile-only toggle: collapse the toolbar to an icon so it doesn't overlap the host header */}
         <button type="button" onClick={() => setToolbarOpen(o => !o)}
