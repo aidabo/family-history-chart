@@ -587,12 +587,18 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const end = [Math.max(curCx, b.maxX - halfW), curCy, W]
     return t => lerpV(curView, end, t)
   }
+  // Apply a cinema frame as a CSS transform on the zoom-container <g> (NOT the d3 zoom
+  // attribute). With will-change:transform the browser rasterizes the group once and
+  // moves that layer on the GPU each frame — so the grid pattern, node shadow filter and
+  // portrait clip-paths are not re-rasterized per frame (that was the "blink"/flicker).
   const applyCinemaView = (view: [number, number, number], vw: number, vh: number) => {
-    if (!svgRef.current || !zoomRef.current) return
+    const g = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
+    if (!g) return
     const [cx, cy, w] = view
     const k = vw / w
-    const tr = d3.zoomIdentity.translate(vw / 2 - cx * k, vh / 2 - cy * k).scale(k)
-    d3.select(svgRef.current).call(zoomRef.current.transform, tr)
+    const x = vw / 2 - cx * k, y = vh / 2 - cy * k
+    g.style.transformOrigin = '0 0'
+    g.style.transform = `translate(${x}px, ${y}px) scale(${k})`
   }
   const cinemaTick = (ts: number) => {
     const st = cinemaRef.current
@@ -622,6 +628,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       // Straight linear pan/zoom starting from the current view (t=0 = on-screen → no blink).
       const interp = cinemaInterp(cinemaMode, b, vw, vh, currentTransform.current)
       const ease = cinemaLinear ? (x: number) => x : (x: number) => -(Math.cos(Math.PI * x) - 1) / 2
+      const g0 = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
+      if (g0) g0.style.willChange = 'transform'       // promote to a GPU layer → no per-frame re-raster
       cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp, ease }
       applyCinemaView(interp(0), vw, vh)              // paint current view first — no blink
       cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
@@ -641,6 +649,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     setCinemaPaused(false)
     setCinemaCover(false)
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    // Drop the CSS transform + GPU hint so the d3 zoom attribute drives the view again.
+    const g = svgRef.current?.querySelector('.zoom-container') as SVGGElement | null
+    if (g) { g.style.transform = ''; g.style.willChange = ''; g.style.transformOrigin = '' }
     // Restore a sensible view after the sweep.
     if (svgRef.current && zoomRef.current) {
       const t = computeFit(dimensions.width, dimensions.height)
