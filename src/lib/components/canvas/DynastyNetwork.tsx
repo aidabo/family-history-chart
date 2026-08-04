@@ -16,7 +16,7 @@ function displayTitle(d: { title?: string; period?: string }): string {
 function hasTitleText(d: { title?: string; period?: string }): boolean {
   return !!(d.title || d.period)
 }
-import { UsersIcon } from '@heroicons/react/24/outline'
+import { UsersIcon, AdjustmentsHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline'
 
 // Resolve a field's text style: per-field override (nameStyle/titleStyle/descriptionStyle)
 // falling back to the node-level defaults (labelColor/labelFontSize/fontFamily/labelBold).
@@ -448,6 +448,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   // (ref so it survives rebuilds). In marquee mode an empty-canvas drag selects; dragging any
   // selected node then moves the whole selection together.
   const [marqueeMode, setMarqueeMode] = useState(false)
+  // On mobile the canvas toolbar is collapsed behind a toggle icon to save space
+  // (it overlaps the host header otherwise). Desktop (md+) always shows it inline.
+  const [toolbarOpen, setToolbarOpen] = useState(false)
   const marqueeModeRef = useRef(false)
   marqueeModeRef.current = marqueeMode
   const selNodesRef = useRef<Set<string>>(new Set())
@@ -2668,7 +2671,14 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         <span>{t('people', '人')}</span>
       </div>
 
-      <div className="absolute top-2 right-2 z-10 flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 md:gap-3 bg-white/95 p-1.5 md:p-2 rounded shadow max-w-[calc(100vw-4rem)]">
+      <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
+        {/* Mobile-only toggle: collapse the toolbar to an icon so it doesn't overlap the host header */}
+        <button type="button" onClick={() => setToolbarOpen(o => !o)}
+          title={t('Toolbar', 'ツールバー')} aria-label={t('Toolbar', 'ツールバー')}
+          className="md:hidden shrink-0 flex items-center justify-center w-9 h-9 rounded border border-gray-300 bg-white/95 text-gray-700 shadow hover:bg-gray-50">
+          {toolbarOpen ? <XMarkIcon className="w-5 h-5" /> : <AdjustmentsHorizontalIcon className="w-5 h-5" />}
+        </button>
+        <div className={`${toolbarOpen ? 'flex' : 'hidden'} md:flex flex-wrap items-center justify-end gap-x-2 gap-y-1.5 md:gap-3 bg-white/95 p-1.5 md:p-2 rounded shadow max-w-[calc(100vw-4rem)]`}>
         <button type="button" onClick={() => setMarqueeMode(m => !m)}
           title={t('Range Select tip', '範囲選択：空白をドラッグでノードを矩形選択→選択したノードだけ一括移動（Escで解除）')}
           className={`shrink-0 rounded border px-2 py-0.5 text-sm ${marqueeMode ? 'border-blue-500 bg-blue-500 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
@@ -2733,6 +2743,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             onMouseUp={() => applySpacing(spacing)} onTouchEnd={() => applySpacing(spacing)}
             className="w-20 md:w-24" />
         </label>
+        </div>
       </div>
 
       <svg ref={svgRef} width={dimensions.width} height={dimensions.height}
