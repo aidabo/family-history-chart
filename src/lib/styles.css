@@ -10,3 +10,11 @@
    this file can't override the responsive rule. */
 .fc-tb-label { display: none; }
 @media (min-width: 768px) { .fc-tb-label { display: inline; } }
+
+/* Cinematic playback: while `.cinema-active` is on the canvas container, hide the grid
+   and disable node shadow filters so the .zoom-container can be cached as a compositor
+   layer (live SVG filters / a <pattern> grid block layer caching → per-frame re-raster,
+   which stutters in dense regions). Purely class-based and non-destructive — removing the
+   class restores everything, so normal edit / preview / view rendering is never altered. */
+.cinema-active .grid-bg { display: none !important; }
+.cinema-active [filter] { filter: none !important; }
