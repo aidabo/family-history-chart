@@ -110,6 +110,9 @@ const JP_ERAS: Array<[string, number]> = [
 // ("-200", "前200", "紀元前200", "公元前200(年)", "200 BC"/"200 BCE") → negative; AD/CE
 // forms ("公元100", "西暦1600") stay positive; or a modern Japanese era ("明治3年",
 // "昭和10", "令和元年") → Gregorian. Other era names (享保12 等) return the bare number.
+// Century notation ("12世紀", "12世纪", "12th century", "前13世紀") → the century's MIDPOINT
+// year ((N-1)*100 + 50), signed for BC — e.g. 12世紀 → 1150, 前13世紀 → -1250. This keeps
+// coarse "Nth-century" datings ordered correctly on the timeline. "约"/"約" (approx.) is ignored.
 export function parseYear(s?: string): number | null {
   if (!s) return null
   const str = String(s)
@@ -119,6 +122,15 @@ export function parseYear(s?: string): number | null {
     const em = str.match(new RegExp(era + '\\s*(元|\\d{1,3})'))
     const n = em ? (em[1] === '元' ? 1 : parseInt(em[1], 10)) : 1
     return start + n - 1
+  }
+  // Century notation: intercept before the plain-number match so "12世紀" ≠ year 12.
+  if (/(世紀|世纪|century|centuries)/i.test(str)) {
+    const cm = str.match(/\d{1,2}/)
+    if (cm) {
+      let year = (parseInt(cm[0], 10) - 1) * 100 + 50   // midpoint of the century
+      if (/(紀元前|前|B\.?C\.?E?)/i.test(str)) year = -year
+      return year
+    }
   }
   const m = str.match(/-?\d{1,4}/)
   if (!m) return null
