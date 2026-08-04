@@ -456,10 +456,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   // playback all UI is hidden — control via keyboard (Space = pause, Esc = stop).
   const [cinemaOpen, setCinemaOpen] = useState(false)
   const [cinemaMode, setCinemaMode] = useState<'horizontal' | 'vertical' | 'zoom'>('horizontal')
-  const [cinemaDur, setCinemaDur] = useState(15)       // sweep duration, seconds
+  const [cinemaDur, setCinemaDur] = useState(30)       // sweep duration, seconds
   const [cinemaLinear, setCinemaLinear] = useState(false)  // 等速 (linear) vs eased
   const [cinemaPlaying, setCinemaPlaying] = useState(false)
   const [cinemaPaused, setCinemaPaused] = useState(false)
+  const [cinemaCover, setCinemaCover] = useState(false)   // opaque cover that hides the fullscreen-resize rebuild flash
   const cinemaPausedRef = useRef(false)
   const cinemaRef = useRef<{ raf: number; startTs: number; elapsed: number; dur: number; vw: number; vh: number; interp: (t: number) => [number, number, number]; ease: (x: number) => number } | null>(null)
   const marqueeModeRef = useRef(false)
@@ -610,6 +611,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     setCinemaOpen(false)
     setCinemaPlaying(true)
     setCinemaPaused(false)
+    setCinemaCover(true)            // hide the fullscreen-resize rebuild flash
     cinemaPausedRef.current = false
     const el = containerRef.current
     const kick = () => {
@@ -623,8 +625,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       cinemaRef.current = { raf: 0, startTs: 0, elapsed: 0, dur: cinemaDur, vw, vh, interp, ease }
       applyCinemaView(interp(0), vw, vh)              // paint current view first — no blink
       cinemaRef.current.raf = requestAnimationFrame(cinemaTick)
+      requestAnimationFrame(() => setCinemaCover(false))  // fade the cover away once the settled view is painted
     }
-    const begin = () => setTimeout(kick, 320)   // let the resize observer update dimensions
+    const begin = () => setTimeout(kick, 450)   // let the resize observer update dimensions (cover hides this)
     if (el && el.requestFullscreen && !document.fullscreenElement) {
       el.requestFullscreen().then(begin).catch(begin)
     } else begin()
@@ -636,6 +639,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     cinemaPausedRef.current = false
     setCinemaPlaying(false)
     setCinemaPaused(false)
+    setCinemaCover(false)
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
     // Restore a sensible view after the sweep.
     if (svgRef.current && zoomRef.current) {
@@ -2790,6 +2794,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           }}
         />
       )}
+      {/* Cinema cover — opaque during the fullscreen-resize rebuild, then fades out. */}
+      {cinemaPlaying && (
+        <div className="absolute inset-0 z-30 pointer-events-none transition-opacity duration-700"
+          style={{ opacity: cinemaCover ? 1 : 0, backgroundColor: background || '#000' }} />
+      )}
+
       {!cinemaPlaying && (
       <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 bg-white p-2 rounded shadow">
         <button onClick={handleZoomIn}
@@ -2916,9 +2926,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           </div>
           <label className="flex items-center gap-2 text-xs text-gray-700">
             <span className="whitespace-nowrap">{t('Cinema speed', '速度（秒）')}</span>
-            <input type="range" min={5} max={60} step={1} value={cinemaDur}
+            <input type="range" min={5} max={300} step={5} value={cinemaDur}
               onChange={e => setCinemaDur(Number(e.target.value))} className="flex-1 accent-rose-500" />
-            <span className="w-8 text-right tabular-nums">{cinemaDur}s</span>
+            <span className="w-10 text-right tabular-nums">{cinemaDur}s</span>
           </label>
           <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
             <input type="checkbox" checked={cinemaLinear} onChange={e => setCinemaLinear(e.target.checked)}
