@@ -2719,7 +2719,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
               <option value="lifespan">{t('Birth–Death', '生没年')}</option>
               <option value="period">{t('Reign Period', '在位期間')}</option>
             </select>
-            <span className="whitespace-nowrap" title={t('Width tip', '一直線の系譜を左右に折り返す列数（表示幅）')}>{t('Width', '幅')}</span>
+            <span className="whitespace-nowrap" title={t('Width tip', '一直線の系譜を左右に折り返す列数（表示幅）')}>{t('Timeline Width', '幅')}</span>
             <select value={timelineCols} onChange={e => setTimelineCols(Number(e.target.value))}
               className="rounded border border-gray-300 text-sm px-1 py-0.5" title={t('Wrap columns tip', '折り返し列数（少=細く長い／多=広く短い）')}>
               {[2, 3, 4, 5, 6, 8, 10, 12].map(c => <option key={c} value={c}>{c}</option>)}

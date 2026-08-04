@@ -160,7 +160,7 @@ export function PageInfoDialog({
                     }}
                   />
                   <button type="button" onClick={() => { setImage(''); setPreviewImage(null); setUploadedImage(null) }}
-                    className="mt-1 text-xs text-red-500 hover:text-red-700">{t('Remove image','Remove')}</button>
+                    className="mt-1 text-xs text-red-500 hover:text-red-700">{t('Remove page image','Remove')}</button>
                 </div>
               )}
             </div>
