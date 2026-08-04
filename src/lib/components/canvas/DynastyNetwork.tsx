@@ -2251,7 +2251,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
 
     // Tick
-    simulation.on('tick', () => {
+    const tickRender = () => {
       updateBoard()
       if (selNodesRef.current.size) renderMultiSel()   // keep the selection rings on the nodes
       linkSel.attr('d', buildLinkPath)
@@ -2298,7 +2298,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           const my = (d.source.y + d.target.y) / 2
           return snapToGrid(my + (idx !== 0 ? (dx / len) * idx * 27 : 0))
         })
-    })
+    }
+    simulation.on('tick', tickRender)
 
     // ── Whiteboard / annotation drawing layer (top of the stack so it overlays the graph) ──
     const genId = () => 'stroke_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e6).toString(36)
@@ -2556,6 +2557,34 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       if (e.key === 'Escape' && selRef.current.size) { selRef.current.clear(); renderSelection() }
       // Rectangle node-selection: Esc clears it.
       if (e.key === 'Escape' && selNodesRef.current.size) { selNodesRef.current.clear(); renderMultiSel() }
+      // Arrow keys nudge the selected nodes (Shift = larger step). Horizontal moves keep the
+      // timeline year (y) unchanged, so the chronological order isn't disturbed.
+      if (selNodesRef.current.size && !typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        const step = (e.shiftKey ? 4 : 1) * (showGrid ? gridSize : 10)
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+        const batch: Record<string, { x: number; y: number }> = {}
+        for (const id of selNodesRef.current) {
+          const n = nodesRef.current.find(nn => nn.id === id)
+          if (n) { n.x += dx; n.y += dy; n.fx = n.x; n.fy = n.y; nodePositionsRef.current.set(id, { x: n.x, y: n.y }); batch[id] = { x: n.x, y: n.y } }
+        }
+        cbRef.current.onBatchPositionChange(batch)
+        tickRender()
+      }
+      // No selection: arrow keys PAN the canvas (hold to pan continuously — easier than a
+      // long mouse-drag). Shift = faster. Skipped while a form control has focus.
+      const formEl = !!el && (el.tagName === 'SELECT' || el.tagName === 'BUTTON' || el.tagName === 'OPTION')
+      if (!selNodesRef.current.size && !typing && !formEl && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        // Move the VIEWPORT toward the opposite of the arrow (→ = viewport left, ↑ = viewport
+        // down), i.e. the content shifts the same way as the arrow.
+        const p = e.shiftKey ? 150 : 55
+        const px = e.key === 'ArrowLeft' ? -p : e.key === 'ArrowRight' ? p : 0
+        const py = e.key === 'ArrowUp' ? -p : e.key === 'ArrowDown' ? p : 0
+        const t = currentTransform.current
+        svg.call(zoom.transform, d3.zoomIdentity.translate(t.x + px, t.y + py).scale(t.k))
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && drawRef.current.mode === 'select' && selRef.current.size) {
         e.preventDefault()
         const ids = [...selRef.current]; selRef.current.clear(); renderSelection()

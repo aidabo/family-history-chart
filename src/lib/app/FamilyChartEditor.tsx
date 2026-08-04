@@ -11,6 +11,7 @@ import { FontSelector } from '@/components/ui/FontSelector'
 import { PersonNode, Relationship, TextStyle, DrawTool } from '@/types/charts'
 import {
   PencilIcon,
+  QuestionMarkCircleIcon,
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
   ArrowLeftIcon,
@@ -411,6 +412,67 @@ export interface FamilyChartEditorProps {
   onOpenEdit: (id: string) => void
 }
 
+// In-app operation guide (keyboard / mouse / touch). Mirrors docs/shortcuts.md.
+function HelpDialog({ onClose }: { onClose: () => void }) {
+  const Row = ({ k, d }: { k: string; d: string }) => (
+    <div className="flex gap-3 py-1 border-b border-gray-100 last:border-0">
+      <span className="w-40 shrink-0 font-medium text-gray-700">{k}</span>
+      <span className="flex-1 text-gray-600">{d}</span>
+    </div>
+  )
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div className="mb-4">
+      <h3 className="mb-1 text-sm font-bold text-gray-800">{title}</h3>
+      <div className="text-xs">{children}</div>
+    </div>
+  )
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">操作方法・ショートカット</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" title="閉じる">×</button>
+        </div>
+
+        <Section title="キーボード">
+          <Row k="方向キー ←→↑↓（ノード選択中）" d="選択したノードだけを移動。横(←→)は年(Y)を変えず年表の時間順を保持。Shiftで4倍。" />
+          <Row k="方向キー ←→↑↓（選択なし）" d="viewport をパン（長押しで連続）。矢印と逆向きに視点移動（→で左）。Shiftで高速。" />
+          <Row k="Esc" d="接続モード／手描き選択／ノード範囲選択の解除。" />
+          <Row k="Delete / Backspace" d="選択中の人物・関係を削除。手描き「選択」ツール時は選択ストロークを削除。" />
+          <Row k="Ctrl/⌘ + Z" d="手描きを元に戻す。" />
+          <Row k="Ctrl+Shift+Z / Ctrl+Y" d="手描きをやり直し。" />
+        </Section>
+
+        <Section title="マウス / タッチ">
+          <Row k="空白をドラッグ" d="パン（画面移動）。" />
+          <Row k="ホイール / ピンチ" d="ズーム。" />
+          <Row k="空白をダブルクリック" d="その位置に人物を追加。" />
+          <Row k="ノードをダブルクリック/タップ" d="名前をインライン編集。" />
+          <Row k="ノードをドラッグ" d="そのノードを移動。" />
+          <Row k="Shift + ノードをドラッグ" d="連結ツリー全体（連結成分）を移動。" />
+          <Row k="Ctrl/⌘ + ノードをクリック" d="接続（関係付け）モード。次にクリックした相手と関係を張る。" />
+          <Row k="ポート（青丸）をドラッグ" d="ノードにホバーして相手へ関係線を引く。" />
+        </Section>
+
+        <Section title="範囲選択モード（ツールバー「範囲選択」）">
+          <div className="space-y-1 text-gray-600">
+            <p>①「範囲選択」をON → ②空白をドラッグで矩形選択（青い破線リング）→ ③選択ノードのどれかをドラッグで<b>選んだ分だけ</b>一括移動（方向キーでも微移動）。Escで解除。</p>
+            <p className="text-gray-500">※ Shift+ドラッグの「ツリー全体移動」とは別機能です。</p>
+          </div>
+        </Section>
+
+        <Section title="お絵かき（ホワイトボード）">
+          <div className="text-gray-600">FAB「お絵かき」→ ペン / マーカー / 直線 / 矢印 / 矩形 / 楕円 / 消しゴム / 選択・移動。色・太さ・戻す/やり直し・全消去。マウス・タッチ・ペン対応。</div>
+        </Section>
+
+        <Section title="年表（timeline）">
+          <div className="text-gray-600">Auto Layout で「年表」。ツールバーの「年表：生没年／在位期間」で縦軸基準、「幅」で系譜の折り返し列数を調整。長い継承ラインは左右に折り返し、並存する王朝は別レーンに分離されます。</div>
+        </Section>
+      </div>
+    </div>
+  )
+}
+
 export default function FamilyChartEditor({
   id,
   mode,
@@ -487,6 +549,7 @@ export default function FamilyChartEditor({
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [exportMenu, setExportMenu] = useState(false)
   const [settingsZoom, setSettingsZoom] = useState(1)
 
@@ -1060,6 +1123,14 @@ export default function FamilyChartEditor({
             <span className="fc-tb-label">Reload</span>
           </button>
           <button
+            onClick={() => setHelpOpen(true)}
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
+            title="操作方法・ショートカット"
+          >
+            <QuestionMarkCircleIcon className="h-4 w-4" />
+            <span className="fc-tb-label">ヘルプ</span>
+          </button>
+          <button
             onClick={handleClear}
             className="p-1.5 md:p-2 rounded-lg text-red-500 hover:bg-red-50 flex-shrink-0"
             title="Clear all"
@@ -1377,6 +1448,8 @@ export default function FamilyChartEditor({
         }}
         onFit={() => netRef.current?.fitToContent()}
       />
+
+      {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }
