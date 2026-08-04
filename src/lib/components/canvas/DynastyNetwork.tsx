@@ -5,6 +5,7 @@ import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSetting
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, type LayoutMode } from '@/utils/familyLayout'
+import { relationLabel } from '@/utils/relationLabels'
 
 // Title shown on a node: "title(period)" when a 在位/期間 is set (e.g. 皇帝(626-649)),
 // otherwise just the title, or "(period)" when only a period is set.
@@ -150,6 +151,7 @@ interface DynastyNetworkProps {
   backgroundImage?: string     // background image layered over the color
   backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
   verticalText?: VerticalTextMode  // chart-wide vertical writing mode (default 'off')
+  locale?: string                  // UI locale (ja/zh/en) — drives edge/relationship labels on the canvas
   editable?: boolean               // enable in-place (double-click) editing of name/description
   onInlineEdit?: (req: InlineEditRequest) => void  // double-click → host renders an overlay editor
   // Whiteboard / annotation drawing layer
@@ -418,6 +420,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   backgroundImage,
   backgroundOpacity,
   verticalText,
+  locale,
   editable,
   onInlineEdit,
   drawings,
@@ -1892,13 +1895,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       if (shape === 'union') {
         const txt = label.append('text').attr('text-anchor', 'middle').attr('y', 20)
           .attr('font-size', fs).attr('fill', '#f97316').attr('font-family', ff)
-        const UNION_LABEL: Record<string, string> = {
-          'marriage': '結婚', 'remarriage': '再婚', 'sibling': '兄弟姉妹',
-          'parent-child': '親子', 'succession': '継承', 'friend': '親友',
-          'ally': '同盟', 'mentor': '師弟', 'master': '師匠', 'disciple': '弟子',
-          'comrade': '戦友', 'rival': '対立', 'enemy': '敵対', 'custom': '', 'liege': '君臣',
-        }
-        const utype = UNION_LABEL[d.marriage?.type ?? 'marriage'] ?? '結婚'
+        const utype = relationLabel(d.marriage?.type ?? 'marriage', locale) || '結婚'
         txt.append('tspan').text(d.marriage?.label || utype).attr('x', 0).attr('dy', 0)
         if (d.marriage?.start || d.marriage?.end) {
           txt.append('tspan')
@@ -2176,30 +2173,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       fitDescBox(this, d as unknown as SimNode)
     })
 
-    const EDGE_LABEL: Record<string, string> = {
-      'parent-child': '親子',
-      'marriage':     '結婚',
-      'remarriage':   '再婚',
-      'succession':   '継承',
-      'sibling':      '兄弟',
-      'ally':         '同盟',
-      'rival':        '対立',
-      'mentor':       '師弟',
-      'master':       '師匠',
-      'disciple':     '弟子',
-      'comrade':      '戦友',
-      'liege':        '君臣',
-      'enemy':        '敵対',
-      'friend':       '親友',
-    }
-
-    // Relationship labels — white halo via paint-order for readability on any background
+    // Relationship labels — white halo via paint-order for readability on any background.
+    // The type name is shown in the current UI locale (custom d.label — e.g. a role or
+    // 朝代更换 — always wins).
     const linkLabelSel = container.append('g').attr('class', 'link-labels')
       .selectAll<SVGTextElement, SimLink>('text')
       .data(links).enter().append('text')
       .text(d => {
         if (d.type === 'partner') return ''
-        return d.label || EDGE_LABEL[d.type] || d.type
+        return d.label || relationLabel(d.type, locale) || d.type
       })
       .attr('font-size', 11).attr('text-anchor', 'middle').attr('pointer-events', 'none')
       .attr('fill', edgeColor)
@@ -2602,7 +2584,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis, locale])
 
   // Toggle the drawing capture surface / eraser hit-testing when the active tool changes,
   // without rebuilding the whole canvas (which would flash all nodes).

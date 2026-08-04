@@ -9,6 +9,7 @@ import ChartSettingsDialog from '@/app/ChartSettingsDialog'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
 import { FontSelector } from '@/components/ui/FontSelector'
 import { PersonNode, Relationship, TextStyle, DrawTool } from '@/types/charts'
+import { normLocale } from '@/utils/relationLabels'
 import {
   PencilIcon,
   QuestionMarkCircleIcon,
@@ -412,62 +413,70 @@ export interface FamilyChartEditorProps {
   onOpenEdit: (id: string) => void
 }
 
-// In-app operation guide (keyboard / mouse / touch). Mirrors docs/shortcuts.md.
-function HelpDialog({ onClose }: { onClose: () => void }) {
-  const Row = ({ k, d }: { k: string; d: string }) => (
-    <div className="flex gap-3 py-1 border-b border-gray-100 last:border-0">
-      <span className="w-40 shrink-0 font-medium text-gray-700">{k}</span>
-      <span className="flex-1 text-gray-600">{d}</span>
-    </div>
-  )
-  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <div className="mb-4">
-      <h3 className="mb-1 text-sm font-bold text-gray-800">{title}</h3>
-      <div className="text-xs">{children}</div>
+// In-app operation guide, trilingual (ja/zh/en). The current locale is shown first, the other
+// languages below. Mirrors docs/shortcuts.md.
+type L3 = { ja: string; zh: string; en: string }
+const HELP_HEADING: L3 = { ja: '操作方法・ショートカット', zh: '操作方法・快捷键', en: 'Controls & Shortcuts' }
+const HELP_LANG: L3 = { ja: '日本語', zh: '中文', en: 'English' }
+const HELP_SECTIONS: { title: L3; rows: { k: L3; d: L3 }[] }[] = [
+  { title: { ja: 'キーボード', zh: '键盘', en: 'Keyboard' }, rows: [
+    { k: { ja: '方向キー（ノード選択中）', zh: '方向键（选中节点时）', en: 'Arrows (nodes selected)' },
+      d: { ja: '選択ノードだけ移動。横は年(Y)を変えず時間順を保持。Shiftで4倍。', zh: '仅移动所选节点；左右不改变年份(Y)，保持时间顺序。Shift为4倍。', en: 'Move only selected nodes; horizontal keeps the timeline year. Shift = ×4.' } },
+    { k: { ja: '方向キー（選択なし）', zh: '方向键（无选择）', en: 'Arrows (no selection)' },
+      d: { ja: 'viewport をパン（長押しで連続、矢印と逆向き）。Shiftで高速。', zh: '平移视口（长按连续，与箭头相反）。Shift加速。', en: 'Pan the viewport (hold; opposite the arrow). Shift = faster.' } },
+    { k: { ja: 'Esc', zh: 'Esc', en: 'Esc' }, d: { ja: '接続/手描き/範囲選択の解除。', zh: '取消连接/手绘/框选。', en: 'Cancel connect / drawing / node selection.' } },
+    { k: { ja: 'Delete / Backspace', zh: 'Delete / Backspace', en: 'Delete / Backspace' }, d: { ja: '選択中の人物・関係を削除（手描き選択時はストローク）。', zh: '删除所选人物·关系（手绘选择时为笔画）。', en: 'Delete selected node/relationship (or strokes when drawing-select).' } },
+    { k: { ja: 'Ctrl/⌘ + Z', zh: 'Ctrl/⌘ + Z', en: 'Ctrl/⌘ + Z' }, d: { ja: '手描きを元に戻す。', zh: '撤销手绘。', en: 'Undo drawing.' } },
+    { k: { ja: 'Ctrl+Shift+Z / Ctrl+Y', zh: 'Ctrl+Shift+Z / Ctrl+Y', en: 'Ctrl+Shift+Z / Ctrl+Y' }, d: { ja: '手描きをやり直し。', zh: '重做手绘。', en: 'Redo drawing.' } },
+  ] },
+  { title: { ja: 'マウス / タッチ', zh: '鼠标 / 触摸', en: 'Mouse / Touch' }, rows: [
+    { k: { ja: '空白をドラッグ', zh: '拖动空白', en: 'Drag empty' }, d: { ja: 'パン。', zh: '平移。', en: 'Pan.' } },
+    { k: { ja: 'ホイール / ピンチ', zh: '滚轮 / 捏合', en: 'Wheel / Pinch' }, d: { ja: 'ズーム。', zh: '缩放。', en: 'Zoom.' } },
+    { k: { ja: '空白をダブルクリック', zh: '双击空白', en: 'Double-click empty' }, d: { ja: '人物を追加。', zh: '添加人物。', en: 'Add a person.' } },
+    { k: { ja: 'ノードをダブルクリック', zh: '双击节点', en: 'Double-click node' }, d: { ja: '名前を編集。', zh: '编辑姓名。', en: 'Edit the name.' } },
+    { k: { ja: 'ノードをドラッグ', zh: '拖动节点', en: 'Drag node' }, d: { ja: '移動。', zh: '移动。', en: 'Move it.' } },
+    { k: { ja: 'Shift + ノードをドラッグ', zh: 'Shift + 拖动节点', en: 'Shift + drag node' }, d: { ja: '連結ツリー全体を移動。', zh: '移动整棵连通树。', en: 'Move the whole connected tree.' } },
+    { k: { ja: 'Ctrl/⌘ + ノードをクリック', zh: 'Ctrl/⌘ + 点击节点', en: 'Ctrl/⌘ + click node' }, d: { ja: '接続（関係付け）モード。', zh: '连接（建立关系）模式。', en: 'Connect (make a relationship).' } },
+    { k: { ja: 'ポート（青丸）をドラッグ', zh: '拖动端口（蓝点）', en: 'Drag port (blue dot)' }, d: { ja: '相手へ関係線を引く。', zh: '向对方拉出关系线。', en: 'Draw a relationship to another node.' } },
+  ] },
+  { title: { ja: '範囲選択モード', zh: '框选模式', en: 'Range-select mode' }, rows: [
+    { k: { ja: '手順', zh: '步骤', en: 'How' }, d: { ja: 'ツールバー「範囲選択」ON → 空白ドラッグで矩形選択 → 選択ノードをドラッグで選んだ分だけ移動（方向キーも可）。Escで解除。', zh: '工具栏“范围选择”开启 → 拖动空白框选 → 拖动所选节点仅移动选中的（也可用方向键）。Esc取消。', en: 'Toggle "範囲選択" on → drag empty to marquee-select → drag a selected node to move only the selection (arrows too). Esc clears.' } },
+  ] },
+  { title: { ja: 'お絵かき / 年表', zh: '手绘 / 年表', en: 'Drawing / Timeline' }, rows: [
+    { k: { ja: 'お絵かき', zh: '手绘', en: 'Whiteboard' }, d: { ja: 'ペン/マーカー/直線/矢印/矩形/楕円/消しゴム/選択・移動。', zh: '钢笔/马克笔/直线/箭头/矩形/椭圆/橡皮/选择移动。', en: 'Pen / marker / line / arrow / rect / ellipse / eraser / select-move.' } },
+    { k: { ja: '年表', zh: '年表', en: 'Timeline' }, d: { ja: '「年表：生没年/在位期間」で縦軸基準、「幅」で系譜の折返し列数。', zh: '用“年表：生卒/在位”选纵轴基准，用“宽度”调系谱折返列数。', en: 'Choose axis basis (lifespan/period) and lineage "width" (fold columns).' } },
+  ] },
+]
+
+function HelpDialog({ onClose, locale }: { onClose: () => void; locale?: string }) {
+  const primary = normLocale(locale)
+  const order = [primary, ...(['ja', 'zh', 'en'] as const).filter((l) => l !== primary)]
+  const guide = (loc: 'ja' | 'zh' | 'en', idx: number) => (
+    <div key={loc} className={idx > 0 ? 'mt-5 border-t border-gray-200 pt-3' : ''}>
+      <div className="mb-2 inline-block rounded bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-500">{HELP_LANG[loc]}</div>
+      {HELP_SECTIONS.map((s, i) => (
+        <div key={i} className="mb-3">
+          <h3 className="mb-1 text-sm font-bold text-gray-800">{s.title[loc]}</h3>
+          <div className="text-xs">
+            {s.rows.map((r, j) => (
+              <div key={j} className="flex gap-3 border-b border-gray-100 py-1 last:border-0">
+                <span className="w-44 shrink-0 font-medium text-gray-700">{r.k[loc]}</span>
+                <span className="flex-1 text-gray-600">{r.d[loc]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-800">操作方法・ショートカット</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" title="閉じる">×</button>
+          <h2 className="text-lg font-bold text-gray-800">{HELP_HEADING[primary]}</h2>
+          <button onClick={onClose} className="text-xl leading-none text-gray-400 hover:text-gray-600" title="閉じる">×</button>
         </div>
-
-        <Section title="キーボード">
-          <Row k="方向キー ←→↑↓（ノード選択中）" d="選択したノードだけを移動。横(←→)は年(Y)を変えず年表の時間順を保持。Shiftで4倍。" />
-          <Row k="方向キー ←→↑↓（選択なし）" d="viewport をパン（長押しで連続）。矢印と逆向きに視点移動（→で左）。Shiftで高速。" />
-          <Row k="Esc" d="接続モード／手描き選択／ノード範囲選択の解除。" />
-          <Row k="Delete / Backspace" d="選択中の人物・関係を削除。手描き「選択」ツール時は選択ストロークを削除。" />
-          <Row k="Ctrl/⌘ + Z" d="手描きを元に戻す。" />
-          <Row k="Ctrl+Shift+Z / Ctrl+Y" d="手描きをやり直し。" />
-        </Section>
-
-        <Section title="マウス / タッチ">
-          <Row k="空白をドラッグ" d="パン（画面移動）。" />
-          <Row k="ホイール / ピンチ" d="ズーム。" />
-          <Row k="空白をダブルクリック" d="その位置に人物を追加。" />
-          <Row k="ノードをダブルクリック/タップ" d="名前をインライン編集。" />
-          <Row k="ノードをドラッグ" d="そのノードを移動。" />
-          <Row k="Shift + ノードをドラッグ" d="連結ツリー全体（連結成分）を移動。" />
-          <Row k="Ctrl/⌘ + ノードをクリック" d="接続（関係付け）モード。次にクリックした相手と関係を張る。" />
-          <Row k="ポート（青丸）をドラッグ" d="ノードにホバーして相手へ関係線を引く。" />
-        </Section>
-
-        <Section title="範囲選択モード（ツールバー「範囲選択」）">
-          <div className="space-y-1 text-gray-600">
-            <p>①「範囲選択」をON → ②空白をドラッグで矩形選択（青い破線リング）→ ③選択ノードのどれかをドラッグで<b>選んだ分だけ</b>一括移動（方向キーでも微移動）。Escで解除。</p>
-            <p className="text-gray-500">※ Shift+ドラッグの「ツリー全体移動」とは別機能です。</p>
-          </div>
-        </Section>
-
-        <Section title="お絵かき（ホワイトボード）">
-          <div className="text-gray-600">FAB「お絵かき」→ ペン / マーカー / 直線 / 矢印 / 矩形 / 楕円 / 消しゴム / 選択・移動。色・太さ・戻す/やり直し・全消去。マウス・タッチ・ペン対応。</div>
-        </Section>
-
-        <Section title="年表（timeline）">
-          <div className="text-gray-600">Auto Layout で「年表」。ツールバーの「年表：生没年／在位期間」で縦軸基準、「幅」で系譜の折り返し列数を調整。長い継承ラインは左右に折り返し、並存する王朝は別レーンに分離されます。</div>
-        </Section>
+        {order.map((loc, idx) => guide(loc, idx))}
       </div>
     </div>
   )
@@ -536,6 +545,7 @@ export default function FamilyChartEditor({
     setDpi,
     thumbnailDpi,
     t,
+    locale,
   } = useDataContext()
 
   const [nodeCardPos, setNodeCardPos] = useState({ x: 200, y: 100 })
@@ -1159,6 +1169,7 @@ export default function FamilyChartEditor({
           backgroundImage={backgroundImage}
           backgroundOpacity={backgroundOpacity}
           verticalText={verticalText}
+          locale={locale}
           editable={!isViewMode}
           persons={persons}
           relationships={relationships}
@@ -1450,7 +1461,7 @@ export default function FamilyChartEditor({
         onFit={() => netRef.current?.fitToContent()}
       />
 
-      {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
+      {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} locale={locale} />}
     </div>
   )
 }

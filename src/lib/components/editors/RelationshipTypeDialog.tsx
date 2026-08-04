@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { PersonNode, Relationship } from '@/types/charts'
+import { relationLabelMulti } from '@/utils/relationLabels'
 
 interface Props {
   sourceId: string
@@ -23,22 +24,23 @@ interface Option {
   canUnion?: boolean
 }
 
+// Labels are trilingual (ja / zh / en) via relationLabelMulti; direction arrows kept.
 const OPTIONS: Option[] = [
-  { id: 'parent-to-child',   label: 'Parent → Child 親子',  type: 'parent-child', swap: false },
-  { id: 'child-from-parent', label: 'Child ← Parent 子親',  type: 'parent-child', swap: true  },
-  { id: 'marriage',          label: '結婚 Marriage',          type: 'marriage',     swap: false, canUnion: true },
-  { id: 'remarriage',        label: '再婚 Remarriage',        type: 'remarriage',   swap: false, canUnion: true },
-  { id: 'sibling',           label: '兄弟 Sibling',           type: 'sibling',      swap: false, canUnion: true },
-  { id: 'succession',        label: '継承 Succession →',      type: 'succession',   swap: false, canUnion: true },
-  { id: 'friend',            label: '親友 Friend',            type: 'friend',       swap: false, canUnion: true },
-  { id: 'ally',              label: '同盟 Ally',              type: 'ally',         swap: false, canUnion: true },
-  { id: 'liege',             label: '君臣 Lord→Vassal 主従 →', type: 'liege',       swap: false, canUnion: true },
-  { id: 'master',            label: '師匠 Master →',          type: 'master',       swap: false, canUnion: true },
-  { id: 'disciple',          label: '弟子 Disciple →',        type: 'disciple',     swap: false, canUnion: true },
-  { id: 'comrade',           label: '戦友 Comrade',           type: 'comrade',      swap: false, canUnion: true },
-  { id: 'rival',             label: '対立 Rival',             type: 'rival',        swap: false, canUnion: true },
-  { id: 'enemy',             label: '敵対 Enemy',             type: 'enemy',        swap: false, canUnion: true },
-  { id: 'custom',            label: 'Custom カスタム',        type: 'custom',       swap: false },
+  { id: 'parent-to-child',   label: `${relationLabelMulti('parent-child')} →（親→子）`, type: 'parent-child', swap: false },
+  { id: 'child-from-parent', label: `${relationLabelMulti('parent-child')} ←（子→親）`, type: 'parent-child', swap: true  },
+  { id: 'marriage',          label: relationLabelMulti('marriage'),         type: 'marriage',     swap: false, canUnion: true },
+  { id: 'remarriage',        label: relationLabelMulti('remarriage'),       type: 'remarriage',   swap: false, canUnion: true },
+  { id: 'sibling',           label: relationLabelMulti('sibling'),          type: 'sibling',      swap: false, canUnion: true },
+  { id: 'succession',        label: `${relationLabelMulti('succession')} →`, type: 'succession',  swap: false, canUnion: true },
+  { id: 'friend',            label: relationLabelMulti('friend'),           type: 'friend',       swap: false, canUnion: true },
+  { id: 'ally',              label: relationLabelMulti('ally'),             type: 'ally',         swap: false, canUnion: true },
+  { id: 'liege',             label: `${relationLabelMulti('liege')} →`,     type: 'liege',        swap: false, canUnion: true },
+  { id: 'master',            label: `${relationLabelMulti('master')} →`,    type: 'master',       swap: false, canUnion: true },
+  { id: 'disciple',          label: `${relationLabelMulti('disciple')} →`,  type: 'disciple',     swap: false, canUnion: true },
+  { id: 'comrade',           label: relationLabelMulti('comrade'),          type: 'comrade',      swap: false, canUnion: true },
+  { id: 'rival',             label: relationLabelMulti('rival'),            type: 'rival',        swap: false, canUnion: true },
+  { id: 'enemy',             label: relationLabelMulti('enemy'),            type: 'enemy',        swap: false, canUnion: true },
+  { id: 'custom',            label: relationLabelMulti('custom'),           type: 'custom',       swap: false },
 ]
 
 export function RelationshipTypeDialog({ sourceId, targetId, persons, initialX, initialY, onConfirm, onCancel }: Props) {

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Relationship, PersonNode } from '@/types/charts'
 import { ColorPicker } from '@/components/ui/ColorPicker'
+import { relationLabelMulti } from '@/utils/relationLabels'
 
 interface Props {
   relationship: Relationship
@@ -16,21 +17,10 @@ interface Props {
 
 type RelType = Relationship['type']
 
-const TYPE_OPTIONS: { value: RelType; label: string }[] = [
-  { value: 'parent-child', label: '親子 Parent–Child' },
-  { value: 'marriage',     label: '結婚 Marriage' },
-  { value: 'remarriage',   label: '再婚 Remarriage' },
-  { value: 'sibling',      label: '兄弟 Sibling' },
-  { value: 'succession',   label: '継承 Succession' },
-  { value: 'friend',       label: '親友 Friend' },
-  { value: 'ally',         label: '同盟 Ally' },
-  { value: 'liege',        label: '君臣 Lord→Vassal 主従' },
-  { value: 'master',       label: '師匠 Master' },
-  { value: 'disciple',     label: '弟子 Disciple' },
-  { value: 'comrade',      label: '戦友 Comrade' },
-  { value: 'rival',        label: '対立 Rival' },
-  { value: 'enemy',        label: '敵対 Enemy' },
-  { value: 'custom',       label: 'Custom カスタム' },
+// Labels shown trilingual (ja / zh / en) via relationLabelMulti.
+const TYPE_OPTIONS: RelType[] = [
+  'parent-child', 'marriage', 'remarriage', 'sibling', 'succession', 'friend',
+  'ally', 'liege', 'master', 'disciple', 'comrade', 'rival', 'enemy', 'custom',
 ]
 
 export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, onConvertToUnion, onClose }: Props) {
@@ -104,7 +94,7 @@ export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, 
             className="w-full text-sm border border-gray-300 rounded px-2 py-1"
           >
             {TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o} value={o}>{relationLabelMulti(o)}</option>
             ))}
           </select>
         </div>
