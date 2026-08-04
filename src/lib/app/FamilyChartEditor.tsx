@@ -424,7 +424,7 @@ const HELP_SECTIONS: { title: L3; rows: { k: L3; d: L3 }[] }[] = [
     { k: { ja: '方向キー（ノード選択中）', zh: '方向键（选中节点时）', en: 'Arrows (nodes selected)' },
       d: { ja: '選択ノードだけ移動。横は年(Y)を変えず時間順を保持。Shiftで4倍。', zh: '仅移动所选节点；左右不改变年份(Y)，保持时间顺序。Shift为4倍。', en: 'Move only selected nodes; horizontal keeps the timeline year. Shift = ×4.' } },
     { k: { ja: '方向キー（選択なし）', zh: '方向键（无选择）', en: 'Arrows (no selection)' },
-      d: { ja: 'viewport をパン（長押しで連続、矢印と逆向き）。Shiftで高速。', zh: '平移视口（长按连续，与箭头相反）。Shift加速。', en: 'Pan the viewport (hold; opposite the arrow). Shift = faster.' } },
+      d: { ja: 'viewport をパン（長押しで連続。横は矢印と逆、縦は矢印どおり）。Shiftで高速。', zh: '平移视口（长按连续。水平与箭头相反，垂直与箭头一致）。Shift加速。', en: 'Pan the viewport (hold; horizontal inverted, vertical natural). Shift = faster.' } },
     { k: { ja: 'Esc', zh: 'Esc', en: 'Esc' }, d: { ja: '接続/手描き/範囲選択の解除。', zh: '取消连接/手绘/框选。', en: 'Cancel connect / drawing / node selection.' } },
     { k: { ja: 'Delete / Backspace', zh: 'Delete / Backspace', en: 'Delete / Backspace' }, d: { ja: '選択中の人物・関係を削除（手描き選択時はストローク）。', zh: '删除所选人物·关系（手绘选择时为笔画）。', en: 'Delete selected node/relationship (or strokes when drawing-select).' } },
     { k: { ja: 'Ctrl/⌘ + Z', zh: 'Ctrl/⌘ + Z', en: 'Ctrl/⌘ + Z' }, d: { ja: '手描きを元に戻す。', zh: '撤销手绘。', en: 'Undo drawing.' } },

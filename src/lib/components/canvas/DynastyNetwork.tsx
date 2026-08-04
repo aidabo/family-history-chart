@@ -2564,11 +2564,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       const formEl = !!el && (el.tagName === 'SELECT' || el.tagName === 'BUTTON' || el.tagName === 'OPTION')
       if (!selNodesRef.current.size && !typing && !formEl && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault()
-        // Move the VIEWPORT toward the opposite of the arrow (→ = viewport left, ↑ = viewport
-        // down), i.e. the content shifts the same way as the arrow.
+        // Viewport pan. Horizontal is inverted (→ = viewport left, ← = viewport right) per
+        // user preference; vertical is natural (↑ = viewport up, ↓ = viewport down).
         const p = e.shiftKey ? 150 : 55
         const px = e.key === 'ArrowLeft' ? -p : e.key === 'ArrowRight' ? p : 0
-        const py = e.key === 'ArrowUp' ? -p : e.key === 'ArrowDown' ? p : 0
+        const py = e.key === 'ArrowUp' ? p : e.key === 'ArrowDown' ? -p : 0
         const t = currentTransform.current
         svg.call(zoom.transform, d3.zoomIdentity.translate(t.x + px, t.y + py).scale(t.k))
       }
