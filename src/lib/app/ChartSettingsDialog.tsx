@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ColorPickerPopover from '@/components/ui/ColorPickerPopover'
 import { ShapePicker } from '@/components/ui/ShapePicker'
-import { VerticalTextMode } from '@/types/charts'
+import { VerticalTextMode, NodeShape } from '@/types/charts'
 import { useDataContext } from '@/context/DataContext'
 
 interface ChartSettingsDialogProps {
@@ -48,7 +48,7 @@ export default function ChartSettingsDialog({
   // Chart-wide shape / node size — same controls as a single node's Appearance, but each
   // change applies to EVERY node at once (overwriting per-node values). No single "current"
   // value exists across mixed nodes, so these start at the defaults and act as "set all to".
-  const [gShape, setGShape] = useState<string>('circle')
+  const [gShape, setGShape] = useState<NodeShape>('circle')
   const [gSize, setGSize] = useState(30)
   const [gBandW, setGBandW] = useState(200)
   const [gBandH, setGBandH] = useState(40)
