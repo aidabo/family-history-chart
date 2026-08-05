@@ -828,10 +828,15 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
   const year = inferYears(g, links)
   const occupied = [...new Set([...year.values()])].sort((a, b) => a - b)
   const { yForYear } = buildYearAxis(occupied, topY, rowGap)
+  const hasExplicitYear = (id: string) => {
+    const n = g.nodeMap.get(id)
+    return n ? (parseYear(n.birth) ?? parseYear(n.death)) != null : false
+  }
 
   const comps = connectedComponents(nodes, links).sort((a, b) => b.length - a.length)
   let laneX = 0
   const out: Record<string, { x: number; y: number }> = {}
+  const plain: string[][] = []   // non-chain components, packed into shared time-lanes below
   for (const compIds of comps) {
     const set = new Set(compIds)
     const sub = nodes.filter(n => set.has(n.id))
@@ -877,15 +882,40 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
       continue
     }
 
-    const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: 'timeline', centerX: 0, topY: 0 })
-    const pxs = Object.values(positions).map(p => p.x)
-    const minX = pxs.length ? Math.min(...pxs) : 0, maxX = pxs.length ? Math.max(...pxs) : 0
-    for (const id in positions) {
-      const yv = year.get(id)
-      out[id] = { x: positions[id].x - minX + laneX, y: yv != null ? yForYear(yv) : NaN }
-    }
-    laneX += (maxX - minX) + laneGap
+    plain.push(compIds)   // defer non-chain components for interval-partition lane packing
   }
+
+  // Pack the (usually many, small) non-chain components — e.g. one author + their 著作 — into
+  // shared x-lanes by TIME interval: components whose year-ranges don't overlap reuse the same
+  // lane (stack vertically down the axis) instead of each taking its own column. Bounds the width
+  // to the number of CONCURRENT clusters, not the total count (fixes the wide diagonal spread).
+  const plainData = plain.map(compIds => {
+    const set = new Set(compIds)
+    const sub = nodes.filter(n => set.has(n.id))
+    const subLinks = links.filter(l => set.has(l.source) && set.has(l.target))
+    const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: 'timeline', centerX: 0, topY: 0 })
+    // Width from DATED nodes only — undated works get re-pinned beside their author below, so
+    // their (possibly spread) sub-layout x must not inflate the lane width.
+    const anchorX = Object.keys(positions).filter(id => hasExplicitYear(id)).map(id => positions[id].x)
+    const minX = anchorX.length ? Math.min(...anchorX) : 0, maxX = anchorX.length ? Math.max(...anchorX) : 0
+    const ys = compIds.map(id => year.get(id)).filter((v): v is number => v != null)
+    return { positions, minX, width: Math.max(0, maxX - minX), minY: ys.length ? Math.min(...ys) : Infinity, maxY: ys.length ? Math.max(...ys) : -Infinity }
+  }).filter(d => Object.keys(d.positions).length).sort((a, b) => a.minY - b.minY)
+
+  const plainWidth = plainData.length ? Math.max(...plainData.map(d => d.width)) : 0
+  const plainStride = plainWidth + col * 2 + laneGap   // room for each author's works fan on the right
+  const laneEndY: number[] = []
+  for (const d of plainData) {
+    let lane = laneEndY.findIndex(end => end <= d.minY)
+    if (lane === -1) { lane = laneEndY.length; laneEndY.push(-Infinity) }
+    laneEndY[lane] = d.maxY
+    const baseX = laneX + lane * plainStride
+    for (const id in d.positions) {
+      const yv = year.get(id)
+      out[id] = { x: baseX + (d.positions[id].x - d.minX), y: yv != null ? yForYear(yv) : NaN }
+    }
+  }
+  laneX += laneEndY.length * plainStride
   // Unions / undated: derive y from partners (or leave at top).
   for (const [uid] of g.partnersOfUnion) {
     const ps = (g.partnersOfUnion.get(uid) || []).map(p => out[p]?.y).filter(v => Number.isFinite(v)) as number[]
@@ -896,10 +926,6 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
   // Attach undated "satellites" (e.g. 著作 works) right beside their dated anchor instead of
   // letting the chain / component layout fling them sideways. Only touches nodes with NO
   // explicit year, so fully-dated charts (emperors etc.) are completely unaffected.
-  const hasExplicitYear = (id: string) => {
-    const n = g.nodeMap.get(id)
-    return n ? (parseYear(n.birth) ?? parseYear(n.death)) != null : false
-  }
   const nbr = new Map<string, string[]>()
   const addNbr = (a: string, b: string) => { const x = nbr.get(a); if (x) x.push(b); else nbr.set(a, [b]) }
   for (const l of links) {
