@@ -893,6 +893,30 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
   }
   for (const id in out) if (!Number.isFinite(out[id].y)) out[id].y = topY
 
+  // Attach undated "satellites" (e.g. 著作 works) right beside their dated anchor instead of
+  // letting the chain / component layout fling them sideways. Only touches nodes with NO
+  // explicit year, so fully-dated charts (emperors etc.) are completely unaffected.
+  const hasExplicitYear = (id: string) => {
+    const n = g.nodeMap.get(id)
+    return n ? (parseYear(n.birth) ?? parseYear(n.death)) != null : false
+  }
+  const nbr = new Map<string, string[]>()
+  const addNbr = (a: string, b: string) => { const x = nbr.get(a); if (x) x.push(b); else nbr.set(a, [b]) }
+  for (const l of links) {
+    if (g.nodeMap.has(l.source) && g.nodeMap.has(l.target)) { addNbr(l.source, l.target); addNbr(l.target, l.source) }
+  }
+  const fanCount = new Map<string, number>()
+  for (const n of g.persons) {
+    if (hasExplicitYear(n.id) || out[n.id] == null) continue
+    const anchor = (nbr.get(n.id) || []).find(m => hasExplicitYear(m) && out[m])
+    if (!anchor) continue
+    const k = fanCount.get(anchor) ?? 0; fanCount.set(anchor, k + 1)   // stack multiple works in a small grid beside the author
+    out[n.id] = {
+      x: out[anchor].x + col * 0.8 + Math.floor(k / 3) * (col * 0.7),
+      y: out[anchor].y + ((k % 3) - 1) * (rowGap * 0.3),
+    }
+  }
+
   const xs = Object.values(out).map(p => p.x)
   const shiftX = centerX - (Math.min(...xs) + Math.max(...xs)) / 2
   for (const id in out) out[id].x += shiftX
