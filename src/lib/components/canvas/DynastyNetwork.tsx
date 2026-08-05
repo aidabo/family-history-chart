@@ -194,9 +194,14 @@ type SimLink = Omit<Relationship, 'source' | 'target'> & {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+// Default fill / edge colour per non-human entity kind (著作 etc.). Keeps entities visually
+// distinct from people (blue/pink/slate) without needing separate shapes or dialogs.
+const ENTITY_COLOR: Record<string, string> = { work: '#b45309' }   // 著作 = amber-brown
+
 function nodeFill(d: SimNode): string {
   if (d.bgColor) return d.bgColor
   if (d.type === 'union') return '#f97316'
+  if (d.entity) return ENTITY_COLOR[d.entity] ?? '#78716c'
   return d.gender === 'male' ? '#3b82f6' : d.gender === 'female' ? '#ec4899' : '#64748b'
 }
 
@@ -1090,6 +1095,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
 
     const edgeColor = (d: SimLink): string => d.color || (
+      d.label === '著作'        ? ENTITY_COLOR.work :   // author → 著作 entity
       d.type === 'marriage'     ? '#f97316' :
       d.type === 'remarriage'   ? '#d946ef' :
       d.type === 'partner'      ? '#f97316' :
@@ -2810,7 +2816,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       <div className="absolute top-2 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
         title={t('People count tip', '登場人物の総数（メモ・結婚ノードを除く）')}>
         <UsersIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
-        <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note').length}</span>
+        <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note' && !p.entity).length}</span>
         <span>{t('people', '人')}</span>
       </div>
       )}

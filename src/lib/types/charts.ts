@@ -44,9 +44,16 @@ export type NoteShape =
   // manga-style frame silhouettes (parametric paths that resize with the text)
   | 'oval' | 'cloud' | 'burst'
 
+// Non-human related entities linked to a person (著作/works today; org/event/place/concept
+// later). A node with `entity` set is NOT a person: it is rendered/edited without the
+// person-only fields (gender, birth/death), gets a kind-specific default colour, and is
+// excluded from the people count. Undefined = an ordinary person (fully backward-compatible).
+export type EntityKind = 'work'
+
 export interface PersonNode {
   id: string
   type?: 'person' | 'union' | 'note'
+  entity?: EntityKind     // set → non-human related-entity node (e.g. 著作)
   noteShape?: NoteShape   // visual style for a type:'note' box
   name: string
   title?: string

@@ -26,6 +26,8 @@ const HEADER_ALIASES: Record<string, string> = {
   '主君': 'lord', '君主': 'lord', '仕える': 'lord', 'lord': 'lord', 'liege': 'lord', 'master': 'lord',
   '継承': 'succession', '繼承': 'succession', '继承': 'succession', 'succession': 'succession',
   '朝代更换': 'dynastyChange', '朝代更替': 'dynastyChange', '换代': 'dynastyChange', 'custom': 'dynastyChange',
+  '師': 'teacher', '师': 'teacher', 'teacher': 'teacher',
+  '著作': 'works', '作品': 'works', 'works': 'works',
   'メモ': 'note', '説明': 'note', 'note': 'note', 'description': 'note',
   'id': 'id', 'ID': 'id',
 }
@@ -204,6 +206,29 @@ export function parseCsvToGraph(text: string): ParsedGraph {
     }
   }
 
+  // 師(teacher) → custom edge labelled 師 (学統の継承): source=師 → target=this person.
+  // e.g. 孔子→曾子→子思→孟子 の系譜. Multiple teachers allowed (`；` separated).
+  for (const r of rows) {
+    const ref = refOf(r)
+    if (!ref) continue
+    for (const t of splitRefs(r.teacher)) {
+      ensure(t)
+      relationships.push({ source: t, target: ref, type: 'custom', label: '師' })
+    }
+  }
+
+  // 著作(works) → custom edge labelled 著作: source=author → target=work.
+  // The work itself is auto-created as a stub node (name only) — 著作をノードとして表示する.
+  // Multiple works allowed (`；` separated); a shared work links all its authors.
+  for (const r of rows) {
+    const ref = refOf(r)
+    if (!ref) continue
+    for (const w of splitRefs(r.works)) {
+      const wp = ensure(w); if (wp && !wp.entity && !wp.birth && !wp.death) wp.entity = 'work'  // mark the stub as a 著作 entity node
+      relationships.push({ source: ref, target: w, type: 'custom', label: '著作' })
+    }
+  }
+
   return { persons: Array.from(persons.values()), relationships }
 }
 
@@ -226,10 +251,10 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string>; succession: Set<string>; dynastyChange: Set<string> }
+  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string>; succession: Set<string>; dynastyChange: Set<string>; works: Set<string>; teacher: Set<string> }
   const acc = new Map<string, Acc>()
   const get = (id: string): Acc => {
-    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set(), succession: new Set(), dynastyChange: new Set() }; acc.set(id, a) }
+    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set(), succession: new Set(), dynastyChange: new Set(), works: new Set(), teacher: new Set() }; acc.set(id, a) }
     return a
   }
   const addParent = (childId: string, parent?: PersonNode) => {
@@ -258,10 +283,17 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       // 継承: target succeeded the source. Recorded in the 継承 column.
       const pred = byId.get(r.source)
       if (pred) get(r.target).succession.add(label(pred))
-    } else if (r.type === 'custom' && r.label === '朝代更换') {
-      // 朝代更换: target's dynasty replaced the source's. Recorded in the 朝代更换 column.
-      const prev = byId.get(r.source)
-      if (prev) get(r.target).dynastyChange.add(label(prev))
+    } else if (r.type === 'custom') {
+      // Labelled custom edges round-trip to their own column. 師 / 朝代更换 belong to the
+      // TARGET (edge = other→this), but 著作's edge is author→work, so the 著作 column belongs
+      // to the SOURCE (author); the work node itself is not emitted as a row (see below).
+      if (r.label === '著作') {
+        const src = byId.get(r.source), tgt = byId.get(r.target)
+        if (src) get(src.id).works.add(label(tgt))
+      } else {
+        const src = byId.get(r.source)
+        if (src) get(r.target)[r.label === '師' ? 'teacher' : 'dynastyChange'].add(label(src))
+      }
     } else if (r.type === 'marriage' || r.type === 'remarriage' || r.type === 'partner') {
       // marriage via union: partners of the same union are each other's spouses
       if (r.type === 'partner') continue // handled below
@@ -281,19 +313,21 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', 'メモ']
+  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', '著作', '師', 'メモ']
   const genderJa = (g?: string) => g === 'male' ? '男' : g === 'female' ? '女' : g === 'other' ? 'その他' : ''
   const join = (s: Set<string>) => Array.from(s).filter(Boolean).join('；')
 
   const lines = [headers.join(',')]
   for (const p of persons) {
     if (p.type === 'union') continue
+    if (p.entity) continue   // 著作 etc. are emitted via their author's column, not as their own row
     const a = acc.get(p.id)
     lines.push([
       label(p), genderJa(p.gender), p.birth ?? '', p.death ?? '',
       join(a?.father ?? new Set()), join(a?.mother ?? new Set()), join(a?.spouse ?? new Set()),
       join(a?.foster ?? new Set()), join(a?.step ?? new Set()),
       p.title ?? '', p.period ?? '', join(a?.lord ?? new Set()), join(a?.succession ?? new Set()), join(a?.dynastyChange ?? new Set()),
+      join(a?.works ?? new Set()), join(a?.teacher ?? new Set()),
       p.description ?? '',
     ].map(csvCell).join(','))
   }

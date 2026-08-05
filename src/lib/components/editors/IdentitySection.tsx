@@ -73,6 +73,8 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
         />
         <p className="mt-0.5 text-[10px] text-gray-400">{t('Period hint', '表示は「肩書(期間)」。年表の基準に選べます（既定は生没年）。')}</p>
       </div>
+      {/* Person-only fields — hidden for non-human entity nodes (著作 etc.) */}
+      {!node.entity && (
       <div>
         <label className="block text-xs text-gray-500 mb-1">{t('Gender', 'Gender')}</label>
         <div className="flex gap-1">
@@ -91,6 +93,8 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
           ))}
         </div>
       </div>
+      )}
+      {!node.entity && (
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="block text-xs text-gray-500 mb-0.5">{t('Birth', 'Birth')}</label>
@@ -113,6 +117,7 @@ export function IdentitySection({ node, onChange, onUpload }: Props) {
           />
         </div>
       </div>
+      )}
       <div>
         <label className="block text-xs text-gray-500 mb-0.5">{t('Image / Video', 'Image / Video')}</label>
         <div className="flex items-center gap-2">
