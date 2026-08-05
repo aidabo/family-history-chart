@@ -572,8 +572,9 @@ function relaxRows(
   }
 }
 
-// Fill in missing birth years from parents (+30), children (-30) and spouses (=).
-function inferYears(g: Graph): Map<string, number> {
+// Fill in missing birth years from parents (+30), children (-30) and spouses (=),
+// then pull any still-undated node toward a connected dated neighbour over ANY edge.
+function inferYears(g: Graph, links: LayoutLink[]): Map<string, number> {
   const year = new Map<string, number>()
   for (const p of g.persons) {
     const y = parseYear(p.birth) ?? (parseYear(p.death) != null ? parseYear(p.death)! - 50 : null)
@@ -594,6 +595,29 @@ function inferYears(g: Graph): Map<string, number> {
       for (const par of g.effParents.get(p.id) || []) { const y = year.get(par); if (y != null) cand.push(y + 30) }
       for (const ch of g.effChildren.get(p.id) || []) { const y = year.get(ch); if (y != null) cand.push(y - 30) }
       for (const sp of spouseOf.get(p.id) || []) { const y = year.get(sp); if (y != null) cand.push(y) }
+      if (cand.length) {
+        cand.sort((a, b) => a - b)
+        year.set(p.id, Math.round(cand[Math.floor(cand.length / 2)]))
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+
+  // Pull any STILL-undated node (e.g. a 著作 work stub, or a person linked only by a
+  // non-family edge like 師) toward a connected dated neighbour over ANY link type, so it
+  // sits near that node on the time axis instead of being dumped at the very top.
+  const adj = new Map<string, string[]>()
+  const link = (a: string, b: string) => { const x = adj.get(a); if (x) x.push(b); else adj.set(a, [b]) }
+  for (const l of links) {
+    if (!g.nodeMap.has(l.source) || !g.nodeMap.has(l.target)) continue
+    link(l.source, l.target); link(l.target, l.source)
+  }
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false
+    for (const p of g.persons) {
+      if (year.has(p.id)) continue
+      const cand = (adj.get(p.id) || []).map(n => year.get(n)).filter((v): v is number => v != null)
       if (cand.length) {
         cand.sort((a, b) => a - b)
         year.set(p.id, Math.round(cand[Math.floor(cand.length / 2)]))
@@ -801,7 +825,7 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
 
   const g = buildGraph(nodes, links)
   if (!g.persons.length) return { positions: {}, mode: 'timeline' }
-  const year = inferYears(g)
+  const year = inferYears(g, links)
   const occupied = [...new Set([...year.values()])].sort((a, b) => a - b)
   const { yForYear } = buildYearAxis(occupied, topY, rowGap)
 
@@ -947,7 +971,7 @@ function computeSingleLayout(
       rowValue.set(uid, gg); yOf.set(uid, topY + gg * rowGap)
     }
   } else {
-    const year = inferYears(g)
+    const year = inferYears(g, links)
     // Adaptive (non-linear) time axis: every year that actually has people advances by a
     // fixed step, so a crowded period is stretched out (effectively magnified, like a
     // zoom on that range), while empty stretches between eras only add a small, capped

@@ -1121,6 +1121,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         d.type === 'rival'      ? '6,2' : '0'
       )
       .attr('marker-end', d => {
+        if (d.label === '師') return 'url(#arrow)'   // 師→弟子: arrow points at the student, so the tail is the teacher
         if (d.type === 'parent-child') return 'url(#arrow)'
         if (d.type === 'marriage' || d.type === 'remarriage') return 'url(#marriage-dot)'
         if (d.type === 'succession') return 'url(#succession-circle)'
