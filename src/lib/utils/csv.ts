@@ -44,6 +44,7 @@ const HEADER_ALIASES: Record<string, string> = {
   '事件': 'event', '出来事': 'event', 'event': 'event',
   '地': 'place', '地名': 'place', '場所': 'place', 'place': 'place',
   '概念': 'concept', '思想': 'concept', 'concept': 'concept',
+  '画像': 'image', '写真': 'image', '動画': 'image', 'image': 'image', 'photo': 'image', 'img': 'image', 'video': 'image',
   'メモ': 'note', '説明': 'note', 'note': 'note', 'description': 'note',
   'id': 'id', 'ID': 'id',
 }
@@ -122,6 +123,7 @@ export function parseCsvToGraph(text: string): ParsedGraph {
     if (r.death) p.death = r.death
     if (r.title) p.title = r.title
     if (r.period) p.period = r.period
+    if (r.image) p.image = r.image   // 画像/動画 URL（動画は表示側で判定）
     if (r.note) p.description = r.note
   }
 
@@ -331,7 +333,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', '著作', '学派', '事件', '地', '概念', '師', 'メモ']
+  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', '著作', '学派', '事件', '地', '概念', '師', '画像', 'メモ']
   const genderJa = (g?: string) => g === 'male' ? '男' : g === 'female' ? '女' : g === 'other' ? 'その他' : ''
   const join = (s: Set<string>) => Array.from(s).filter(Boolean).join('；')
 
@@ -346,6 +348,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       join(a?.foster ?? new Set()), join(a?.step ?? new Set()),
       p.title ?? '', p.period ?? '', join(a?.lord ?? new Set()), join(a?.succession ?? new Set()), join(a?.dynastyChange ?? new Set()),
       join(a?.works ?? new Set()), join(a?.org ?? new Set()), join(a?.event ?? new Set()), join(a?.place ?? new Set()), join(a?.concept ?? new Set()), join(a?.teacher ?? new Set()),
+      p.image ?? '',
       p.description ?? '',
     ].map(csvCell).join(','))
   }
