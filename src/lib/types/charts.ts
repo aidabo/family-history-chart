@@ -48,7 +48,8 @@ export type NoteShape =
 // later). A node with `entity` set is NOT a person: it is rendered/edited without the
 // person-only fields (gender, birth/death), gets a kind-specific default colour, and is
 // excluded from the people count. Undefined = an ordinary person (fully backward-compatible).
-export type EntityKind = 'work'
+export type EntityKind = 'work' | 'org' | 'event' | 'place' | 'concept'
+// work=著作 / org=学派・組織 / event=事件 / place=地・場所 / concept=概念・思想
 
 export interface PersonNode {
   id: string

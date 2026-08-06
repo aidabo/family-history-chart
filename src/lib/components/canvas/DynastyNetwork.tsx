@@ -5,7 +5,7 @@ import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSetting
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, type LayoutMode } from '@/utils/familyLayout'
-import { relationLabel } from '@/utils/relationLabels'
+import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
 
 // Title shown on a node: "title(period)" when a 在位/期間 is set (e.g. 皇帝(626-649)),
 // otherwise just the title, or "(period)" when only a period is set.
@@ -194,9 +194,19 @@ type SimLink = Omit<Relationship, 'source' | 'target'> & {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// Default fill / edge colour per non-human entity kind (著作 etc.). Keeps entities visually
-// distinct from people (blue/pink/slate) without needing separate shapes or dialogs.
-const ENTITY_COLOR: Record<string, string> = { work: '#b45309' }   // 著作 = amber-brown
+// Default fill / edge colour per non-human entity kind. Keeps entities visually distinct
+// from people (blue/pink/slate) without needing separate shapes or dialogs.
+const ENTITY_COLOR: Record<string, string> = {
+  work: '#b45309',     // 著作 amber-brown
+  org: '#16a34a',      // 学派・組織 green
+  event: '#ea580c',    // 事件 orange
+  place: '#0d9488',    // 地・場所 teal
+  concept: '#7c3aed',  // 概念・思想 violet
+}
+// Entity edge label → colour (matches the entity node it points at).
+const ENTITY_EDGE_COLOR: Record<string, string> = {
+  '著作': ENTITY_COLOR.work, '学派': ENTITY_COLOR.org, '事件': ENTITY_COLOR.event, '地': ENTITY_COLOR.place, '概念': ENTITY_COLOR.concept,
+}
 
 function nodeFill(d: SimNode): string {
   if (d.bgColor) return d.bgColor
@@ -1095,7 +1105,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
 
     const edgeColor = (d: SimLink): string => d.color || (
-      d.label === '著作'        ? ENTITY_COLOR.work :   // author → 著作 entity
+      (d.label && ENTITY_EDGE_COLOR[d.label]) ? ENTITY_EDGE_COLOR[d.label] :   // person → entity edge
       d.type === 'marriage'     ? '#f97316' :
       d.type === 'remarriage'   ? '#d946ef' :
       d.type === 'partner'      ? '#f97316' :
@@ -2321,7 +2331,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .data(links).enter().append('text')
       .text(d => {
         if (d.type === 'partner') return ''
-        return d.label || relationLabel(d.type, locale) || d.type
+        return customEdgeLabel(d.label, locale) || relationLabel(d.type, locale) || d.type
       })
       .attr('font-size', 11).attr('text-anchor', 'middle').attr('pointer-events', 'none')
       .attr('fill', edgeColor)

@@ -4,9 +4,21 @@
 // parseCsvToGraph() returns { persons, relationships } in the same shape the JSON
 // importer consumes (union nodes included), so both paths share the merge logic.
 
-import type { PersonNode, Relationship } from '@/types/charts'
+import type { PersonNode, Relationship, EntityKind } from '@/types/charts'
 
 type Row = Record<string, string>
+
+// Non-human "entity" columns: each cell value becomes an entity node linked person→entity
+// via a custom edge (label). `col` = canonical header key (via HEADER_ALIASES); `label`
+// doubles as the export column header. See docs/csv-format.md.
+const ENTITY_COLUMNS: { col: string; kind: EntityKind; label: string }[] = [
+  { col: 'works',   kind: 'work',    label: '著作' },
+  { col: 'org',     kind: 'org',     label: '学派' },
+  { col: 'event',   kind: 'event',   label: '事件' },
+  { col: 'place',   kind: 'place',   label: '地' },
+  { col: 'concept', kind: 'concept', label: '概念' },
+]
+const ENTITY_LABEL_COL: Record<string, string> = Object.fromEntries(ENTITY_COLUMNS.map((e) => [e.label, e.col]))
 
 // Header aliases → canonical field key.
 const HEADER_ALIASES: Record<string, string> = {
@@ -28,6 +40,10 @@ const HEADER_ALIASES: Record<string, string> = {
   '朝代更换': 'dynastyChange', '朝代更替': 'dynastyChange', '换代': 'dynastyChange', 'custom': 'dynastyChange',
   '師': 'teacher', '师': 'teacher', 'teacher': 'teacher',
   '著作': 'works', '作品': 'works', 'works': 'works',
+  '学派': 'org', '流派': 'org', '組織': 'org', '所属': 'org', 'school': 'org', 'org': 'org',
+  '事件': 'event', '出来事': 'event', 'event': 'event',
+  '地': 'place', '地名': 'place', '場所': 'place', 'place': 'place',
+  '概念': 'concept', '思想': 'concept', 'concept': 'concept',
   'メモ': 'note', '説明': 'note', 'note': 'note', 'description': 'note',
   'id': 'id', 'ID': 'id',
 }
@@ -217,15 +233,17 @@ export function parseCsvToGraph(text: string): ParsedGraph {
     }
   }
 
-  // 著作(works) → custom edge labelled 著作: source=author → target=work.
-  // The work itself is auto-created as a stub node (name only) — 著作をノードとして表示する.
-  // Multiple works allowed (`；` separated); a shared work links all its authors.
-  for (const r of rows) {
-    const ref = refOf(r)
-    if (!ref) continue
-    for (const w of splitRefs(r.works)) {
-      const wp = ensure(w); if (wp && !wp.entity && !wp.birth && !wp.death) wp.entity = 'work'  // mark the stub as a 著作 entity node
-      relationships.push({ source: ref, target: w, type: 'custom', label: '著作' })
+  // Non-human entity columns (著作/学派/事件/地/概念) → each value becomes a kind-tagged
+  // entity node, linked person → entity via a custom edge (label). Multiple allowed
+  // (`；` separated); a shared entity (a school, a co-authored work) links all its people.
+  for (const spec of ENTITY_COLUMNS) {
+    for (const r of rows) {
+      const ref = refOf(r)
+      if (!ref) continue
+      for (const v of splitRefs(r[spec.col])) {
+        const ep = ensure(v); if (ep && !ep.entity && !ep.birth && !ep.death) ep.entity = spec.kind
+        relationships.push({ source: ref, target: v, type: 'custom', label: spec.label })
+      }
     }
   }
 
@@ -251,10 +269,10 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string>; succession: Set<string>; dynastyChange: Set<string>; works: Set<string>; teacher: Set<string> }
+  type Acc = { father: Set<string>; mother: Set<string>; spouse: Set<string>; foster: Set<string>; step: Set<string>; lord: Set<string>; succession: Set<string>; dynastyChange: Set<string>; works: Set<string>; org: Set<string>; event: Set<string>; place: Set<string>; concept: Set<string>; teacher: Set<string> }
   const acc = new Map<string, Acc>()
   const get = (id: string): Acc => {
-    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set(), succession: new Set(), dynastyChange: new Set(), works: new Set(), teacher: new Set() }; acc.set(id, a) }
+    let a = acc.get(id); if (!a) { a = { father: new Set(), mother: new Set(), spouse: new Set(), foster: new Set(), step: new Set(), lord: new Set(), succession: new Set(), dynastyChange: new Set(), works: new Set(), org: new Set(), event: new Set(), place: new Set(), concept: new Set(), teacher: new Set() }; acc.set(id, a) }
     return a
   }
   const addParent = (childId: string, parent?: PersonNode) => {
@@ -284,12 +302,12 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       const pred = byId.get(r.source)
       if (pred) get(r.target).succession.add(label(pred))
     } else if (r.type === 'custom') {
-      // Labelled custom edges round-trip to their own column. 師 / 朝代更换 belong to the
-      // TARGET (edge = other→this), but 著作's edge is author→work, so the 著作 column belongs
-      // to the SOURCE (author); the work node itself is not emitted as a row (see below).
-      if (r.label === '著作') {
+      // Entity edges (著作/学派/事件/地/概念) belong to the person = SOURCE; the entity node is
+      // NOT emitted as its own row. 師 / 朝代更换 belong to the TARGET (edge = other→this).
+      const entityCol = r.label ? ENTITY_LABEL_COL[r.label] : undefined
+      if (entityCol) {
         const src = byId.get(r.source), tgt = byId.get(r.target)
-        if (src) get(src.id).works.add(label(tgt))
+        if (src) get(src.id)[entityCol as keyof Acc].add(label(tgt))
       } else {
         const src = byId.get(r.source)
         if (src) get(r.target)[r.label === '師' ? 'teacher' : 'dynastyChange'].add(label(src))
@@ -313,7 +331,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
     }
   }
 
-  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', '著作', '師', 'メモ']
+  const headers = ['名前', '性別', '生年', '没年', '父', '母', '配偶者', '養父母', '義父母', '肩書', '期間', '主君', '継承', '朝代更换', '著作', '学派', '事件', '地', '概念', '師', 'メモ']
   const genderJa = (g?: string) => g === 'male' ? '男' : g === 'female' ? '女' : g === 'other' ? 'その他' : ''
   const join = (s: Set<string>) => Array.from(s).filter(Boolean).join('；')
 
@@ -327,7 +345,7 @@ export function graphToCsv(persons: PersonNode[], relationships: Relationship[])
       join(a?.father ?? new Set()), join(a?.mother ?? new Set()), join(a?.spouse ?? new Set()),
       join(a?.foster ?? new Set()), join(a?.step ?? new Set()),
       p.title ?? '', p.period ?? '', join(a?.lord ?? new Set()), join(a?.succession ?? new Set()), join(a?.dynastyChange ?? new Set()),
-      join(a?.works ?? new Set()), join(a?.teacher ?? new Set()),
+      join(a?.works ?? new Set()), join(a?.org ?? new Set()), join(a?.event ?? new Set()), join(a?.place ?? new Set()), join(a?.concept ?? new Set()), join(a?.teacher ?? new Set()),
       p.description ?? '',
     ].map(csvCell).join(','))
   }

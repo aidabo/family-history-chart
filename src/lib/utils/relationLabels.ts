@@ -42,3 +42,21 @@ export function relationLabelMulti(type?: string): string {
   if (!m) return type
   return [m.ja, m.zh, m.en].filter((v, i, a) => a.indexOf(v) === i).join(' / ')
 }
+
+// Fixed custom-edge labels emitted by the CSV importer (entity edges 著作/学派/事件/地/概念,
+// plus 師 / 朝代更换). The STORED value stays the Japanese key (for CSV round-trip); only the
+// canvas DISPLAY is localised. Unknown labels (user-entered) pass through unchanged.
+export const CUSTOM_EDGE_LABELS: Record<string, { ja: string; zh: string; en: string }> = {
+  '著作':     { ja: '著作', zh: '著作', en: 'Works' },
+  '学派':     { ja: '学派', zh: '学派', en: 'School' },
+  '事件':     { ja: '事件', zh: '事件', en: 'Event' },
+  '地':       { ja: '地', zh: '地', en: 'Place' },
+  '概念':     { ja: '概念', zh: '概念', en: 'Concept' },
+  '師':       { ja: '師', zh: '师', en: 'Teacher' },
+  '朝代更换': { ja: '王朝交代', zh: '朝代更换', en: 'Dynasty change' },
+}
+export function customEdgeLabel(label?: string, locale?: string): string {
+  if (!label) return ''
+  const m = CUSTOM_EDGE_LABELS[label]
+  return m ? (m[normLocale(locale)] || m.ja) : label
+}
