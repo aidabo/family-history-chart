@@ -487,6 +487,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const nodesRef = useRef<SimNode[]>([])
   const linksRef = useRef<SimLink[]>([])
   const nodePositionsRef = useRef(new Map<string, { x: number; y: number }>())
+  const pendingFitRef = useRef(false)   // after an auto-layout, the render effect fits the new positions (avoids a race with its transform reapply)
   const draggingRef = useRef(false)
   const connectModeRef = useRef({ active: false, sourceId: '' })
   const currentTransform = useRef(d3.zoomIdentity)
@@ -757,12 +758,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
     setLastLayoutKind(resolved)   // drives the timeline year axis
     simulationRef.current.alpha(0.3).restart()
-    // Fit the freshly-arranged tree into view.
-    if (svgRef.current && zoomRef.current) {
-      const t = computeFit(dimensions.width, dimensions.height)
-      d3.select(svgRef.current).transition().duration(400).call(zoomRef.current.transform, t)
-    }
-  }, [onBatchPositionChange, computeFit, dimensions, timelineBasis, timelineCols])
+    // Fit is done by the render effect AFTER it rebuilds with the new positions
+    // (onBatchPositionChange above triggers that re-run). Doing it here would race with the
+    // effect reapplying its own transform — that race intermittently left content off-screen
+    // and the grid out of view when switching layout modes.
+    pendingFitRef.current = true
+  }, [onBatchPositionChange, timelineBasis, timelineCols])
 
   const handleAutoLayout = useCallback(() => runAutoLayout(layoutMode), [runAutoLayout, layoutMode])
 
@@ -2671,6 +2672,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       currentTransform.current = t
       initialZoomApplied.current = true
       if (hasSaved) savedViewportApplied.current = true
+    } else if (pendingFitRef.current) {
+      // An auto-layout just ran: fit the freshly-arranged content now that the effect has
+      // rebuilt with the new positions (owning the fit here avoids the transform-reapply race).
+      pendingFitRef.current = false
+      const t = computeFit(dimensions.width, dimensions.height)
+      svg.call(zoom.transform, t)
+      currentTransform.current = t
     } else {
       svg.call(zoom.transform, currentTransform.current)
     }
