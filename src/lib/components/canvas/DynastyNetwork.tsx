@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
@@ -16,7 +16,7 @@ function displayTitle(d: { title?: string; period?: string }): string {
 function hasTitleText(d: { title?: string; period?: string }): boolean {
   return !!(d.title || d.period)
 }
-import { UsersIcon, AdjustmentsHorizontalIcon, XMarkIcon, FilmIcon } from '@heroicons/react/24/outline'
+import { UsersIcon, AdjustmentsHorizontalIcon, XMarkIcon, FilmIcon, FunnelIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 
 // Resolve a field's text style: per-field override (nameStyle/titleStyle/descriptionStyle)
 // falling back to the node-level defaults (labelColor/labelFontSize/fontFamily/labelBold).
@@ -399,6 +399,13 @@ function connectedComponent(startId: string, links: SimLink[]): string[] {
   return [...seen]
 }
 
+// Visibility-filter key for a relationship. Core types filter by `type`; custom
+// edges (著作/学派/事件/地/概念/師/朝代更换 …) all share type:'custom', so they
+// are keyed by their `label` to be hidden/shown individually.
+function relationKey(r: { type: string; label?: string }): string {
+  return r.type === 'custom' ? `custom:${r.label || ''}` : r.type
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 export interface DynastyNetworkHandle {
@@ -515,6 +522,17 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [timelineBasis, setTimelineBasis] = useState<'lifespan' | 'period'>('lifespan')
   // 年表: 一直線の系譜（皇帝の継承など）を左右に折り返す列数＝表示幅の制御（既定4）。
   const [timelineCols, setTimelineCols] = useState(4)
+  // Relation visibility filter (persisted in viewSettings) + node search (transient).
+  // Both work in edit AND view/preview — the UI sits outside the edit-only toolbar.
+  const [hiddenRelations, setHiddenRelations] = useState<string[]>([])
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchActive, setSearchActive] = useState(0)   // keyboard-highlighted suggestion index
+  // A transient pulse ring shown at the viewport center after a search-select, so
+  // the matched node is unmistakable. nonce also remounts the element to restart the anim.
+  const [searchPulse, setSearchPulse] = useState<number | null>(null)
+  const searchPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The birth/death fed to the timeline layout & axis: swap in the period's start/end when
   // the basis is 'period' (so emperors line up by reign, not birth).
   const tlBirth = (n: { birth?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodStart(n.period) : n.birth
@@ -716,8 +734,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     },
     getViewSettings: (): ViewSettings => ({
       layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols,
+      hiddenRelations: hiddenRelations.length ? hiddenRelations : undefined,
     }),
-  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols])
+  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols, hiddenRelations])
 
   // Restore saved toolbar/layout settings once when the page loads. Positions are already
   // stored at the saved spacing, so spacing only restores the slider baseline (no re-scale);
@@ -735,7 +754,82 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
     if (vs.timelineBasis === 'lifespan' || vs.timelineBasis === 'period') setTimelineBasis(vs.timelineBasis)
     if (typeof vs.timelineCols === 'number') setTimelineCols(vs.timelineCols)
+    if (Array.isArray(vs.hiddenRelations)) setHiddenRelations(vs.hiddenRelations.filter((k) => typeof k === 'string'))
   }, [initialViewSettings])
+
+  // Distinct relation kinds present in the chart (for the filter panel; localized label + count).
+  const relationKinds = useMemo(() => {
+    const m = new Map<string, { key: string; label: string; count: number }>()
+    for (const r of relationships) {
+      const key = relationKey(r)
+      const label = r.type === 'custom'
+        ? (customEdgeLabel(r.label, locale) || r.label || t('Custom', 'カスタム'))
+        : (relationLabel(r.type, locale) || r.type)
+      const e = m.get(key)
+      if (e) e.count += 1
+      else m.set(key, { key, label, count: 1 })
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count)
+  }, [relationships, locale, t])
+
+  // Node search results (name + title, case-insensitive). Transient — not persisted.
+  const searchResults = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return [] as PersonNode[]
+    return persons
+      .filter(p => p.type !== 'union' &&
+        ((p.name || '').toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q)))
+      .slice(0, 12)
+  }, [persons, searchTerm])
+
+  const toggleRelation = useCallback((key: string) => {
+    setHiddenRelations(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  }, [])
+
+  // Smoothly center the viewport on a node (keeps current zoom). Used by search.
+  const panToNode = useCallback((id: string) => {
+    if (!svgRef.current || !zoomRef.current) return
+    const node = nodesRef.current.find(n => n.id === id)
+    if (!node || node.x == null || node.y == null) return
+    const k = currentTransform.current.k || 1
+    const newT = d3.zoomIdentity
+      .translate(dimensions.width / 2 - node.x * k, dimensions.height / 2 - node.y * k)
+      .scale(k)
+    d3.select(svgRef.current).transition().duration(400).call(zoomRef.current.transform, newT)
+    currentTransform.current = newT
+  }, [dimensions])
+
+  const handleSearchSelect = useCallback((p: PersonNode) => {
+    setSearchOpen(false)
+    setSearchTerm('')
+    panToNode(p.id)
+    // Select it (highlight ring + host side panel) as if clicked, at the centered position.
+    cbRef.current.onNodeClick(p, dimensions.width / 2, dimensions.height / 2)
+    // Pulse a ring at the (now centered) node so it's unmistakable — in every mode.
+    setSearchPulse(n => (n ?? 0) + 1)
+    if (searchPulseTimer.current) clearTimeout(searchPulseTimer.current)
+    searchPulseTimer.current = setTimeout(() => setSearchPulse(null), 2600)
+  }, [panToNode, dimensions])
+  useEffect(() => () => { if (searchPulseTimer.current) clearTimeout(searchPulseTimer.current) }, [])
+
+  // Close the filter popover on an outside click (the button only toggles it).
+  // The popover is anchored to the canvas (not the button), so it needs its own
+  // ref alongside the button ref for the "clicked outside" test.
+  const filterBtnRef = useRef<HTMLButtonElement | null>(null)
+  const filterPopRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!filterOpen) return
+    const onDown = (e: Event) => {
+      const t = e.target as Node
+      if (filterBtnRef.current?.contains(t) || filterPopRef.current?.contains(t)) return
+      setFilterOpen(false)
+    }
+    // Capture phase + pointerdown: the D3 zoom/canvas swallows/stops bubbling
+    // pointer events, so a bubbling document listener never fires on a canvas
+    // click. Capture runs before the canvas handlers; pointerdown covers touch.
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [filterOpen])
 
   const runAutoLayout = useCallback((mode: LayoutMode) => {
     if (!simulationRef.current) return
@@ -886,18 +980,25 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // never re-scatters them — this preserves a computed Auto Layout (and dragged
     // positions) across re-renders. Only brand-new, unpositioned nodes are left free
     // for the force simulation to spread out.
-    const nodes: SimNode[] = graphPersons.map(p => {
+    let nodes: SimNode[] = graphPersons.map(p => {
       const s = nodePositionsRef.current.get(p.id)
       const px = s?.x ?? p.x, py = s?.y ?? p.y
       const hasPos = px != null && py != null
       return { ...p, x: px ?? fallX, y: py ?? fallY, ...(hasPos ? { fx: px, fy: py } : {}) }
     })
-    nodesRef.current = nodes
     const nodeMap = new Map(nodes.map(n => [n.id, n]))
 
+    // Relation visibility filter: drop hidden-type edges, and hide entity/union
+    // nodes left with no visible edge (declutter a complex chart). People always stay.
     const links: SimLink[] = relationships
       .map(r => ({ ...r, source: nodeMap.get(r.source)!, target: nodeMap.get(r.target)! }))
-      .filter(l => l.source && l.target)
+      .filter(l => l.source && l.target && !hiddenRelations.includes(relationKey(l)))
+    if (hiddenRelations.length) {
+      const connected = new Set<string>()
+      for (const l of links) { connected.add(l.source.id); connected.add(l.target.id) }
+      nodes = nodes.filter(n => connected.has(n.id) || (!n.entity && n.type !== 'union'))
+    }
+    nodesRef.current = nodes
     linksRef.current = links
 
     // Clip paths (shape-specific for image masking)
@@ -2742,7 +2843,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis, locale])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis, locale, hiddenRelations])
 
   // Toggle the drawing capture surface / eraser hit-testing when the active tool changes,
   // without rebuilding the whole canvas (which would flash all nodes).
@@ -2812,7 +2913,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       )}
 
       {!cinemaPlaying && (
-      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 bg-white p-2 rounded shadow">
+      <div className="absolute top-14 left-2 z-10 flex flex-col gap-1 bg-white p-2 rounded shadow">
         <button onClick={handleZoomIn}
           className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50"
           aria-label="Zoom In">+</button>
@@ -2831,12 +2932,107 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       )}
 
       {!cinemaPlaying && (
-      <div className="absolute top-2 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
+      <div className="absolute top-14 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
         title={t('People count tip', '登場人物の総数（メモ・結婚ノードを除く）')}>
         <UsersIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
         <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note' && !p.entity).length}</span>
         <span>{t('people', '人')}</span>
       </div>
+      )}
+
+      {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
+      {searchPulse !== null && (
+        <div key={searchPulse} className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+          <span className="block w-24 h-24 rounded-full border-4 border-rose-500 opacity-80 animate-ping" />
+        </div>
+      )}
+
+      {/* Node search + relation filter — visible in ALL modes (edit / preview / view),
+          so it must live OUTSIDE the edit-only toolbar. Search = find & center a node;
+          Filter = temporarily hide relation types to simplify a complex chart. */}
+      {!cinemaPlaying && (
+      <div className="absolute top-2 left-2 z-20 flex items-start gap-1">
+        {/* Search */}
+        <div className="relative">
+          <div className="flex items-center gap-1 bg-white/95 px-2 py-1 rounded shadow">
+            <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 shrink-0" />
+            <input
+              value={searchTerm}
+              onChange={e => { setSearchTerm(e.target.value); setSearchOpen(true); setSearchActive(0) }}
+              onFocus={() => setSearchOpen(true)}
+              onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { setSearchOpen(false); return }
+                if (searchResults.length === 0) return
+                if (e.key === 'ArrowDown') { e.preventDefault(); setSearchOpen(true); setSearchActive(i => Math.min(i + 1, searchResults.length - 1)) }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setSearchActive(i => Math.max(i - 1, 0)) }
+                else if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const p = searchResults[Math.max(0, Math.min(searchActive, searchResults.length - 1))]
+                  if (p) handleSearchSelect(p)
+                }
+              }}
+              placeholder={t('Search nodes', 'ノード検索（名前・肩書）')}
+              className="w-36 md:w-56 text-sm bg-transparent outline-none text-gray-700"
+            />
+            {searchTerm && (
+              <button type="button" onMouseDown={e => e.preventDefault()}
+                onClick={() => { setSearchTerm(''); setSearchOpen(false) }}
+                className="shrink-0 text-gray-400 hover:text-gray-600" aria-label={t('Clear', 'クリア')}>
+                <XMarkIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {searchOpen && searchTerm.trim() && (
+            <div className="absolute left-0 mt-1 w-64 max-h-64 overflow-auto bg-white rounded shadow border border-gray-200 text-sm">
+              {searchResults.length === 0 ? (
+                <div className="px-2 py-1.5 text-gray-400">{t('No match', '該当なし')}</div>
+              ) : searchResults.map((p, idx) => (
+                <button key={p.id} type="button" onMouseDown={e => e.preventDefault()}
+                  onMouseEnter={() => setSearchActive(idx)}
+                  onClick={() => handleSearchSelect(p)}
+                  className={`block w-full text-left px-2 py-1 ${idx === searchActive ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
+                  <span className="font-medium text-gray-800">{p.name}</span>
+                  {p.title && <span className="text-gray-500"> — {p.title}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Relation filter button (popover rendered below, anchored to the canvas) */}
+        {relationKinds.length > 0 && (
+        <button type="button" ref={filterBtnRef} onClick={() => setFilterOpen(o => !o)}
+          title={t('Filter relations tip', '関係の種類を一時的に表示/非表示にして図を簡略化')}
+          className={`shrink-0 flex items-center gap-1 px-2 py-1.5 rounded shadow text-sm ${hiddenRelations.length ? 'bg-amber-500 text-white' : 'bg-white/95 text-gray-700 hover:bg-gray-50'}`}>
+          <FunnelIcon className="w-4 h-4" />
+          <span className="hidden md:inline">{t('Filter', 'フィルタ')}{hiddenRelations.length ? ` (${hiddenRelations.length})` : ''}</span>
+        </button>
+        )}
+      </div>
+      )}
+
+      {/* Relation filter popover — anchored to the canvas top-left (NOT the button), so it
+          stays on-screen with margins on mobile too, width/height clamped to the viewport. */}
+      {!cinemaPlaying && filterOpen && relationKinds.length > 0 && (
+        <div ref={filterPopRef}
+          className="absolute top-12 left-2 z-30 w-60 max-w-[calc(100vw-1rem)] max-h-[70vh] overflow-auto bg-white rounded-lg shadow-lg border border-gray-200 p-2 text-sm">
+          <div className="flex items-center justify-between mb-1 px-0.5">
+            <span className="text-xs font-semibold text-gray-500">{t('Relations', '関係の表示')}</span>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setHiddenRelations([])} className="text-xs text-blue-600 hover:underline">{t('Show all', '全表示')}</button>
+              <button type="button" onClick={() => setHiddenRelations(relationKinds.map(r => r.key))} className="text-xs text-gray-500 hover:underline">{t('Hide all', '全非表示')}</button>
+            </div>
+          </div>
+          {relationKinds.map(rk => (
+            <label key={rk.key} className="flex items-center gap-2 py-0.5 px-0.5 rounded cursor-pointer hover:bg-gray-50">
+              <input type="checkbox" checked={!hiddenRelations.includes(rk.key)}
+                onChange={() => toggleRelation(rk.key)} className="h-4 w-4 rounded text-blue-600" />
+              <span className="flex-1 truncate text-gray-700">{rk.label}</span>
+              <span className="text-xs text-gray-400">{rk.count}</span>
+            </label>
+          ))}
+        </div>
       )}
 
       {/* Layout toolbar is edit-only: in preview / view the saved node positions are shown
