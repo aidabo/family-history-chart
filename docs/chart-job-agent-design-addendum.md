@@ -534,6 +534,35 @@ social_media_assets (画像＝削除対象)  id, storage_key(S3), thumbnail_stor
 ### 13-4. 検証
 Ghost `node --check`（social-gallery.js/custom-routes.js）OK／host `tsc --noEmit` エラー0／junction `cascadeDelete` 確認済み（孤児・FK違反なし）／worker `node --check`・`parsePersonContext` 実データ動作OK。
 
+## 14. プロジェクト artifacts：gallery preview・アップロード・クリア（2026-08-11 実装反映）
+
+計画は `docs/chart-project-artifacts-plan.md`（§5 で決定）。実装内容：
+
+### 14-1. DB — `social_media_assets.project_id`
+- migration `2026-08-11-…-add-social-media-assets-project-id.js`（nullable, index、非FK。chart_job_id と同方針）＋ `schema.js`。`upsertAsset` が `project_id` を永続化（欠落列フォールバックあり）。
+
+### 14-2. プロジェクト gallery preview（P1）
+- backend: gallery `project` スコープ（`listByAssetTable` の `projectId` フィルタ＝`project_id` 直 OR `chart_job_id→job.project_id`、所有権は「他人の個人プロジェクトのみ拒否」）＋ `GET /social/gallery/project`（broad proxy 直通）。
+- host: `ghostApi.getProjectGallery`。プロジェクト詳細ページに「ギャラリー」セクション（ジョブと同一 `GalleryAssetGrid`、削除アイコン対応）。
+
+### 14-3. アップロード（P2・asset_type 非依存）
+- **ローカル→project**: `resolveGalleryScope`/`resolveUploadContext` に `project` 追加（`gallery/chart_projects/{projectId}/`、owner_scope=`chart_jobs`＋`project_id`）。presign/finalize に `target='project'`＋`project_id`。`socialGalleryDirectUpload` に project 対応。
+- **user gallery→project**: `copyToProject`（サーバ側 S3 `copyObject`→新規行 project_id 付き）＋ `POST /social/gallery/copy-to-project`。`ghostApi.copyGalleryAssetToProject`。
+- host UI: `ChartProjectUploadControl`（タブ ローカル／ユーザーGallery）。将来 video/audio/file(pdf) もそのまま。
+
+### 14-4. ジョブ成果クリア（P3・S3 節約）
+- **S3 アダプタ（`content/adapters/storage/s3/src/index.js`）に `deletePrefix`（ListObjectsV2＋DeleteObjects バッチ1000、空prefix拒否）＋ `copy`（copyObject）追加**。`babel src→index.js` ビルド済み。
+- backend: `clearArtifacts`（`POST /social/ai/projects/:id/clear-artifacts`）— active ジョブ拒否 → プロジェクトの media 行削除（junction カスケード）→ **各ジョブ `result.cleared`＋`cleared_at` マーク（ジョブ行は残す）** → `deletePrefix` で `chart-jobs/{projectId}/jobs`・`/artifacts`（`include_artifacts=false`で温存）・`gallery/chart_jobs/{jobId}`・`gallery/chart_projects/{projectId}` を空に。
+- host: capability `clearProjectArtifactsWithAdminToken`＋api route＋ghost 再export（projects系は carve-out のため proxy 必須）。
+- UI: プロジェクト詳細に「ジョブ成果をクリア」ボタン。**ジョブ詳細ページは `result.cleared` 時に 生成ファイル/ギャラリー/インポート を隠しバナー表示**。
+
+### 14-5. #3 の回答（現状仕様）
+ジョブの `artifacts/images` 適用時、**別途 copy 不要**＝Publish で `jobs/{jobId}/→artifacts/{kind}/` にコピー済みでプロジェクト配下に存在。チャート適用は `social_chart_media`（chart↔asset）リンクのみ。
+
+### 14-6. 動作条件・検証
+- **Ghost 再起動＋マイグレーション**、S3 アダプタ再ビルド（再起動で反映）。media アダプタは同一バケット `think-ai-jobs`・pathPrefix 空前提で `chart-jobs/` も掃除（pathPrefix ありなら host `socialAiChartJobS3Cleanup` へ切替可）。
+- host `tsc --noEmit` 0／backend 8ファイル `node --check` OK／アダプタ compiled 検証OK。
+
 ---
 
-*本書は設計追補のみ（plan only）。実装は Phase 単位で別途 実装計画を作成する（§7 は実装対象、§8・§9・§10・§11・§12・§13 は実装済みの実行時挙動）。*
+*本書は設計追補のみ（plan only）。実装は Phase 単位で別途 実装計画を作成する（§7 は実装対象、§8〜§14 は実装済みの実行時挙動）。*
