@@ -403,7 +403,9 @@ worker は running 中、60秒ハートビートと各バッチ checkpoint で `
 | deepzoom-worker | `run-deepzoom-worker.sh` |
 | chart-job-worker | `run-chart-job-worker.sh`（`cd /app/tools/chart-worker && node src/runner.js`） |
 
-**全ランナーは同一イメージ・別コンテナ・同一 EC2** で稼働（`ghost-network`）。**コンテナ化の必須設定**：chart-worker の LLM は host 経由のため、env に **`AI_INTERNAL_BASE_URL=http://ghost-front:3000`（localhost 不可）** と **`SOCIAL_AI_INTERNAL_TOKEN`（host と同一）** を設定。
+**全ランナーは同一イメージ・別コンテナ・同一 EC2** で稼働（`ghost-network`）。**コンテナ化の必須設定**：chart-worker の LLM は host 経由のため、env に **`AI_INTERNAL_BASE_URL`** と **`SOCIAL_AI_INTERNAL_TOKEN`（host と同一）** を設定。
+
+> **※ §11 で更新**：AI の呼び先は公開 web（`ghost-front:3000`）ではなく、**runner 自身が同梱する Next をローカル起動**（`127.0.0.1:3000`）して叩く方式に変更（media job と同じ）。`AI_INTERNAL_BASE_URL` は起動スクリプトが自動上書きするため手動設定は不要。詳細は §11。
 
 **package.json スクリプト**（`apps/host`）：`docker:local:up`＝共有イメージのキャッシュビルド→`compose up -d`（全サービス）、`docker:local:chart`＝ビルド→chart-job-worker のみ、`docker:local:down`＝停止、`:only` 系＝再ビルドせず起動のみ、`docker:runner:build:local`＝キャッシュビルド。
 
@@ -420,6 +422,118 @@ worker は running 中、60秒ハートビートと各バッチ checkpoint で `
 
 host `tsc --noEmit` エラー0／worker `node --check` 全 OK／独立コードレビュー（13ファイル）で**回帰0・指摘1件（上記 9-4）を修正済み**。非 instruction 経路・LLM ラッパ・runner heartbeat・GET/DELETE ルート・他エージェントはいずれも不変を確認。
 
+## 10. 画像レビュー・再取得・AI生成 / 参照CSV / 進捗 / 接続改善（2026-08-10 実装反映）
+
+**目的**：画像取得は「同名別人・古代人が現代人・無関係」など**誤りが混じる**うえ、datacenter IP では **429 で欠落**も出る（例：西遊記 152名中 取得101／欠落51）。運用で「誤り画像を選んで再取得、または AI 生成で置換」「欠落分も同様に再取得/AI生成」を回せるようにする。既存機能・API・画面ロジックは非破壊、追加中心。
+
+### 10-1. 画像レビュー Dialog（誤り＋欠落を選択 → 再取得 / AI生成）
+- `ChartImageReviewDialog.tsx`（新）：既存 `GalleryAssetGrid` を**複数選択**で再利用。取得済み画像から**誤り**を選択、`job.result.missing` の**欠落名**は Chip で選択（全選択/全解除）。両者を**合算**して1ジョブ化。
+- 「**選択を再取得**」＝ `image-fetch`（`names` ＋ 補正語 `search_hint`）、「**AI生成で置換**」＝ `image-generate`（`names` ＋ `instruction`）。人物名＝画像ファイル名（拡張子除く）。
+- ジョブ詳細（`chart-jobs/[id]/page.tsx`）：画像あり or 欠落あり時にボタン「レビュー・再取得・AI生成」を表示、`missingNames` を受け渡し。
+
+### 10-2. `image-generate` ステップ（新）＋ 内部画像ルート
+- `tools/chart-worker/src/steps/image-generate.js`（新・`type-registry` に `image-generate`＝`AI画像生成`/kind=`images` 登録）：名前ごとに host 内部ルートへ生成委譲→DL→`images/{safeName}{ext}` に保存（**誤り画像と同名で保存＝置換・冪等**）。成功/失敗/合計を `reportCheckpoint`、0件成功なら throw。
+- `apps/host/src/app/api/internal/social-ai/image/route.ts`（新）：`x-social-ai-token`（`SOCIAL_AI_INTERNAL_TOKEN` を `timingSafeEqual`）で認証し、既存 `/api/ai/image/generate` の POST を**プロセス内呼び出し**（キー保持は host、provider 連鎖もそのまま／重複実装なし）。
+
+### 10-3. image-fetch：進捗表示・参照CSV・**接続改善（429）**
+- **進捗**：チェックポイントに `total/success/failed` を含め、各名で `累計[取得X / 失敗Y / 予定Z]` をログ。ジョブ詳細は `取得X / 失敗Y / 予定Z（P%）` を determinate バーで表示。
+- **参照CSV**：`payload.input_refs` の CSV を人物名の元として使用（`namePayload.csv`）。`commonsSearch(term, hint)` に `search_hint` を付与し曖昧さ回避。
+- **接続改善**（今回）：Wikimedia 作法に合わせ throttle 低減 →
+  - UA に**連絡先**を付与可（`CHART_JOB_WIKI_CONTACT`、mailto:/https:）。
+  - API に **`maxlag=5`**、`error.code='maxlag'` は Retry-After 尊重で待機・再試行。
+  - Retry-After 上限を 60→**120s**、非 Retry-After 待機に上限クランプ、リトライ回数 3→4。
+  - ※ datacenter IP の 429 は本質的に残るため、恒久策は「欠落→AI生成」（10-1/10-2）。
+
+### 10-4. csv-create：参照CSV（修正元）・進捗
+- `input_refs` の CSV を**ベース**に読み込み、`instruction` があれば `modify`（既存人物を修正）、無ければ passthrough、CSV 無し＋instruction は従来の新規生成。バッチ内は `modifyRowsForNames` で名前単位に修正。空出力ガード（throw）。進捗は `生成N / 予定Z`。
+
+### 10-5. CSV import / 参照CSV ピッカー（共有UI）
+- `ChartCsvImportControl.tsx`：タブ **ローカル / ユーザーGallery / Project**。Project タブは物件ピッカー（estate）と同様に「プロジェクト検索→そのプロジェクトの CSV アーティファクト一覧→選択」。**A=同一プロジェクト参照**（`artifacts/csv/{name}` 直参照）／**B=別プロジェクトからコピー**（`prepare-input` で作業領域へ取り込み。SSRF allowlist に `CHART_JOB_ASSET_HOST` 既存のため backend 変更不要）。
+- `ChartAgentSettingsPanel.tsx`：`image-fetch`/`csv-create` 用に**参照CSVピッカー**を追加（ラベル動的：「参照CSV：人物名の元（任意）」/「修正元CSV（任意）」、`（参照しない）` 既定）。作成時に `payload.input_refs=[{kind:'csv',path}]` を付与。
+
+## 11. AI を runner で実行するアーキテクチャ ＆ Docker ビルド/起動対応（2026-08-10）
+
+**目的（重要方針）**：AI（csv-create の LLM・image-generate）を**公開 web に負荷をかけず** runner 側で実行する。runner イメージには web(Next) のコードも全て入っているので、**media job と同じく runner 内でローカル Next を起動**して `127.0.0.1:3000` を叩く（runner のインスタンススペックを活かす）。→ §9-2 の「`AI_INTERNAL_BASE_URL=ghost-front:3000`」を置換。
+
+### 11-1. 起動スクリプト（`run-chart-job-worker.sh`）
+- media/deepzoom と同一イメージのまま、`CHART_JOB_LOCAL_NEXT`（既定 `true`）で **`( cd /app && node server.js ) &`** を起動→`/api/internal/social-ai/image` へ curl 疎通待ち→**`AI_INTERNAL_BASE_URL=http://127.0.0.1:${PORT}` を自動 export**→`cd /app/tools/chart-worker && node src/runner.js`。`trap` でローカル Next を後始末。`false` で無効化（外部 `AI_INTERNAL_BASE_URL` を使用）。
+
+### 11-2. 再ビルド対象（今回の変更は2イメージに跨る）
+| イメージ | Dockerfile | 含む変更 |
+|---|---|---|
+| **ghost-front**（公開web/管理UI） | `prd.next.Dockerfile` | 画像レビュー Dialog・進捗表示・参照CSVピッカー・csv-import タブ・family-chart フィルタ/検索 |
+| **ghost-media-runner**（runner） | `prd.runner.Dockerfile` | worker 各 step（image-fetch/image-generate/csv-create/csv-import/type-registry）・内部画像ルート・`run-chart-job-worker.sh`（ローカルNext） |
+
+Dockerfile 本体は**変更不要**（新規 npm 依存なし・必要ファイルは既存 COPY 済み・family-chart `dist` は最新）。
+
+### 11-3. ビルド／起動コマンド
+- 正規（build＋S3配布、tag=`1.0.6b-next-r2`）：`cd apps/host && SERVICE_ROLE=all ./deploy.sh`（個別 `app`/`worker`）。
+- ローカルのみ：`./scripts/docker-build.sh .docker/prd.next.Dockerfile ghost-front:<tag>` ／ `… prd.runner.Dockerfile ghost-media-runner:<tag>`（family-chart symlink を解決）。
+- 起動：`command` は変更不要（`sh ./scripts/run-chart-job-worker.sh` のまま）。同一 tag 再ビルド→ `docker compose up -d --force-recreate ghost-front chart-job-worker`。
+
+### 11-4. env（本番 chart-job-worker）
+- **必須**：`SOCIAL_AI_INTERNAL_TOKEN`（worker↔内部ルート共通。`.env.local.production` は設定済み、**`.env.production` に未設定→本番で AI を使うなら要追加**）、provider keys（DEEPSEEK/QWEN/OPENAI/GEMINI/GLM…）。
+- **任意**：`CHART_JOB_WIKI_CONTACT`（429 緩和）、`CHART_JOB_LOCAL_NEXT=false`（ローカル Next 無効化）。`AI_INTERNAL_BASE_URL` はスクリプトが自動上書き。
+- compose（`docker-compose.yaml` / `-local.yaml`）：`chart-job-worker` のコメントを「ローカル Next 起動」方針に更新、`CHART_JOB_WIKI_CONTACT` の任意設定例を追記。
+
+### 11-5. 検証
+host `tsc --noEmit` エラー0／worker `node --check`（image-fetch・image-generate・type-registry）OK／両 compose YAML パースOK。
+
+## 12. 画像の正確性（物語文脈駆動・関連性ゲート・モデルログ）（2026-08-11 実装反映）
+
+**目的**：名前だけで Commons を叩くと「名前に一致する“何か”」を無差別採用し、その人物の物語に全く合わない画像を量産する（西遊記の取得は大半がゴミ＝無関係な線画・現代人・龍モザイク・豚の置物…）。名前ではなく **CSV の人物ストーリに合わせる**。
+
+### 12-1. 関連性ゲート（ゴミの根本原因）— `image-fetch.js`
+- 従来は「名前がタイトルに無い低確度トップ」も best として DL していた。→ **タイトルに名前を含む候補のみ Commons から採用**。無ければ Wikipedia 記事のリード画像（＝その人物の記事画像）へ、それも無ければ **欠落→AI生成**。
+- 逃げ道：`payload.require_name_match=false`／`min_score`（既定60）で従来のトップ採用に戻せる。歴史人物は記事画像フォールバックで概ね取得可。
+
+### 12-2. 人物文脈駆動 — 新 `person-context.js`（**画面と同一 `parseCsvToGraph` を再利用**＝二重ロジック無し）
+- 参照CSV（`input_refs`/`csv`）→ `名前 → {title(肩書), note(メモ), gender, era(生没/在位)}`。
+- **fetch**：検索を「名前＋作品名(`work`)＋肩書」で文脈化（`commonsSearch(term, hint, work)`）。
+- **generate**：肖像プロンプトを「作品名・役割・時代・特徴・画風(`style`)」で構築。
+- 新 payload：`work`（作品名/系譜）・`style`（画風・全員統一）・`ground`（生成前に LLM で外見を1文補強＝「検索/知識を参照して生成」。既定 false、レビューUIは既定 on）。CSV に作品名列は無いのでジョブ payload で持つ。
+
+### 12-3. 使用 AI モデルのログ（media job と同様）— `image-generate.js`
+- 内部画像ルート応答の `model`/`provider`/`fallback` を取得し、各画像に `[model=provider/model (fallback→…)]`、完了ログ＋`result.models` に記録。（completions 側は既に `[llm] → {model}` を出力＝§9-1）
+- `CHART_JOB_IMAGE_MODEL` で明示指定も可（未指定は host 既定＝provider チェーン）。
+
+### 12-4. UI
+- パネル：image-fetch に「作品名/系譜」欄。
+- レビューDialog：「作品名」「画風」「AI外見補強(ground)」を追加、再取得(image-fetch)/AI生成(image-generate)の payload へ。
+
+### 12-5. ソース方針（合意）
+一般検索エンジン（Baidu/Google）の**画像直取得はしない**（第三者著作物・再配布不可）。合法な範囲＝Commons＋（将来）**Openverse API**（CC/PD 横断・公式API）。架空/伝承の人物は実在肖像が無いため **AI生成が本命**。
+
+## 13. ギャラリー画像の個別削除（誤り画像を1枚ずつ削除）（2026-08-11 実装反映）
+
+**目的**：ジョブ詳細の preview・レビューDialog で、誤った画像を**1枚だけ**ギャラリーから削除する。
+
+### 13-1. テーブル関係
+```
+social_ai_chart_jobs (ジョブ)            所有権判定のみ（消さない）
+   ▲ chart_job_id (cascadeDelete)
+social_ai_chart_job_media (junction: ジョブ↔画像)
+   chart_job_id → social_ai_chart_jobs.id   (cascadeDelete)
+   media_id     → social_media_assets.id    (cascadeDelete) ← 資産削除で自動消去
+social_media_assets (画像＝削除対象)  id, storage_key(S3), thumbnail_storage_key,
+   owner_scope='chart_jobs', user_id(worker作成はnull), chart_job_id …
+   ▼ storage_key / thumbnail_storage_key → S3 実ファイル
+```
+
+### 13-2. backend（Ghost core・要再起動）
+- `social-gallery.js` に `destroyAsset`：id で資産取得 → **所有権**（`row.user_id==自分` or `chart_job.user_id==自分`＝IDOR防止）→ **S3削除**（storage_key＋thumbnail・best-effort）→ **assets行削除**（junction は media_id FK で**カスケード自動削除**）。
+- `custom-routes.js`：`DELETE /social/gallery/assets/:id(/)`（`mw.authAdminApi`）。
+- ジョブ本体・他画像・`manifest.json`（S3作業領域の履歴）は不変。
+
+### 13-3. host / UI
+- proxy 不要：`/social/gallery/*` は broad proxy で Ghost 直通（末尾スラッシュ必須）。
+- client：`ghostApi.deleteChartGalleryAsset(id)`。
+- **再生（レビューDialog）**：`GalleryAssetGrid` に `onDeleteItem` 配線（カードのゴミ箱アイコン有効化）＋確認→items更新→`onDeleted`。
+- **preview（詳細ページ）**：各サムネイル右上に削除アイコン（hover表示/モバイル常時）＋確認→`fetchGallery()` 再読込。
+
+### 13-4. 検証
+Ghost `node --check`（social-gallery.js/custom-routes.js）OK／host `tsc --noEmit` エラー0／junction `cascadeDelete` 確認済み（孤児・FK違反なし）／worker `node --check`・`parsePersonContext` 実データ動作OK。
+
 ---
 
-*本書は設計追補のみ（plan only）。実装は Phase 単位で別途 実装計画を作成する（§7 は実装対象、§8・§9 は実装済みの実行時挙動）。*
+*本書は設計追補のみ（plan only）。実装は Phase 単位で別途 実装計画を作成する（§7 は実装対象、§8・§9・§10・§11・§12・§13 は実装済みの実行時挙動）。*
