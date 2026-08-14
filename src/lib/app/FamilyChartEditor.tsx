@@ -42,21 +42,28 @@ import {
 // canvas — no fetch, no Blob. Requires the image host to send CORS headers so the
 // canvas isn't tainted; returns null (leaving a silhouette) if it can't be read.
 const XLINK = 'http://www.w3.org/1999/xlink'
-function imageUrlToDataUrl(url: string): Promise<string | null> {
+// Load any image URL (external OR data:) and re-encode it DOWNSCALED to a compact JPEG
+// data URL. Downscaling is essential: the live chart embeds full-resolution person photos
+// as data: URIs, so a 150-person SVG serializes to 440MB+ (too large for <img> to load).
+// A 128px JPEG per node keeps the whole thumbnail SVG to a few hundred KB.
+function imageUrlToDataUrl(url: string, maxDim = 128): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       try {
+        const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight, 1))
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
         const c = document.createElement('canvas')
-        c.width = img.naturalWidth
-        c.height = img.naturalHeight
+        c.width = w
+        c.height = h
         const cx = c.getContext('2d')
         if (!cx) { resolve(null); return }
-        cx.drawImage(img, 0, 0)
-        resolve(c.toDataURL('image/png'))
+        cx.drawImage(img, 0, 0, w, h)
+        resolve(c.toDataURL('image/jpeg', 0.7))
       } catch {
-        resolve(null) // tainted (CORS missing) → skip, keep silhouette
+        resolve(null) // tainted (CORS missing) → skip, drop image
       }
     }
     img.onerror = () => resolve(null)
@@ -64,19 +71,21 @@ function imageUrlToDataUrl(url: string): Promise<string | null> {
   })
 }
 
-// SVG rasterized via <img src="data:svg…"> won't load external hrefs, so person
-// photos vanish and every node shows the same silhouette. Convert each external
-// <image> to a data: URL (canvas, not blob) so the SVG is self-contained.
-async function inlineSvgImages(svg: SVGSVGElement): Promise<void> {
+// Re-encode EVERY <image> (external and already-inlined data: URIs) to a small JPEG so the
+// serialized SVG stays small enough for <img> to rasterize. Images that fail to downscale
+// (CORS-tainted external hrefs) are removed so they don't taint the canvas.
+async function inlineSvgImages(svg: SVGSVGElement, maxDim = 128): Promise<void> {
   const images = Array.from(svg.querySelectorAll('image'))
   await Promise.all(
     images.map(async (im) => {
       const href = im.getAttribute('href') || im.getAttributeNS(XLINK, 'href')
-      if (!href || href.startsWith('data:')) return
-      const dataUrl = await imageUrlToDataUrl(href)
+      if (!href) { im.remove(); return }
+      const dataUrl = await imageUrlToDataUrl(href, maxDim)
       if (dataUrl) {
         im.setAttribute('href', dataUrl)
         im.removeAttributeNS(XLINK, 'href')
+      } else {
+        im.remove()
       }
     }),
   )
@@ -84,7 +93,7 @@ async function inlineSvgImages(svg: SVGSVGElement): Promise<void> {
 
 async function generateThumbnailBlob(
   svgEl: SVGSVGElement,
-  opts?: { dpi?: number; background?: string; viewBox?: { x: number; y: number; w: number; h: number } },
+  opts?: { dpi?: number; background?: string; viewBox?: { x: number; y: number; w: number; h: number }; imageMaxDim?: number },
 ): Promise<Blob | null> {
   const clone = svgEl.cloneNode(true) as SVGSVGElement
   const cloneContainer = clone.querySelector('.zoom-container') as SVGGElement | null
@@ -136,17 +145,30 @@ async function generateThumbnailBlob(
   clone.setAttribute('width', String(width * SS))
   clone.setAttribute('height', String(height * SS))
 
-  // Inline external person photos (canvas→dataURL) so they render during rasterization.
-  await inlineSvgImages(clone)
+  // Remove ALL <image> elements — including ones the live SVG already embeds as data: URIs.
+  // With 150+ persons those data URIs balloon the serialized SVG to 440MB+, which exceeds
+  // what <img> can load (→ onerror → null thumbnail). The thumbnail intentionally shows no
+  // photos; chart structure, names and edges still render.
+  // Downscale + inline every <image> (data: or external) so person photos appear in the
+  // thumbnail while keeping the serialized SVG small enough for <img> to rasterize. The live
+  // chart embeds full-resolution photos as data: URIs, so without downscaling a 150-person
+  // SVG serializes to 440MB+ and <img> fails to load it (→ null thumbnail). imageMaxDim
+  // controls per-photo sharpness — raise it together with dpi to keep faces crisp.
+  await inlineSvgImages(clone, opts?.imageMaxDim ?? 128)
+  // Remove <foreignObject> — its embedded HTML (note annotations, manga frames) makes the
+  // SVG→<img> rasterization fail (onerror) or taint the canvas. Notes drop from the
+  // thumbnail; the chart graph itself still renders.
+  clone.querySelectorAll('foreignObject').forEach((fo) => fo.remove())
 
   const svgStr = new XMLSerializer().serializeToString(clone)
-  // base64-encode safely for non-ASCII SVG content (CJK labels, etc.)
-  const svgB64 = btoa(unescape(encodeURIComponent(svgStr)))
-  const dataUrl = `data:image/svg+xml;base64,${svgB64}`
+  // Use Object URL instead of btoa data URI — btoa silently fails for large SVGs.
+  const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' })
+  const objectUrl = URL.createObjectURL(svgBlob)
 
   return new Promise<Blob | null>((resolve) => {
     const img = new Image()
     img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
       const canvas = document.createElement('canvas')
       canvas.width = width
       canvas.height = height
@@ -163,14 +185,16 @@ async function generateThumbnailBlob(
         ctx.fillRect(0, 0, width, height)
         // img intrinsic size is SS×; drawing into the A4 canvas downscales it.
         ctx.drawImage(img, 0, 0, width, height)
-        canvas.toBlob((blob) => resolve(blob), 'image/png')
+        // JPEG (q0.92) over PNG: at higher DPI a PNG thumbnail balloons past 1MB; JPEG keeps
+        // it ~150-250KB with no visible loss (background is a solid white fill, no transparency).
+        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92)
       } catch {
         // Tainted canvas: external-URL <image> hrefs prevent toBlob — skip thumbnail
         resolve(null)
       }
     }
-    img.onerror = () => resolve(null)
-    img.src = dataUrl
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(null) }
+    img.src = objectUrl
   })
 }
 
@@ -550,6 +574,11 @@ export default function FamilyChartEditor({
     locale,
   } = useDataContext()
 
+  // Always-current reference to savePage — avoids stale-closure issues in async
+  // thumbnail callbacks that fire seconds after the initial save.
+  const savePageRef = useRef(savePage)
+  savePageRef.current = savePage
+
   const [nodeCardPos, setNodeCardPos] = useState({ x: 200, y: 100 })
   const [edgeCardPos, setEdgeCardPos] = useState({ x: 400, y: 200 })
   // Whiteboard / annotation drawing toolbar state
@@ -762,34 +791,10 @@ export default function FamilyChartEditor({
     if (isViewMode) return
     setSaving(true)
 
-    // Best-effort thumbnail generation: never blocks the save on failure.
-    let thumbnailPatch: { thumbnail?: string } = {}
-    if (uploadThumbnail && currentPage?.id) {
-      try {
-        const svgEl = containerRef.current?.querySelector('svg.fc-canvas-svg') as SVGSVGElement | null
-        if (svgEl) {
-          // Capture the currently-visible viewport rect; fall back to bbox if unavailable.
-          const visibleRect = netRef.current?.getVisibleRect()
-          const blob = await generateThumbnailBlob(svgEl, {
-            dpi: dpi ?? thumbnailDpi,
-            background,
-            ...(visibleRect ? { viewBox: visibleRect } : {}),
-          })
-          if (blob) {
-            const url = await uploadThumbnail(currentPage.id, blob)
-            if (url) thumbnailPatch = { thumbnail: url }
-          }
-        }
-      } catch (err) {
-        console.warn('[chart] thumbnail generation/upload failed:', err)
-      }
-    }
-
-    // Persist the current zoom/pan + layout settings so the page reloads identically.
+    // 1. Save chart data immediately — thumbnail is handled async below.
     const vp = netRef.current?.getViewport()
     const vs = netRef.current?.getViewSettings()
     const result = await savePage({
-      ...thumbnailPatch,
       ...(vp ? { viewport: vp } : {}),
       ...(vs ? { viewSettings: vs } : {}),
       ...(dpi !== undefined ? { dpi } : {}),
@@ -799,6 +804,34 @@ export default function FamilyChartEditor({
       : { message: t('Save failed', 'Save failed'), type: 'error' })
     setSaving(false)
     setTimeout(() => setSaveStatus(null), 3000)
+
+    // 2. Generate and upload thumbnail in the background (best-effort, never blocks save).
+    //    Use result.id (the Ghost ObjectId from the server) — not currentPage.id from the
+    //    stale closure — so new charts get the correct row id after insert.
+    //    savePageRef.current always points to the latest savePage from DataContext,
+    //    avoiding the stale-closure bug where savePage_v1 would re-insert the page.
+    if (uploadThumbnail && result) {
+      const savedId = result.id
+      const svgEl = containerRef.current?.querySelector('svg.fc-canvas-svg') as SVGSVGElement | null
+      if (svgEl) {
+        const visibleRect = netRef.current?.getVisibleRect()
+        generateThumbnailBlob(svgEl, {
+          // Thumbnail-specific render quality — deliberately decoupled from the page's print
+          // dpi so thumbnails stay sharp yet a consistent, light size (220 dpi + 256px photos
+          // + JPEG q0.92 → ~150-250KB). Raise both together if more sharpness is needed.
+          dpi: 220,
+          imageMaxDim: 256,
+          background,
+          ...(visibleRect ? { viewBox: visibleRect } : {}),
+        }).then(async (blob) => {
+          if (!blob) return
+          const url = await uploadThumbnail(savedId, blob)
+          if (url) await savePageRef.current({ thumbnail: url })
+        }).catch((err) => {
+          console.warn('[chart] async thumbnail generation/upload failed:', err)
+        })
+      }
+    }
   }
 
   const handleClear = () => {
