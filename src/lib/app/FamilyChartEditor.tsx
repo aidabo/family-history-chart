@@ -91,6 +91,67 @@ async function inlineSvgImages(svg: SVGSVGElement, maxDim = 128): Promise<void> 
   )
 }
 
+const SVGNS = 'http://www.w3.org/2000/svg'
+// Convert each <foreignObject> (HTML text: note annotations + node descriptions) into a
+// native SVG <text> so the content survives rasterization. A <foreignObject> containing HTML
+// taints the canvas in Chrome/Safari (toBlob → SecurityError), so an SVG with one can't be
+// rasterized via <img>→canvas at all. Native <text> rasterizes fine. The background frames/
+// bubbles/rects around the text are separate SVG elements and are left untouched, so the note
+// shape is preserved — only the text is re-homed. Video foreignObjects (no text) are dropped.
+function foreignObjectsToText(svg: SVGSVGElement): void {
+  svg.querySelectorAll('foreignObject').forEach((fo) => {
+    const parent = fo.parentNode as Element | null
+    if (!parent) { fo.remove(); return }
+    const htmlEl = fo.querySelector('div')
+    const text = (htmlEl?.textContent ?? '').replace(/ /g, ' ').replace(/\s+$/, '')
+    if (!htmlEl || !text.trim()) { fo.remove(); return } // video / empty → just drop
+    const foX = parseFloat(fo.getAttribute('x') || '0')
+    const foY = parseFloat(fo.getAttribute('y') || '0')
+    const foW = parseFloat(fo.getAttribute('width') || '0')
+    const foH = parseFloat(fo.getAttribute('height') || '0')
+    const st = htmlEl.style
+    const fontSize = parseFloat(st.fontSize || '14') || 14
+    const align = st.textAlign || 'center'
+    const vertical = (st.writingMode || '').includes('vertical')
+
+    const textEl = document.createElementNS(SVGNS, 'text')
+    textEl.setAttribute('font-size', String(fontSize))
+    textEl.setAttribute('font-family', st.fontFamily || 'sans-serif')
+    textEl.setAttribute('font-weight', st.fontWeight || 'normal')
+    textEl.setAttribute('fill', st.color || '#1f2937')
+    const lines = text.split('\n')
+    const lineH = fontSize * 1.3
+
+    if (vertical) {
+      // Vertical CJK: columns run right-to-left, one column per source line.
+      textEl.setAttribute('writing-mode', 'vertical-rl')
+      textEl.setAttribute('text-anchor', 'start')
+      lines.forEach((line, i) => {
+        const tspan = document.createElementNS(SVGNS, 'tspan')
+        tspan.setAttribute('x', String(foX + foW - fontSize - i * lineH))
+        tspan.setAttribute('y', String(foY + fontSize))
+        tspan.textContent = line
+        textEl.appendChild(tspan)
+      })
+    } else {
+      const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle'
+      const tx = align === 'left' ? foX : align === 'right' ? foX + foW : foX + foW / 2
+      textEl.setAttribute('text-anchor', anchor)
+      // Vertically centre the text block inside the fo box (fo y = -h/2); +fontSize lifts the
+      // first baseline off the top edge. Absolute y per line — dy-only floats large notes off.
+      const startY = foY + Math.max(0, (foH - lines.length * lineH) / 2) + fontSize
+      lines.forEach((line, i) => {
+        const tspan = document.createElementNS(SVGNS, 'tspan')
+        tspan.setAttribute('x', String(tx))
+        tspan.setAttribute('y', String(startY + i * lineH))
+        tspan.textContent = line
+        textEl.appendChild(tspan)
+      })
+    }
+    parent.replaceChild(textEl, fo)
+  })
+}
+
 async function generateThumbnailBlob(
   svgEl: SVGSVGElement,
   opts?: { dpi?: number; background?: string; viewBox?: { x: number; y: number; w: number; h: number }; imageMaxDim?: number },
@@ -155,10 +216,11 @@ async function generateThumbnailBlob(
   // SVG serializes to 440MB+ and <img> fails to load it (→ null thumbnail). imageMaxDim
   // controls per-photo sharpness — raise it together with dpi to keep faces crisp.
   await inlineSvgImages(clone, opts?.imageMaxDim ?? 128)
-  // Remove <foreignObject> — its embedded HTML (note annotations, manga frames) makes the
-  // SVG→<img> rasterization fail (onerror) or taint the canvas. Notes drop from the
-  // thumbnail; the chart graph itself still renders.
-  clone.querySelectorAll('foreignObject').forEach((fo) => fo.remove())
+  // Convert <foreignObject> HTML text (notes + node descriptions) to native SVG <text> — a
+  // foreignObject with HTML taints the canvas (toBlob → SecurityError), but native text does
+  // not, so this keeps the note/description CONTENT in the thumbnail. Background frames around
+  // the text are native SVG and stay as-is.
+  foreignObjectsToText(clone)
 
   const svgStr = new XMLSerializer().serializeToString(clone)
   // Use Object URL instead of btoa data URI — btoa silently fails for large SVGs.
