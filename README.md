@@ -19,7 +19,7 @@ A short walkthrough of layout switching, on-canvas editing, and export:
 
 ▶️ **[Watch the demo video](docs/assets/chart-demo.mp4)** (`docs/assets/chart-demo.mp4`)
 
-<video src="[docs/assets/chart-demo.mp4](https://github.com/user-attachments/assets/39df3ede-b50a-486f-a2ef-ed65d197b20f)" controls width="720">
+<video src="https://github.com/user-attachments/assets/39df3ede-b50a-486f-a2ef-ed65d197b20f" controls width="720">
   Your browser can't play this video inline —
 
 https://github.com/user-attachments/assets/39df3ede-b50a-486f-a2ef-ed65d197b20f
