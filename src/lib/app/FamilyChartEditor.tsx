@@ -1262,6 +1262,7 @@ export default function FamilyChartEditor({
           ref={netRef}
           initialTransform={loadedId === id ? (viewport ?? null) : null}
           initialViewSettings={loadedId === id ? (viewSettings ?? null) : null}
+          gridReady={loadedId === id}
           background={background}
           backgroundImage={backgroundImage}
           backgroundOpacity={backgroundOpacity}

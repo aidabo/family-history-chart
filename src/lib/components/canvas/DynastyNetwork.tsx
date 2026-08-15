@@ -147,6 +147,8 @@ interface DynastyNetworkProps {
   onNodeUpdate?: (id: string, updates: Partial<PersonNode>) => void
   initialTransform?: { k: number; x: number; y: number } | null   // restore saved zoom/pan
   initialViewSettings?: ViewSettings | null   // restore saved layout mode / spacing / grid
+  gridReady?: boolean          // true once the page has loaded; gates grid painting until the
+                               // saved showGrid has been applied (prevents a grid flash on load)
   background?: string          // canvas background color
   backgroundImage?: string     // background image layered over the color
   backgroundOpacity?: number   // 0..1 opacity for the color+image layer (default 1)
@@ -439,6 +441,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   onNodeUpdate,
   initialTransform,
   initialViewSettings,
+  gridReady = true,
   background,
   backgroundImage,
   backgroundOpacity,
@@ -511,6 +514,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [gridSize, setGridSize] = useState(20)
   const [showGrid, setShowGrid] = useState(true)
+  // Grid is painted only after the saved viewSettings have been applied (or confirmed absent),
+  // so a saved-off grid never flashes on during the async page load.
+  const [gridSettled, setGridSettled] = useState(false)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
   const [spacing, setSpacing] = useState(1)
   const spacingRef = useRef(1)   // last-applied spacing factor
@@ -734,7 +740,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     },
     getViewSettings: (): ViewSettings => ({
       layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols,
-      hiddenRelations: hiddenRelations.length ? hiddenRelations : undefined,
+      // Always persist the array (even when empty) — omitting it on empty meant "clear all
+      // filters" was never saved, so a re-checked relation stayed hidden after reopening.
+      hiddenRelations,
     }),
   }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols, hiddenRelations])
 
@@ -743,19 +751,27 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   // lastLayoutKind restores the timeline axis; the mode dropdown reflects the saved choice.
   const viewSettingsApplied = useRef(false)
   useEffect(() => {
-    if (viewSettingsApplied.current || !initialViewSettings) return
-    viewSettingsApplied.current = true
-    const vs = initialViewSettings
-    if (vs.layoutMode) setLayoutMode(vs.layoutMode)
-    if (vs.lastLayoutKind) setLastLayoutKind(vs.lastLayoutKind)
-    if (typeof vs.spacing === 'number') { setSpacing(vs.spacing); spacingRef.current = vs.spacing }
-    if (typeof vs.showGrid === 'boolean') setShowGrid(vs.showGrid)
-    if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
-    if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
-    if (vs.timelineBasis === 'lifespan' || vs.timelineBasis === 'period') setTimelineBasis(vs.timelineBasis)
-    if (typeof vs.timelineCols === 'number') setTimelineCols(vs.timelineCols)
-    if (Array.isArray(vs.hiddenRelations)) setHiddenRelations(vs.hiddenRelations.filter((k) => typeof k === 'string'))
-  }, [initialViewSettings])
+    // Wait for the page load to finish (gridReady) before touching grid/layout state — applying
+    // early, or before the saved settings arrive, is what caused the grid to flash on then off.
+    if (!gridReady) return
+    if (initialViewSettings && !viewSettingsApplied.current) {
+      viewSettingsApplied.current = true
+      const vs = initialViewSettings
+      if (vs.layoutMode) setLayoutMode(vs.layoutMode)
+      if (vs.lastLayoutKind) setLastLayoutKind(vs.lastLayoutKind)
+      if (typeof vs.spacing === 'number') { setSpacing(vs.spacing); spacingRef.current = vs.spacing }
+      if (typeof vs.showGrid === 'boolean') setShowGrid(vs.showGrid)
+      if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
+      if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
+      if (vs.timelineBasis === 'lifespan' || vs.timelineBasis === 'period') setTimelineBasis(vs.timelineBasis)
+      if (typeof vs.timelineCols === 'number') setTimelineCols(vs.timelineCols)
+      // Explicitly clear when absent so a saved-empty (or older) filter reliably restores to
+      // "all visible" instead of keeping a stale hidden set.
+      setHiddenRelations(Array.isArray(vs.hiddenRelations) ? vs.hiddenRelations.filter((k) => typeof k === 'string') : [])
+    }
+    // Settled whether or not viewSettings were present (a chart with none keeps the defaults).
+    setGridSettled(true)
+  }, [gridReady, initialViewSettings])
 
   // Distinct relation kinds present in the chart (for the filter panel; localized label + count).
   const relationKinds = useMemo(() => {
@@ -1043,7 +1059,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // toward the edge are never cut off — the board simply expands to include them.
     const BOARD_MARGIN = 16   // blank margin between the grid area and the board border
     const GRID_PAD = 40       // grid extends a little past the outermost nodes
-    if (showGrid) {
+    if (showGrid && gridSettled) {
       const pattern = defs.append('pattern')
         .attr('id', 'family-chart-grid')
         .attr('patternUnits', 'userSpaceOnUse')
@@ -1058,7 +1074,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .attr('fill', 'none').attr('stroke', '#cbd5e1').attr('stroke-width', 1)
       .attr('rx', 6).attr('vector-effect', 'non-scaling-stroke')
       .style('pointer-events', 'none')
-    const gridBg = showGrid
+    const gridBg = showGrid && gridSettled
       ? container.append('rect').attr('class', 'grid-bg')
           .attr('fill', 'url(#family-chart-grid)').style('pointer-events', 'none')
       : null
@@ -2842,7 +2858,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
-  }, [persons, relationships, dimensions, showGrid, gridSize, selectedNodeId,
+  }, [persons, relationships, dimensions, showGrid, gridSettled, gridSize, selectedNodeId,
     computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis, locale, hiddenRelations])
 
   // Toggle the drawing capture surface / eraser hit-testing when the active tool changes,

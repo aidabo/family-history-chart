@@ -186,9 +186,13 @@ export function DataProvider({
     }
     const saved = await store.savePage(pageData)
     if (saved) {
-      // Update page metadata (id/thumbnail/etc.) but DON'T replace `data`: it already
-      // holds the saved state, and re-setting it from the server response would create
-      // new array refs → a full canvas rebuild (all nodes flash) on every Save.
+      // Sync `data` with exactly what we persisted so a LATER partial save (e.g. the async
+      // thumbnail-only savePage) merges onto fresh viewSettings/viewport instead of the stale
+      // copy loaded at open time — otherwise a thumbnail save silently reverts filter/grid/etc.
+      // Reuse the same `chartProps` (persons/relationships keep their refs) so this does NOT
+      // create new array refs → no canvas rebuild/flash. Do NOT re-set from the server response
+      // (that WOULD make new refs).
+      setData(chartProps)
       setCurrentPage((prev) => ({ ...saved, chartProps: prev?.chartProps ?? saved.chartProps }))
     }
     return saved
