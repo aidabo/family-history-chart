@@ -15,18 +15,23 @@
 
 ## 🎬 Demo
 
-A short walkthrough of layout switching, on-canvas editing, and export:
+A short walkthrough of layout switching, on-canvas editing, and export.
 
-▶️ **[Watch the demo video](docs/assets/chart-demo.mp4)** (`docs/assets/chart-demo.mp4`)
+<!--
+  For inline playback ON GITHUB, paste a GitHub-hosted asset URL below.
+  How to get one: open this README in the github.com editor (or a new issue),
+  drag-and-drop docs/assets/chart-demo.mp4 into the text box, and GitHub uploads
+  it and inserts a URL like
+    https://github.com/<owner>/<repo>/assets/<id>/<uuid>.mp4
+  Replace PASTE_GITHUB_ASSET_URL_HERE with that URL and delete this comment.
+  (A relative path or raw.githubusercontent.com URL will NOT play inline on GitHub.)
+-->
 
-<video src="https://github.com/user-attachments/assets/39df3ede-b50a-486f-a2ef-ed65d197b20f" controls width="720">
-  Your browser can't play this video inline —
+https://github.com/OWNER/REPO/assets/PASTE_GITHUB_ASSET_URL_HERE
 
-https://github.com/user-attachments/assets/39df3ede-b50a-486f-a2ef-ed65d197b20f
-
-
-  <a href="docs/assets/chart-demo.mp4">download <code>docs/assets/chart-demo.mp4</code></a> instead.
-</video>
+▶️ Meanwhile, the committed file always works:
+**[Watch the demo video](docs/assets/chart-demo.mp4)** — opens a player on GitHub's
+file view, or plays inline in local Markdown viewers (VS Code, etc.).
 
 ---
 
