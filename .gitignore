@@ -20,9 +20,10 @@
 # production
 /build
 /dist
+dist-demo/
 
 # vite / tooling artifacts
-/.omc
+.omc/
 /.playwright-mcp
 
 # misc
