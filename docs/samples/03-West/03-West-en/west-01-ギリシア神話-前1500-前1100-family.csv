@@ -1,0 +1,21 @@
+name,gender,birth,death,father,mother,spouse,title,period,note
+Uranus,male,约前2000,约前1900,,,Gaia,Sky god (myth),,Myth and legend. Years are approximate (for timeline display)
+Gaia,female,约前2000,约前1900,,,Uranus,Earth goddess (myth),,Myth and legend. Years are approximate (for timeline display)
+Cronus,male,约前1800,约前1700,Uranus,Gaia,Rhea,Titan (myth),,Myth and legend. Father of Zeus
+Rhea,female,约前1800,约前1700,,,Cronus,Titan (myth),,Myth and legend. Mother of Zeus
+Zeus,male,约前1600,约前1400,Cronus,Rhea,Hera,King of the Olympian gods,,Myth and legend. King of the Twelve Olympians
+Hera,female,约前1600,约前1400,Cronus,Rhea,Zeus,Goddess of marriage,,Myth and legend. Consort of Zeus
+Poseidon,male,约前1600,约前1400,Cronus,Rhea,,God of the sea,,Myth and legend. Elder brother of Zeus
+Demeter,female,约前1600,约前1400,Cronus,Rhea,,Goddess of harvest,,Myth and legend
+Hestia,female,约前1600,约前1400,Cronus,Rhea,,Goddess of the hearth,,Myth and legend
+Athena,female,约前1500,约前1300,Zeus,,,Goddess of wisdom,,Myth and legend. Guardian of Athens
+Apollo,male,约前1500,约前1300,Zeus,Leto,,Sun god,,Myth and legend. God of the arts
+Artemis,female,约前1500,约前1300,Zeus,Leto,,Moon goddess,,Myth and legend
+Ares,male,约前1500,约前1300,Zeus,Hera,,God of war,,Myth and legend
+Aphrodite,female,约前1500,约前1300,Uranus,,,Goddess of love and beauty,,Myth and legend
+Hermes,male,约前1500,约前1300,Zeus,,,God of commerce and messengers,,Myth and legend
+Hephaestus,male,约前1500,约前1300,Zeus,Hera,,God of the forge,,Myth and legend
+Dionysus,male,约前1500,约前1300,Zeus,,,God of wine,,Myth and legend
+Leto,female,约前1550,约前1350,,,,"Titaness, mother of Apollo",,Myth and legend
+Eurystheus,male,约前1400,约前1200,,,,King of Mycenae (myth),,Myth and legend. Ordered the Twelve Labours of Heracles
+Heracles,male,约前1350,约前1200,Zeus,,,Hero,,Myth and legend. The Twelve Labours. Constellation Hercules

@@ -1,0 +1,6 @@
+name,gender,birth,death,father,mother,spouse,title,period,note
+Clovis I,male,466,511,,,,King of the Franks (Merovingian),481-511,Founded the Frankish kingdom. Converted to Catholic Christianity
+Childeric III,male,约714,约755,,,,Last Merovingian king,743-751,Deposed by Pepin III. End of the Merovingians
+Pepin III,male,714,768,,,,King of the Franks (first Carolingian),751-768,Deposed Childeric III. Father of Charlemagne
+Charlemagne,male,742,814,Pepin III,,,"King of the Franks, Western Roman emperor",768-814,Crowned emperor in 800. Carolingian Renaissance
+Louis I,male,778,840,Charlemagne,,,King of the Franks (the Pious),814-840,"Beginning of the empire's division, leading to the Treaty of Verdun"

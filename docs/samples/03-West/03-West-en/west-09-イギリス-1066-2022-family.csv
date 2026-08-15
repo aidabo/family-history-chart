@@ -1,0 +1,36 @@
+name,gender,birth,death,father,mother,spouse,title,period,note
+William I,male,约1028,1087,,,,King of England (the Conqueror),1066-1087,Norman Conquest. Domesday Book
+Henry I,male,约1068,1135,William I,,,King of England,1100-1135,
+Henry II,male,1133,1189,,,,King of England (Plantagenet),1154-1189,Angevin Empire
+Richard I,male,1157,1199,Henry II,,,King of England (Lionheart),1189-1199,Third Crusade
+King John,male,1166,1216,Henry II,,,King of England,1199-1216,Magna Carta (1215)
+Henry IV (England),male,1367,1413,,,,King of England (first Lancastrian),1399-1413,Deposed Richard II and took the throne
+Henry III,male,1207,1272,King John,,,King of England,1216-1272,
+Edward I,male,1239,1307,Henry III,,,King of England,1272-1307,Conquered Wales. Invaded Scotland
+Edward III,male,1312,1377,,,,King of England,1327-1377,Started the Hundred Years' War
+Henry V,male,1386,1422,,,,King of England,1413-1422,Battle of Agincourt
+Henry VII,male,1457,1509,,,,King of England (first Tudor),1485-1509,Ended the Wars of the Roses
+Henry VIII,male,1491,1547,Henry VII,,,King of England,1509-1547,Founded the Church of England. Six wives
+Anne Boleyn,female,约1507,1536,,,Henry VIII,Queen consort (Henry VIII),,Mother of Elizabeth I. Executed
+Edward VI,male,1537,1553,Henry VIII,,,King of England,1547-1553,Pursued the Reformation
+Mary I,female,1516,1558,Henry VIII,,,Queen of England (Bloody Mary),1553-1558,Catholic restoration. Many executions
+Elizabeth I,female,1533,1603,Henry VIII,Anne Boleyn,,Queen of England,1558-1603,Elizabethan Golden Age. Defeated the Armada
+James I,male,1566,1625,,,,King of England (Stuart),1603-1625,Union of the Crowns. King James Bible
+Charles I,male,1600,1649,James I,,,King of England,1625-1649,Executed in the English Civil War
+Charles II (England),male,1630,1685,Charles I,,,King of England,1660-1685,Restoration of the monarchy
+James II,male,1633,1701,Charles I,,,King of England,1685-1688,Deposed in the Glorious Revolution
+William III,male,1650,1702,,,Mary II,King of England,1689-1702,Glorious Revolution. Bill of Rights
+Mary II,female,1662,1694,James II,,William III,Queen of England,1689-1694,Co-ruled with William III
+Queen Anne,female,1665,1714,James II,,,Queen of England,1702-1714,Last Stuart. United with Scotland
+George I,male,1660,1727,,,,King of Great Britain (first Hanoverian),1714-1727,Founded the Hanoverian dynasty
+George II,male,1683,1760,George I,,,King of the United Kingdom,1727-1760,
+George III,male,1738,1820,,,,King of the United Kingdom,1760-1820,American Revolution. Napoleonic Wars
+George IV,male,1762,1830,George III,,,King of the United Kingdom,1820-1830,Patron of the Regency era
+William IV,male,1765,1837,George III,,,King of the United Kingdom,1830-1837,Era of the Reform Act
+Queen Victoria,female,1819,1901,,,,Queen of the United Kingdom,1837-1901,Victorian era. Height of the British Empire
+Edward VII,male,1841,1910,,,,King of the United Kingdom,1901-1910,Son of Queen Victoria
+George V,male,1865,1936,,,,King of the United Kingdom (Windsor),1910-1936,World War I. Renamed the House of Windsor
+George VI,male,1895,1952,George V,,,King of the United Kingdom,1936-1952,King during World War II
+Elizabeth II,female,1926,2022,George VI,,Prince Philip,Queen of the United Kingdom,1952-2022,Reigned 70 years; 15 prime ministers from Churchill to Truss
+Prince Philip,male,1921,2021,,,Elizabeth II,Prince consort (Duke of Edinburgh),,Husband of Elizabeth II. Greek-Danish royal
+Charles III (UK),male,1948,,Prince Philip,Elizabeth II,,King of the United Kingdom (reigning),2022-,Eldest son of Elizabeth II

@@ -1,0 +1,22 @@
+name,gender,birth,death,father,mother,spouse,title,period,note
+Augustus,male,前63,14,,,Livia,First Roman emperor,前27-14,Caesar's adopted son. Founded the Empire. Pax Romana
+Livia,female,前58,29,,,Augustus,Roman empress,,Wife of Augustus; the most influential woman in Rome
+Tiberius,male,前42,37,,,,2nd Roman emperor,14-37,Augustus' adopted son. Retired to Capri
+Caligula,male,12,41,,,,3rd Roman emperor,37-41,Byword for tyranny. Assassinated by the Praetorian Guard
+Claudius,male,前10,54,,,,4th Roman emperor,41-54,Conquered Britannia
+Nero,male,37,68,,,,5th Roman emperor,54-68,Great Fire of Rome. Last of the Julio-Claudian dynasty
+Vespasian,male,9,79,,,,9th Roman emperor,69-79,Founded the Flavian dynasty. Began the Colosseum
+Titus,male,39,81,Vespasian,,,10th Roman emperor,79-81,Vesuvius eruption; Colosseum completed
+Domitian,male,51,96,Vespasian,,,11th Roman emperor,81-96,Last of the Flavians. Assassinated
+Nerva,male,30,98,,,,12th Roman emperor,96-98,First of the Five Good Emperors. Established adoption succession
+Trajan,male,53,117,,,,13th Roman emperor,98-117,Five Good Emperors. Empire at its greatest extent
+Hadrian,male,76,138,,,,14th Roman emperor,117-138,Five Good Emperors. Hadrian's Wall. Rebuilt the Pantheon
+Antoninus Pius,male,86,161,,,,15th Roman emperor,138-161,Five Good Emperors. Adopted Marcus Aurelius
+Marcus Aurelius,male,121,180,,,,16th Roman emperor,161-180,"Five Good Emperors. ""Philosopher Emperor"", author of Meditations"
+Commodus,male,161,192,Marcus Aurelius,,,17th Roman emperor,180-192,Tyranny. Last of the Nerva-Antonine dynasty
+Septimius Severus,male,145,211,,,,21st Roman emperor,193-211,Founded the Severan dynasty
+Caracalla,male,188,217,Septimius Severus,,,22nd Roman emperor,211-217,Edict of Caracalla (granted citizenship)
+Aurelian,male,214,275,,,,40th Roman emperor,270-275,Soldier emperor. Reunified the Empire
+Diocletian,male,244,311,,,,51st Roman emperor,284-305,Tetrarchy. Established autocracy
+Theodosius I,male,347,395,,,,66th Roman emperor,379-395,Made Christianity the state religion. Divided the Empire
+Romulus Augustulus,male,约460,约511,,,,Last Western Roman emperor,475-476,Fall of the Western Roman Empire (476)
