@@ -19,6 +19,11 @@
 
 # production
 /build
+/dist
+
+# vite / tooling artifacts
+/.omc
+/.playwright-mcp
 
 # misc
 .DS_Store

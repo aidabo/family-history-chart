@@ -1,0 +1,24 @@
+/* Self-contained styles shipped with the @ghost-next/family-chart library.
+   The host app's Tailwind does not scan node_modules, so the library compiles
+   its own Tailwind layers here and exports the result as ./style.css. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Toolbar label: icon-only on mobile, icon+label on desktop. A dedicated class
+   (instead of `hidden md:inline`) so a host stylesheet's own `.hidden` loaded after
+   this file can't override the responsive rule. */
+.fc-tb-label { display: none; }
+@media (min-width: 768px) { .fc-tb-label { display: inline; } }
+
+/* Cinematic playback: while `.cinema-active` is on the canvas container, hide the grid
+   and disable node shadow filters so the .zoom-container can be cached as a compositor
+   layer (live SVG filters / a <pattern> grid block layer caching → per-frame re-raster,
+   which stutters in dense regions). Purely class-based and non-destructive — removing the
+   class restores everything, so normal edit / preview / view rendering is never altered. */
+.cinema-active .grid-bg { display: none !important; }
+.cinema-active [filter] { filter: none !important; }
+/* non-scaling-stroke keeps stroke width constant across zoom, so the browser must
+   recompute those strokes on EVERY transform change — that blocks layer caching and
+   re-rasterizes each frame (worst when zoom k != 1). Disable it during the sweep. */
+.cinema-active [vector-effect] { vector-effect: none !important; }
