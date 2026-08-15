@@ -1,0 +1,14 @@
+name,gender,birth,death,father,mother,spouse,title,period,note
+Michael Romanov,male,1596,1645,,,,Tsar of Russia (first Romanov),1613-1645,Ended the Time of Troubles. Founded the Romanov dynasty
+Alexis,male,1629,1676,Michael Romanov,,,Tsar of Russia,1645-1676,Father of Peter the Great
+Peter I,male,1672,1725,Alexis,,,Tsar of Russia (the Great),1682-1725,Built St. Petersburg. Westernizing reforms
+Catherine I,female,1684,1727,,,,Empress of Russia,1725-1727,Wife of Peter the Great
+Elizabeth,female,1709,1762,Peter I,,,Empress of Russia,1741-1762,Seven Years' War
+Peter III,male,1728,1762,,,,Tsar of Russia,1762,Deposed by Catherine II
+Catherine II,female,1729,1796,,,,Empress of Russia (the Great),1762-1796,Enlightened despot. Black Sea expansion with Potemkin
+Paul I,male,1754,1801,,,,Tsar of Russia,1796-1801,Assassinated
+Alexander I,male,1777,1825,,,,Tsar of Russia,1801-1825,Won the Napoleonic Wars
+Nicholas I,male,1796,1855,,,,Tsar of Russia,1825-1855,Crimean War
+Alexander II,male,1818,1881,,,,Tsar of Russia,1855-1881,Emancipated the serfs. Assassinated
+Alexander III,male,1845,1894,,,,Tsar of Russia,1881-1894,
+Nicholas II,male,1868,1918,Alexander III,,,Last Tsar of Russia,1894-1917,Abdicated in the February Revolution. Romanovs executed

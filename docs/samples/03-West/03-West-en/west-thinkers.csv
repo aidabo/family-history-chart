@@ -1,0 +1,51 @@
+name,gender,birth,death,era,title,teacher,school,works,period,note
+Thales,male,约前624,约前546,Ancient Greece,Founder of the Milesian school,,自然哲学,,,Water is the origin of all things. Regarded as the first philosopher
+Pythagoras,male,约前570,约前495,Ancient Greece,Mathematician and religious teacher,,ピタゴラス学派,,,"Pythagorean theorem. ""All is number"""
+Heraclitus,male,约前535,约前475,Ancient Greece,Natural philosopher,,自然哲学,,,"""All things flow"". Fire as the origin"
+Socrates,male,前470,前399,Ancient Greece,Philosopher (no office),,哲学,,,Socratic method. Executed by hemlock. Wrote nothing
+Democritus,male,约前460,约前370,Ancient Greece,Natural philosopher,,原子論,,,All things are made of atoms
+Plato,male,前427,前347,Ancient Greece,Founder of the Academy,Socrates,哲学,The Republic；The Symposium,,Theory of Forms. Founded the Academy
+Aristotle,male,前384,前322,Ancient Greece,Founder of the Lyceum,Plato,哲学,Metaphysics；Nicomachean Ethics,,Master of all knowledge. Tutor of Alexander the Great
+Alexander the Great,male,前356,前323,Ancient Greece,"King of Macedon, the Great",Aristotle,,,,Built a world empire. Student of Aristotle
+Epicurus,male,前341,前270,Hellenistic period,Philosopher,,エピクロス学派,,,"Hedonism. ""Death is nothing to us"""
+Zeno,male,约前334,约前262,Hellenistic period,Philosopher,,ストア学派,,,Founded Stoicism. Taught in Athens
+Seneca,male,前4,65,Roman Empire,"Adviser to Nero, philosopher",,ストア学派,On the Shortness of Life,,Stoic philosophy. Executed by Nero
+Marcus Aurelius,male,121,180,Roman Empire,Roman emperor,,ストア学派,Meditations,,"Philosopher emperor. ""Be yourself"""
+Augustine,male,354,430,Roman Empire,Bishop of Hippo,,キリスト教神学,Confessions；The City of God,,Greatest Father of the Western Church. Doctrine of grace
+Albertus Magnus,male,1193,1280,Middle Ages,Theologian and scholar,,スコラ学,,,"Teacher of Thomas Aquinas. ""Doctor Universalis"""
+Thomas Aquinas,male,1225,1274,Middle Ages,Theologian,Albertus Magnus,スコラ学,Summa Theologica,,Perfected Scholasticism. Harmony of faith and reason
+Machiavelli,male,1469,1527,Renaissance,Florentine diplomat,,政治学,The Prince,,The Prince. Father of realist politics. Italy
+Thomas More,male,1478,1535,Renaissance,Lord Chancellor (England),,人文主義,Utopia,,Utopia. Executed by Henry VIII
+Francis Bacon,male,1561,1626,Early modern era,Lord Chancellor (England),,経験論,Novum Organum,,"Father of empiricism. ""Knowledge is power"""
+Galileo,male,1564,1642,Early modern era,Mathematician and astronomer,,科学,,,Discovered Jupiter's moons. Heliocentrism. Tried by the Church
+Descartes,male,1596,1650,Early modern era,Philosopher and mathematician,,合理論,Discourse on Method,,"""I think, therefore I am"". Analytic geometry"
+Isaac Barrow,male,1630,1677,Early modern era,Mathematician and theologian,,数学,,,Teacher of Newton. Professor at Cambridge
+Spinoza,male,1632,1677,Early modern era,Philosopher,,合理論,Ethics,,"Pantheism. ""God is Nature"". Earned a living grinding lenses"
+Locke,male,1632,1704,Early modern era,Philosopher and statesman,,経験論,Two Treatises of Government,,Father of liberalism. Social contract. Influenced American independence
+Newton,male,1643,1727,Early modern era,Professor at Cambridge,Isaac Barrow,物理学・数学,Principia,,"Universal gravitation, laws of motion. Calculus"
+Leibniz,male,1646,1716,Early modern era,Philosopher and mathematician,,合理論,Monadology,,Independently discovered calculus with Newton
+Voltaire,male,1694,1778,Early modern era,Philosopher and writer,,啓蒙思想,Candide,,Standard-bearer of the Enlightenment. Religious tolerance
+Francis Hutcheson,male,1694,1746,Early modern era,Philosopher,,道徳哲学,,,Teacher of Adam Smith. Professor at Glasgow
+Benjamin Franklin,male,1706,1790,Early modern era,Statesman and scientist,,啓蒙思想,The Autobiography of Benjamin Franklin,,Kite experiment. Drafted the Declaration. Representative of America
+Rousseau,male,1712,1778,Early modern era,Philosopher and writer,,啓蒙思想,The Social Contract,,"Social contract. ""Man is born free"""
+Adam Smith,male,1723,1790,Early modern era,Philosopher and economist,Francis Hutcheson,経済学,The Wealth of Nations,,"Father of economics. ""Invisible hand"". Laissez-faire"
+Kant,male,1724,1804,Early modern era,Professor at Königsberg,,批判哲学,Critique of Pure Reason,,"Critical philosophy. ""Sapere aude"""
+Fichte,male,1762,1814,Modern era,Philosopher,Kant,ドイツ観念論,Wissenschaftslehre,,Continued Kant's critique. Theory of the self
+Hegel,male,1770,1831,Modern era,Professor at Berlin,,ドイツ観念論,Phenomenology of Spirit,,Dialectics. Phenomenology of Spirit. Classmate of Schelling
+Schopenhauer,male,1788,1860,Modern era,Philosopher,,意志哲学,The World as Will and Representation,,Pessimistic philosophy. Moved beyond Kant's influence
+John Stuart Mill,male,1806,1873,Modern era,Philosopher and economist,,功利主義,On Liberty,,On Liberty. Women's emancipation. Home-educated by his father
+Darwin,male,1809,1882,Modern era,Naturalist,,生物学,On the Origin of Species,,Evolution by natural selection. Voyage of the Beagle
+Marx,male,1818,1883,Modern era,Thinker and revolutionary,Hegel,唯物史観,Das Kapital,,From the Young Hegelians to historical materialism. Father of communism
+Alfred Marshall,male,1842,1924,Modern era,Economist,,経済学,,,Teacher of Keynes. Cambridge school
+Nietzsche,male,1844,1900,Modern era,Philosopher,Schopenhauer,実存思想,Thus Spoke Zarathustra,,"""God is dead"". Overman. Follower of Schopenhauer"
+Freud,male,1856,1939,Contemporary era,Psychiatrist,,精神分析,The Interpretation of Dreams,,Founded psychoanalysis. Discovery of the unconscious
+Husserl,male,1859,1938,Contemporary era,Philosopher,,現象学,Logical Investigations,,Founded phenomenology. Teacher of Heidegger
+Russell,male,1872,1970,Contemporary era,Philosopher and mathematician,,論理主義,Principia Mathematica,,Symbolic logic. Nobel Prize in Literature. Teacher of Wittgenstein
+Jung,male,1875,1961,Contemporary era,Psychiatrist,Freud,分析心理学,Psychological Types,,Broke with Freud. Founded analytical psychology
+Einstein,male,1879,1955,Contemporary era,Physicist,,理論物理学,Relativity,,Theory of relativity. Nobel Prize in Physics. E=mc²
+Keynes,male,1883,1946,Modern era,Economist,Alfred Marshall,マクロ経済学,"The General Theory of Employment, Interest and Money",,Keynesian economics. Bretton Woods system
+Wittgenstein,male,1889,1951,Contemporary era,Philosopher,Russell,言語哲学,Tractatus Logico-Philosophicus,,"""Whereof one cannot speak, thereof one must be silent"""
+Heidegger,male,1889,1976,Contemporary era,Philosopher,Husserl,実存主義,Being and Time,,Being and Time. Source of existentialism
+Popper,male,1902,1994,Contemporary era,Philosopher,,科学哲学,The Open Society and Its Enemies,,Falsificationism. Defender of the open society
+Sartre,male,1905,1980,Contemporary era,Philosopher and writer,,実存主義,Being and Nothingness,,Existence precedes essence. Declined the Nobel Prize
+Rawls,male,1921,2002,Contemporary era,Philosopher,,政治哲学,A Theory of Justice,,"A Theory of Justice. ""Veil of ignorance"". Benchmark of modern political philosophy"
