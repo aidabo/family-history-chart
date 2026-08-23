@@ -1273,6 +1273,40 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         cbRef.current.onEdgeClick({ ...d, source: d.source.id, target: d.target.id }, event.clientX, event.clientY)
       })
 
+    // Union auto-follow: when a partner person is dragged, its union node
+    // re-centers to the midpoint of its two partners. The live 'marriage' force
+    // can't achieve this — saved-position nodes are pinned via fx/fy and the tick
+    // overwrites the force's changes — so we move the union explicitly on drag.
+    // partner links are source=person, target=union (see the marriage force).
+    const unionsByPartner = new Map<string, string[]>()   // personId -> unionId[]
+    const partnersByUnion = new Map<string, string[]>()   // unionId  -> personId[]
+    for (const l of links) {
+      if (l.type !== 'partner') continue
+      const unionId = l.target.id, personId = l.source.id
+      const a = partnersByUnion.get(unionId); if (a) a.push(personId); else partnersByUnion.set(unionId, [personId])
+      const b = unionsByPartner.get(personId); if (b) b.push(unionId); else unionsByPartner.set(personId, [unionId])
+    }
+    // Re-center every union touched by the moved person ids onto its partners'
+    // midpoint. Only unions with exactly two partners move (matches the marriage
+    // force). Pass a batch to also collect the moved unions for persistence.
+    const recenterUnions = (movedPersonIds: Iterable<string>, batch?: Record<string, { x: number; y: number }>) => {
+      const affected = new Set<string>()
+      for (const pid of movedPersonIds) for (const u of (unionsByPartner.get(pid) || [])) affected.add(u)
+      for (const uid of affected) {
+        const parts = (partnersByUnion.get(uid) || [])
+          .map(id => nodesRef.current.find(n => n.id === id))
+          .filter(Boolean) as SimNode[]
+        if (parts.length !== 2) continue
+        const mx = (parts[0].x + parts[1].x) / 2
+        const my = (parts[0].y + parts[1].y) / 2
+        const un = nodesRef.current.find(n => n.id === uid)
+        if (!un) continue
+        un.fx = mx; un.fy = my; un.x = mx; un.y = my
+        nodePositionsRef.current.set(uid, { x: mx, y: my })
+        if (batch) batch[uid] = { x: mx, y: my }
+      }
+    }
+
     // Node drag — filter overridden so Ctrl/Cmd+click passes through (d3 ignores it by default)
     // Shift+drag moves the whole connected cluster (relative positions preserved).
     let cluster: { ids: string[]; orig: Map<string, { x: number; y: number }> } | null = null
@@ -1329,9 +1363,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
               nodePositionsRef.current.set(id, { x: o.x + dx, y: o.y + dy })
             }
           }
+          // A union whose partner sits outside the moved cluster must re-center
+          // onto the new midpoint (rigid cluster move alone would misplace it).
+          recenterUnions(cluster.ids)
         } else {
           d.fx = event.x; d.fy = event.y
           nodePositionsRef.current.set(d.id, { x: event.x, y: event.y })
+          recenterUnions([d.id])
         }
       })
       .on('end', function(event, d) {
@@ -1344,11 +1382,17 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
               const n = nodesRef.current.find((nn) => nn.id === id)
               if (n) { n.fx = n.x = n.fx ?? n.x; n.fy = n.y = n.fy ?? n.y; batch[id] = { x: n.x, y: n.y } }
             }
+            // Persist any union re-centered by the cluster move.
+            recenterUnions(cluster.ids, batch)
             cbRef.current.onBatchPositionChange(batch)
           } else {
             d.fx = d.x; d.fy = d.y
             nodePositionsRef.current.set(d.id, { x: d.x, y: d.y })
-            cbRef.current.onPositionChange(d.id, d.x, d.y)
+            // Persist the dragged node plus any union it dragged along.
+            const batch: Record<string, { x: number; y: number }> = { [d.id]: { x: d.x, y: d.y } }
+            recenterUnions([d.id], batch)
+            if (Object.keys(batch).length > 1) cbRef.current.onBatchPositionChange(batch)
+            else cbRef.current.onPositionChange(d.id, d.x, d.y)
           }
           cluster = null
         } else if (se && (se.ctrlKey || se.metaKey) && onNodeCtrlClick) {
