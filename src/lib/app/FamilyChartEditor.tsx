@@ -1179,7 +1179,7 @@ export default function FamilyChartEditor({
               className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
               title={t('Export (JSON / CSV)', 'エクスポート（JSON / CSV）')}
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
+              <ArrowUpTrayIcon className="h-4 w-4" />
               <span className="fc-tb-label">{t('Export', 'Export')}</span>
             </button>
             {exportMenu && (
@@ -1199,7 +1199,7 @@ export default function FamilyChartEditor({
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm border border-gray-200"
             title={t('Import (JSON / CSV)', 'インポート（JSON / CSV）')}
           >
-            <ArrowUpTrayIcon className="h-4 w-4" />
+            <ArrowDownTrayIcon className="h-4 w-4" />
             <span className="fc-tb-label">{t('Import', 'Import')}</span>
           </button>
           <button

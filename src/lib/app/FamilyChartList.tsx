@@ -7,7 +7,7 @@ import {
   PlusIcon,
   TrashIcon,
   PencilSquareIcon,
-  ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
   DocumentDuplicateIcon,
 } from '@heroicons/react/24/outline'
 import { v4 as uuidv4 } from 'uuid'
@@ -217,7 +217,7 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
                       <div className="flex"><DocumentDuplicateIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Duplicate')}</span></div>
                     </button>
                     <button onClick={() => handleExportPage(page)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title={t('Export')}>
-                      <div className="flex"><ArrowDownTrayIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Export')}</span></div>
+                      <div className="flex"><ArrowUpTrayIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Export')}</span></div>
                     </button>
                     <button onClick={() => handleDelete(page.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('Delete')}>
                       <div className="flex"><TrashIcon className="h-4 w-4 mr-1.5" /><span className="text-sm leading-none">{t('Delete')}</span></div>
@@ -242,7 +242,7 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
                       <button onClick={() => handleOpen(page.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title={t('Edit Content')}><PencilSquareIcon className="h-4 w-4" /></button>
                       <button onClick={() => handleView(page.id)} className="p-2 text-purple-500 hover:bg-purple-50 rounded-lg transition-colors" title={t('Preview')}><EyeIcon className="h-4 w-4" /></button>
                       <button onClick={() => handleDuplicate(page.id)} className="p-2 text-cyan-500 hover:bg-cyan-50 rounded-lg transition-colors" title={t('Duplicate')}><DocumentDuplicateIcon className="h-4 w-4" /></button>
-                      <button onClick={() => handleExportPage(page)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title={t('Export')}><ArrowDownTrayIcon className="h-4 w-4" /></button>
+                      <button onClick={() => handleExportPage(page)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors" title={t('Export')}><ArrowUpTrayIcon className="h-4 w-4" /></button>
                       <button onClick={() => handleDelete(page.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('Delete')}><TrashIcon className="h-4 w-4" /></button>
                     </div>
                   </div>
