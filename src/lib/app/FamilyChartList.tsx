@@ -24,9 +24,13 @@ const CHART_PLACEHOLDER =
 export interface FamilyChartListProps {
   onOpen: (id: string) => void
   onView: (id: string) => void
+  /** Owner/Admin only: enables the author (owner) selector in the chart info dialog. */
+  canChangeAuthor?: boolean
+  /** Fetch the staff user list for the author selector; required when canChangeAuthor is true. */
+  getUsers?: () => Promise<Array<{ id: string; name: string }>>
 }
 
-export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps) {
+export default function FamilyChartList({ onOpen, onView, canChangeAuthor = false, getUsers }: FamilyChartListProps) {
   const [pages, setPages] = useState<PageProps[]>([])
   const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -104,10 +108,17 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
     }
   }
 
-  const handleDialogSubmit = async (data: { title: string; image: string; status: 'published' | 'draft'; category: string }) => {
+  const handleDialogSubmit = async (data: { title: string; image: string; status: 'published' | 'draft'; category: string; created_by?: string }) => {
     let pageId = editingPage?.id
     if (editingPage) {
-      const updated = { ...editingPage, title: data.title, image: data.image, status: data.status, category: data.category }
+      const updated = {
+        ...editingPage,
+        title: data.title,
+        image: data.image,
+        status: data.status,
+        category: data.category,
+        ...(data.created_by ? { created_by: data.created_by } : {}),
+      }
       await updatePage(updated)
     } else {
       const newPage: PageProps = {
@@ -268,6 +279,8 @@ export default function FamilyChartList({ onOpen, onView }: FamilyChartListProps
           open={isDialogOpen}
           onClose={() => setIsDialogOpen(false)}
           onSubmit={handleDialogSubmit}
+          canChangeAuthor={canChangeAuthor}
+          getUsers={getUsers}
           initialData={(editingPage || undefined) as any}
         />
       )}

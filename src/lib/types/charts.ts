@@ -200,4 +200,6 @@ export interface PageProps {
   updated_at?: string | Date
   options?: any
   chartProps: ChartProps
+  created_by?: string
+  user?: { id?: string; name?: string }
 }

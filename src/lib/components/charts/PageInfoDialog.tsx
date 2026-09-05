@@ -4,9 +4,13 @@ import { useDataContext } from '@/context/DataContext'
 type PageInfoDialogProps = {
   open: boolean
   onClose: () => void
-  onSubmit: (data: { title: string; image: string; status: 'published' | 'draft'; category: string }) => void
-  initialData?: { title: string; image: string; status?: 'published' | 'draft'; category?: string }
+  onSubmit: (data: { title: string; image: string; status: 'published' | 'draft'; category: string; created_by?: string }) => void
+  initialData?: { title: string; image: string; status?: 'published' | 'draft'; category?: string; created_by?: string; user?: { id?: string; name?: string } }
   onImageUpload?: (file: File) => Promise<string>
+  /** Owner/Admin only: show an author selector to reassign the chart. */
+  canChangeAuthor?: boolean
+  /** Fetch the staff user list for the author selector. */
+  getUsers?: () => Promise<Array<{ id: string; name: string }>>
 }
 
 export function PageInfoDialog({
@@ -15,12 +19,16 @@ export function PageInfoDialog({
   onSubmit,
   initialData = { title: '', image: '', status: 'draft', category: '' },
   onImageUpload,
+  canChangeAuthor = false,
+  getUsers,
 }: PageInfoDialogProps) {
   const { t } = useDataContext()
   const [title, setTitle] = useState(initialData.title)
   const [image, setImage] = useState(initialData.image)
   const [status, setStatus] = useState<'published' | 'draft'>(initialData.status ?? 'draft')
   const [category, setCategory] = useState(initialData.category ?? '')
+  const [createdBy, setCreatedBy] = useState(initialData.created_by || initialData.user?.id || '')
+  const [authorOptions, setAuthorOptions] = useState<Array<{ id: string; name: string }>>([])
   const [errors, setErrors] = useState({ title: '', image: '' })
   const [isUploading, setIsUploading] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
@@ -32,11 +40,17 @@ export function PageInfoDialog({
     setImage(initialData.image)
     setStatus(initialData.status ?? 'draft')
     setCategory(initialData.category ?? '')
+    setCreatedBy(initialData.created_by || initialData.user?.id || '')
     setPreviewImage(null)
     setUploadedImage(null)
     setErrors({ title: '', image: '' })
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [])
+
+  useEffect(() => {
+    if (!open || !canChangeAuthor || !getUsers) return
+    getUsers().then(setAuthorOptions).catch(() => setAuthorOptions([]))
+  }, [open, canChangeAuthor])
 
   const validate = () => {
     const errs = { title: '', image: '' }
@@ -54,12 +68,12 @@ export function PageInfoDialog({
     if (!validate()) return
     let finalImage = image
     if (uploadedImage && !onImageUpload) finalImage = await fileToBase64(uploadedImage)
-    onSubmit({ title, image: finalImage, status, category })
+    onSubmit({ title, image: finalImage, status, category, created_by: canChangeAuthor && createdBy ? createdBy : undefined })
     reset()
   }
 
   const reset = () => {
-    setTitle(''); setImage(''); setStatus('draft'); setCategory('')
+    setTitle(''); setImage(''); setStatus('draft'); setCategory(''); setCreatedBy('')
     setPreviewImage(null); setUploadedImage(null)
     setErrors({ title: '', image: '' })
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -133,6 +147,25 @@ export function PageInfoDialog({
                 placeholder={t('Category placeholder','e.g. Dynasty, Imperial, Modern')}
               />
             </div>
+
+            {canChangeAuthor && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('Author (Owner)','Author (Owner)')}</label>
+                <select
+                  value={createdBy}
+                  onChange={(e) => setCreatedBy(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500"
+                >
+                  {authorOptions.length === 0 && createdBy ? (
+                    <option value={createdBy}>{initialData.user?.name || createdBy}</option>
+                  ) : null}
+                  {authorOptions.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">{t('Reassign this chart to another user (owner/admin only).','Reassign this chart to another user (owner/admin only).')}</p>
+              </div>
+            )}
 
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('Page Image','Page Image')}</label>
