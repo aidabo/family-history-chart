@@ -202,4 +202,7 @@ export interface PageProps {
   chartProps: ChartProps
   created_by?: string
   user?: { id?: string; name?: string }
+  // Backend-computed edit permission (single source of truth). Undefined for
+  // public/read-only surfaces; the list treats only `false` as "hide edit".
+  can_edit?: boolean
 }
