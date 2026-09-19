@@ -28,9 +28,11 @@ export interface FamilyChartListProps {
   canChangeAuthor?: boolean
   /** Fetch the staff user list for the author selector; required when canChangeAuthor is true. */
   getUsers?: () => Promise<Array<{ id: string; name: string }>>
+  /** Fetch the current user's groups/families for chart sharing. */
+  getGroups?: () => Promise<Array<{ id: string; name: string; type?: string }>>
 }
 
-export default function FamilyChartList({ onOpen, onView, canChangeAuthor = false, getUsers }: FamilyChartListProps) {
+export default function FamilyChartList({ onOpen, onView, canChangeAuthor = false, getUsers, getGroups }: FamilyChartListProps) {
   const [pages, setPages] = useState<PageProps[]>([])
   const [loading, setLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -108,7 +110,7 @@ export default function FamilyChartList({ onOpen, onView, canChangeAuthor = fals
     }
   }
 
-  const handleDialogSubmit = async (data: { title: string; image: string; status: 'published' | 'draft'; category: string; created_by?: string }) => {
+  const handleDialogSubmit = async (data: { title: string; image: string; status: 'published' | 'draft'; category: string; created_by?: string; group_id?: string }) => {
     let pageId = editingPage?.id
     if (editingPage) {
       const updated = {
@@ -117,6 +119,7 @@ export default function FamilyChartList({ onOpen, onView, canChangeAuthor = fals
         image: data.image,
         status: data.status,
         category: data.category,
+        group_id: data.group_id,
         ...(data.created_by ? { created_by: data.created_by } : {}),
       }
       await updatePage(updated)
@@ -127,6 +130,7 @@ export default function FamilyChartList({ onOpen, onView, canChangeAuthor = fals
         image: data.image,
         status: data.status,
         category: data.category,
+        group_id: data.group_id,
         options: {},
         chartProps: { dynasties: [], persons: [], relationships: [], episodes: [], events: [] },
       }
@@ -289,6 +293,7 @@ export default function FamilyChartList({ onOpen, onView, canChangeAuthor = fals
           onSubmit={handleDialogSubmit}
           canChangeAuthor={canChangeAuthor}
           getUsers={getUsers}
+          getGroups={getGroups}
           initialData={(editingPage || undefined) as any}
         />
       )}

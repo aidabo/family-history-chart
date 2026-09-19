@@ -201,6 +201,8 @@ export interface PageProps {
   options?: any
   chartProps: ChartProps
   created_by?: string
+  /** Optional SocialGroup id; null/empty means a public/personal chart. */
+  group_id?: string
   user?: { id?: string; name?: string }
   // Backend-computed edit permission (single source of truth). Undefined for
   // public/read-only surfaces; the list treats only `false` as "hide edit".
