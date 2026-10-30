@@ -1,188 +1,172 @@
-# Family / Dynasty History Chart
+# family-history-chart（`@ghost-next/family-chart`）
 
-> Interactive **family tree · genealogy · timeline · relationship-graph** editor for React — built on **D3** + **TypeScript**.
-> 家系図・系図・年表・関係図をブラウザで描画・編集する React コンポーネントライブラリ。
+家系図・年表・関係図をブラウザで描いて編集する React のライブラリ（D3 + TypeScript、Vite でビルド）。
+フロント（`01-ghost-front`）が `packages/family-chart` へのリンクとして取り込み、ホストの `/charts` 画面などで使う。
 
-<p align="left">
-  <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white">
-  <img alt="D3" src="https://img.shields.io/badge/D3-7-F9A03C?logo=d3.js&logoColor=white">
-  <img alt="Vite" src="https://img.shields.io/badge/Vite-lib_build-646CFF?logo=vite&logoColor=white">
-  <img alt="i18n" src="https://img.shields.io/badge/i18n-ja%20%2F%20en%20%2F%20zh-informational">
-</p>
+## この文書の内容
 
-`@ghost-next/family-chart` renders and edits **person graphs** — parents, spouses, teachers, lieges, custom relations — with four switchable layouts, on-canvas editing, CSV import/export, note annotations, freehand whiteboard, and A4 thumbnail/print export. It runs **standalone** against a bundled REST/JSON backend, or plugs into a host app via a single `store` injection point.
+| 節 | 内容 |
+|---|---|
+| [役割と位置](#役割と位置) | ホスト・Ghost・chart ジョブとの関係 |
+| [できること](#できること) | レイアウト・関係の種類・入出力 |
+| [中の構成](#中の構成) | 主なフォルダ |
+| [公開している API](#公開している-api) | export・`DataProvider`・`FamilyChartEditor`・`FamilyChartList` の props |
+| [開発の手順](#開発の手順) | 入れる・単体で動かす・ビルド |
+| [ホストでの使われ方](#ホストでの使われ方) | どの画面がどう使うか、保存先 |
+| [注意](#注意) | 壊しやすい所 |
+| [ブランチ](#ブランチ) | `main` と作業ブランチ |
+| [詳しい文書](#詳しい文書) | このリポジトリの docs と、01-ghost-front の docs |
 
-## 🎬 Demo
+## 役割と位置
 
-A short walkthrough of layout switching, on-canvas editing, and export.
+```mermaid
+flowchart LR
+  FC["12-family-history-chart<br/>yarn build → dist/"] -- "packages/family-chart（symlink）" --> H["ホスト apps/host<br/>/charts ほか"]
+  H -- "store を差し込む" --> G["Ghost<br/>social_charts"]
+  FC -- "src/lib/utils/csv.ts を<br/>esbuild で同梱" --> W["tools/chart-worker<br/>csv-parser.mjs"]
+```
 
-https://github.com/user-attachments/assets/39df3ede-b50a-486f-a2ef-ed65d197b20f
+- ホストはこのリポジトリの**ビルド済み `dist`** を読む（`package.json` の `exports` が `dist` を指す）。ソースは読まない。
+- 保存先は差し替えられる。単体では REST（json-server）に保存し、ホストでは Ghost の `social_charts` に保存する。
 
-▶️ Or **[watch / download the committed file](docs/assets/chart-demo.mp4)** (`docs/assets/chart-demo.mp4`) — works in local Markdown viewers and on GitHub's file page.
+## できること
 
----
+- レイアウト: `auto`・`tidy`（系図）・`timeline`（年表）・`force`（関係図）。`ViewSettings.layoutMode` にチャートごとに保存する。
+- 関係の種類（`RelationType`）: `parent-child`・`marriage`・`remarriage`・`partner`・`sibling`・`succession`・`ally`・`rival`・
+  `mentor`・`enemy`・`friend`・`master`・`disciple`・`comrade`・`liege`・`custom`。
+- キャンバスで編集する（ドラッグ・ダブルクリックで追加/名前変更など）。操作の一覧は [docs/shortcuts.md](docs/shortcuts.md)。
+- メモ（注記ノード）・手描き（undo/redo あり）・縦書き（`off` / `cjk` / `on`）。
+- CSV の取り込み・書き出し（`src/lib/utils/csv.ts`）。取り込みは今の図に追記する。
+- サムネイル: 見えている範囲を PNG にして `uploadThumbnail` に渡す。
+- 文言は `t`（翻訳関数）で引く。ホストが渡さないときはキー（か fallback）がそのまま出る。
 
-## ✨ Features
+## 中の構成
 
-- 🌳 **Four layout modes** — 系図 *(tidy tree)*, 年表 *(timeline)*, 関係図 *(force graph)*, and **auto**. Switch live; node positions are preserved.
-- 👤 **Rich node shapes** — circular portraits, photo cards, rectangles, circles, and union nodes. Images, videos, or generated silhouettes.
-- 🔗 **11 relation types + custom** — marriage / remarriage / parent-child / teacher(師) / liege(主従) / … with trilingual edge labels and per-type colors & dashes.
-- 🎛️ **On-canvas editing** — drag to move, Ctrl+click to connect, double-click to rename, inline note editing, resize handles.
-- 🧮 **Relation filter & node search** — hide/show relation kinds; jump to any person by name/title.
-- 📝 **Note annotations** — sticky / speech-bubble / manga-frame notes, vertical (CJK) text supported.
-- ✏️ **Freehand whiteboard** — draw & annotate over the chart; strokes persist with the page.
-- ⌨️ **Keyboard-first** — arrow-key node nudging, viewport panning, Esc/Delete shortcuts. See [`docs/shortcuts.md`](docs/shortcuts.md).
-- 🖼️ **Thumbnail & print export** — A4-landscape PNG/JPEG snapshot of the visible viewport (photos inlined & downscaled).
-- 🌐 **i18n** — Japanese / English / Chinese out of the box; host can inject its own translator.
-- 🔌 **Pluggable persistence** — bundled REST store for standalone use, or inject a `store` (e.g. a CMS `social_charts` API) with zero library changes.
-- 📄 **CSV & JSON import/export** — bulk-load people and relationships. Formats: [`docs/csv-format.md`](docs/csv-format.md), [`docs/chart-json-format.md`](docs/chart-json-format.md).
+| 場所 | 中身 |
+|---|---|
+| `src/lib/index.ts` | ライブラリの入口（export の一覧） |
+| `src/lib/app/` | `FamilyChartEditor`・`FamilyChartList`・設定ダイアログ |
+| `src/lib/components/canvas/` | D3 のキャンバス `DynastyNetwork`・`NodeCard`・図形 |
+| `src/lib/components/editors/` | 人物・関係の編集パネル |
+| `src/lib/context/DataContext.tsx` | `DataProvider` と `useDataContext`（状態と保存） |
+| `src/lib/services/layoutStore.ts` | 単体用の REST の保存（`createLayoutStore`） |
+| `src/lib/types/charts.ts` | データの型（`PageProps`・`PersonNode`・`Relationship` など） |
+| `src/lib/utils/csv.ts` | CSV ⇔ グラフの変換。chart-worker もこれを使う |
+| `src/demo/` | 単体で動かすデモ（react-router。`/charts`・`/edit/:id`） |
+| `data/db.json` | デモ用の json-server のデータ |
+| `docs/` | 形式の説明・サンプル CSV（`docs/samples/`）・設計メモ |
 
-## 📦 Installation
+## 公開している API
+
+`src/lib/index.ts` が export するもの:
+
+| 名前 | 種類 | 用途 |
+|---|---|---|
+| `DataProvider` / `useDataContext` | 部品 / hook | 状態と保存の土台。中の部品はこの下に置く |
+| `FamilyChartEditor` | 部品 | 1 つのチャートの編集・表示 |
+| `FamilyChartList` | 部品 | チャートの一覧 |
+| `DynastyNetwork`・`NodeCard`・`EdgeCard`・`RelationshipTypeDialog` | 部品 | 中の部品 |
+| `PageProps`・`ChartProps`・`PersonNode`・`Relationship`・`NodeShape`・`FamilyChartEditorProps`・`FamilyChartListProps` | 型 | |
+
+スタイルは `import '@ghost-next/family-chart/style.css'`（`./styles` も同じ `dist/family-chart.css`）。
+
+### `DataProvider` の props
+
+| prop | 既定 | 説明 |
+|---|---|---|
+| `apiBaseUrl` | `/api/charts` | 単体用 REST の起点。`store` を渡したときは使わない |
+| `store` | `createLayoutStore(apiBaseUrl)` | 保存先。`getPageList`・`getPageById`・`savePage`・`insertPage`・`updatePage`・`deletePage` を持つもの |
+| `uploadFile` | なし | `(file: File) => Promise<string>`。画像・動画を上げて URL を返す |
+| `uploadThumbnail` | なし | `(chartId, blob) => Promise<string>`。サムネイルを上げて URL を返す |
+| `thumbnailDpi` | `150` | サムネイル（A4 横）の DPI |
+| `t` | キーか fallback を返す | `(key, fallback?) => string` |
+| `locale` | `'ja'` | |
+
+型 `LayoutStore` と `TranslateFn` は `index.ts` から export していない（ホストは `store as any` で渡している）。
+
+### `FamilyChartEditor` の props
+
+| prop | 説明 |
+|---|---|
+| `id` | 開くチャートの id |
+| `mode` | `'edit'` か `'view'`。`'view'` 以外（省略を含む）は編集できる |
+| `onBack` | 一覧へ戻る |
+| `onOpenView` / `onOpenEdit` | `(id) => void`。表示 / 編集へ移る |
+
+### `FamilyChartList` の props
+
+| prop | 説明 |
+|---|---|
+| `onOpen` / `onView` | `(id) => void`。編集 / 表示を開く |
+| `canChangeAuthor` | 既定 `false`。true で作者を変える欄を出す（Owner/Admin 向け） |
+| `getUsers` | 作者の候補を返す。`canChangeAuthor` のとき要る |
+| `getGroups` | 共有先のグループ・家族を返す |
+
+## 開発の手順
 
 ```bash
-# from this monorepo it is exposed as @ghost-next/family-chart
-yarn add @ghost-next/family-chart
+cd ~/work/legacy/12-family-history-chart
+yarn install
+yarn dev          # vite（:5173）と json-server（:3195、data/db.json）を一緒に起動。/api は :3195 へ proxy
+yarn build        # ライブラリのビルド → dist/（ホストが読むのはこれ）
+yarn build:demo   # デモのビルド → dist-demo/
+yarn preview      # ビルドしたものを vite preview で見る
 ```
 
-Peer runtime: **React 18** and **react-dom 18**.
+- `yarn build` の出力: `dist/dynasty-history-chart.es.js`・`dist/dynasty-history-chart.umd.js`・`dist/index.d.ts`・`dist/family-chart.css`。
+  `react`・`react-dom`・`d3` は同梱しない（external）。
+- テストは無い。動きはデモか、ホストの `/charts` で確かめる。
+- `yarn lint` は `eslint src` だが、eslint は devDependencies に無く、設定ファイルも無い。
 
-```ts
-import '@ghost-next/family-chart/style.css' // bundled Tailwind styles
-```
+## ホストでの使われ方
 
-## 🚀 Quick Start
+ホスト（`01-ghost-front/apps/host`）は `package.json` で `"@ghost-next/family-chart": "*"` とし、workspace のリンクで読む。
 
-Wrap your app in `DataProvider`, then drop in `FamilyChartEditor` (single chart) or `FamilyChartList` (chart gallery). The provider talks to a REST backend at `apiBaseUrl` by default.
+| ホストの場所 | 使う部品 | 保存先など |
+|---|---|---|
+| `src/app/charts/page.tsx` | `FamilyChartList` | `createSocialChartsStore()`（Ghost の `social_charts`）。`getUsers`・`getGroups` を渡す |
+| `src/app/charts/edit/[id]/page.tsx` | `FamilyChartEditor`（`edit`） | 同上。`uploadFile`・`uploadThumbnail`（`chartThumbnailUpload.ts`）・`thumbnailDpi`（`NEXT_PUBLIC_CHART_THUMBNAIL_DPI`） |
+| `src/app/charts/view/[id]/page.tsx` | `FamilyChartEditor`（`view`） | 同上 |
+| `src/app/charts-public/view/[id]/page.tsx` | `FamilyChartEditor`（`view`） | `createPublicSocialChartsStore()` |
+| `src/templates/stackpage/ChartViewer.tsx` | `FamilyChartEditor`（`view`） | stackpage のページに埋め込む |
 
-```tsx
-import { useState } from 'react'
-import {
-  DataProvider,
-  FamilyChartEditor,
-  FamilyChartList,
-} from '@ghost-next/family-chart'
-import '@ghost-next/family-chart/style.css'
+`t` と `locale` はホストの `useTranslation()` から渡す。文言の訳は 01-ghost-front の `packages/i18n/locales/*/front.json` にある。
 
-export default function App() {
-  const [openId, setOpenId] = useState<string | null>(null)
-  const [mode, setMode] = useState<'edit' | 'view'>('edit')
+chart ジョブ（01-ghost-front の `tools/chart-worker`）は、このリポジトリの `src/lib/utils/csv.ts` を esbuild でまとめた
+`tools/chart-worker/src/csv-parser.mjs` を使う（`yarn workspace chart-worker gen:csv-parser` で作り直す）。
+CSV の列は [docs/csv-format.md](docs/csv-format.md) が正。01-ghost-front の skill `.claude/skills/chart-csv-format` はその要約。
 
-  return (
-    <DataProvider apiBaseUrl="/api/charts" locale="ja">
-      {openId ? (
-        <FamilyChartEditor
-          id={openId}
-          mode={mode}
-          onBack={() => setOpenId(null)}
-          onOpenView={(id) => { setMode('view'); setOpenId(id) }}
-          onOpenEdit={(id) => { setMode('edit'); setOpenId(id) }}
-        />
-      ) : (
-        <FamilyChartList
-          onOpenEdit={(id) => { setMode('edit'); setOpenId(id) }}
-          onOpenView={(id) => { setMode('view'); setOpenId(id) }}
-        />
-      )}
-    </DataProvider>
-  )
-}
-```
+## 注意
 
-Run the bundled dev backend (json-server) alongside Vite:
+- **変えたら `yarn build` し直す**。ホストは `dist` を読み、watch は無い。`dist` は git に入っていない。
+- **`csv.ts` を変えたら chart-worker の `csv-parser.mjs` も作り直してコミットする**（01-ghost-front 側の作業）。忘れるとジョブとブラウザで CSV の解釈がずれる。
+- CSV の列を変えたら `docs/csv-format.md` と skill `chart-csv-format` もそろえる。
+- 配布のビルドは手元の作業フォルダをそのまま取り込む。配布の前に `main` にそろえてビルドし直す（[08-deploy](https://github.com/aidabo/jibunsee-react/blob/main/docs/development/08-deploy.md)）。
 
-```bash
-yarn dev   # vite + json-server on :3195 (see package.json)
-```
+## ブランチ
 
-## 🧩 Public API
+- 既定のブランチは `main`。
+- `vite-conversion-editor` という作業ブランチがある。PR #4 で `main` にマージ済み（2026-10-30 時点で `main` に無いコミットは無い）。
 
-| Export | Type | Purpose |
-| --- | --- | --- |
-| `DataProvider` | component | Data/context root. Wires persistence, locale, upload & thumbnail hooks. |
-| `useDataContext` | hook | Access chart state and actions inside custom UI. |
-| `FamilyChartEditor` | component | Full editor for one chart (toolbar, canvas, dialogs). |
-| `FamilyChartList` | component | Gallery of charts with open/edit actions. |
-| `DynastyNetwork` | component | The D3 canvas itself (advanced/embedding use). |
-| `NodeCard`, `EdgeCard`, `RelationshipTypeDialog` | components | Building blocks for custom editors. |
-| `PageProps`, `ChartProps`, `PersonNode`, `Relationship`, `NodeShape` | types | Data model. |
+## 詳しい文書
 
-### `DataProvider` props
+このリポジトリ:
 
-| Prop | Type | Default | Notes |
-| --- | --- | --- | --- |
-| `children` | `ReactNode` | — | App subtree. |
-| `apiBaseUrl` | `string` | `/api/charts` | REST base for the bundled store. |
-| `locale` | `string` | `'ja'` | `ja` / `en` / `zh`. |
-| `uploadFile` | `(file) => Promise<string>` | — | Optional image/video upload → returns URL. |
-| `uploadThumbnail` | `(chartId, blob) => Promise<string>` | — | Optional thumbnail upload → returns URL. |
-| `thumbnailDpi` | `number` | `150` | A4-landscape thumbnail DPI. |
-| `store` | `LayoutStore` | built-in REST | **Host injection** — swap in your own persistence (e.g. a CMS API). |
-| `t` | `TranslateFn` | identity | **Host injection** — provide your own translator. |
+- [docs/csv-format.md](docs/csv-format.md) — CSV の列と書き方
+- [docs/chart-json-format.md](docs/chart-json-format.md) — チャートの JSON の形
+- [docs/import-schema.md](docs/import-schema.md) — 取り込みの規則
+- [docs/shortcuts.md](docs/shortcuts.md) — 操作とショートカット
+- [docs/samples/](docs/samples/) — サンプル CSV と生成スクリプト
+- `docs/` のほかの文書（`host-merge-plan.md`・`chart-job-agent-plan.md` など）は計画・設計時のメモ。今の動きはコードで確かめる
 
-### `FamilyChartEditor` props
+01-ghost-front（jibunsee-react）:
 
-| Prop | Type | Notes |
-| --- | --- | --- |
-| `id` | `string` | Chart id to open. |
-| `mode` | `'edit' \| 'view'` | Editable canvas or read-only viewer. |
-| `onBack` | `() => void` | Close/return to list. |
-| `onOpenView` / `onOpenEdit` | `(id) => void` | Navigation callbacks. |
+- [01-workspace](https://github.com/aidabo/jibunsee-react/blob/main/docs/development/01-workspace.md) — clone とリンク
+- [04-frontend](https://github.com/aidabo/jibunsee-react/blob/main/docs/development/04-frontend.md) — ホストの起動とライブラリのビルド
+- [05-runner](https://github.com/aidabo/jibunsee-react/blob/main/docs/development/05-runner.md) — chart ジョブの worker
+- [06-business-libs-estate](https://github.com/aidabo/jibunsee-react/blob/main/docs/development/06-business-libs-estate.md) — ライブラリとホストの関係
+- [chart-viewsettings-persistence](https://github.com/aidabo/jibunsee-react/blob/main/docs/architecture/chart-viewsettings-persistence.md) — 表示設定の保存
 
-## 🏗️ Layout modes
+## ライセンス
 
-| Mode | 日本語 | Best for |
-| --- | --- | --- |
-| Tidy tree | 系図 | Classic pedigree / descent charts. |
-| Timeline | 年表 | Lifespans & events along a time axis. |
-| Force graph | 関係図 | Dense relationship networks. |
-| Auto | 自動 | Let the chart pick a fit. |
-
-Layout choice, spacing, grid, edge style, and relation filters are **persisted per chart** (the host app documents this in its own `docs/architecture/chart-viewsettings-persistence.md`).
-
-## 🗂️ Data formats
-
-- **CSV** — bulk people/relationships (incl. an image/video column): [`docs/csv-format.md`](docs/csv-format.md)
-- **Chart JSON** — full chart payload shape: [`docs/chart-json-format.md`](docs/chart-json-format.md)
-- **Import schema** — validation rules: [`docs/import-schema.md`](docs/import-schema.md)
-
-## 🔌 Host integration
-
-The library is **standalone by default** but every backend touch-point is an optional injection:
-
-- `store` — replaces the built-in REST layer (map your API to `getPageList / getPageById / savePage / …`).
-- `uploadFile` / `uploadThumbnail` — route media to your own object storage / CDN.
-- `t` / `locale` — reuse the host's i18n.
-
-This is how the chart embeds into the Ghost-based host app, persisting to a `social_charts` table and uploading thumbnails to S3. See [`docs/host-merge-plan.md`](docs/host-merge-plan.md).
-
-## 🛠️ Development
-
-```bash
-yarn dev          # Vite dev server + json-server backend (:3195)
-yarn build        # library build → dist/ (ES + UMD + d.ts + css)
-yarn build:demo   # standalone demo build
-yarn preview      # preview a build
-yarn lint         # eslint
-```
-
-Build output (consumed via `package.json` `exports`):
-
-```
-dist/dynasty-history-chart.es.js    # ESM  (module)
-dist/dynasty-history-chart.umd.js   # UMD  (main)
-dist/index.d.ts                     # types
-dist/family-chart.css               # styles  → import '@ghost-next/family-chart/style.css'
-```
-
-## 🧱 Tech stack
-
-**React 18** · **D3 7** · **TypeScript 5** · **Vite** (library mode, `vite-plugin-dts`) · **TailwindCSS** · **Heroicons** · **uuid** · **axios**.
-
-## 📚 Documentation
-
-More design notes live in [`docs/`](docs/): agent/AI layout ([`docs/ai-layout-skill-prompt.md`](docs/ai-layout-skill-prompt.md)), chart-job pipeline ([`docs/chart-job-agent-plan.md`](docs/chart-job-agent-plan.md)), thumbnail generation ([`docs/thumbnail-generation.md`](docs/thumbnail-generation.md)), and the task log ([`docs/TASKS.md`](docs/TASKS.md)).
-
-## 📄 License
-
-Proprietary / internal — part of the Ghost-Next platform. No license is granted for external use unless one is added to this repository.
+LICENSE ファイルは無い。社内用で、外部での利用は許諾していない。
