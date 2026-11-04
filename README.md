@@ -104,6 +104,8 @@ flowchart LR
 
 ## 開発の手順
 
+Estate frontendを含む全体の構築・起動は、[ローカル全体環境ガイド](https://github.com/aidabo/jibunsee-react/blob/main/docs/development/00-local-full-stack.md)を参照してください。ホストでチャートを使う場合は、このREADMEの`yarn build`で`dist/`を作ってください。
+
 ```bash
 cd ~/work/legacy/12-family-history-chart
 yarn install
