@@ -834,12 +834,35 @@ function shelfPack(laid: Laid[], col: number, gap: number, centerX: number, topY
   return out
 }
 
-// Lay out ONE connected component: split into lineage blocks and pack them (tight gap).
+// Lay out ONE connected component: split into lineage blocks, then pack the blocks.
+// A marriage out of one blood line into another is a VERTICAL edge between two blocks
+// (the daughter's parents sit in her birth block, the daughter in her husband's). Laid
+// out separately, those two blocks get unrelated rows and the parent can end up below
+// the child. Blocks joined by such an edge therefore share one layout; only the blood
+// lines with no vertical tie to each other are laid out and packed as separate blocks.
 function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: LayoutOptions, resolved: 'tidy' | 'timeline'): LayoutResult {
   const comps = lineageBlocks(nodes, links)
   if (comps.length <= 1) return computeSingleLayout(nodes, links, { ...options, mode: resolved })
   const col = options.colGap ?? 150
-  const laid = comps.map(idsArr => {
+  const blockOf = new Map<string, number>()
+  comps.forEach((ids, i) => ids.forEach(id => blockOf.set(id, i)))
+  const root = comps.map((_, i) => i)
+  const find = (x: number): number => { while (root[x] !== x) { root[x] = root[root[x]]; x = root[x] } return x }
+  const merge = (a: number, b: number) => { const ra = find(a), rb = find(b); if (ra !== rb) root[ra] = rb }
+  const isVerticalEdgeType = (t?: string) => t === 'parent-child' || t === 'disciple' || t === 'master'
+  for (const l of links) {
+    if (!isVerticalEdgeType(l.type)) continue
+    const a = blockOf.get(l.source), b = blockOf.get(l.target)
+    if (a != null && b != null && a !== b) merge(a, b)
+  }
+  const groups = new Map<number, string[]>()
+  for (let i = 0; i < comps.length; i++) {
+    const r = find(i)
+    const g = groups.get(r)
+    if (g) g.push(...comps[i])
+    else groups.set(r, [...comps[i]])
+  }
+  const laid = [...groups.values()].map(idsArr => {
     const idset = new Set(idsArr)
     const sub = nodes.filter(n => idset.has(n.id))
     const subLinks = links.filter(l => idset.has(l.source) && idset.has(l.target))
