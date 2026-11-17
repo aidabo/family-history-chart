@@ -38,6 +38,8 @@ const OPTIONS: Option[] = [
   { id: 'liege',             label: `${relationLabelMulti('liege')} →`,     type: 'liege',        swap: false, canUnion: true },
   { id: 'master',            label: `${relationLabelMulti('master')} →`,    type: 'master',       swap: false, canUnion: true },
   { id: 'disciple',          label: `${relationLabelMulti('disciple')} →`,  type: 'disciple',     swap: false, canUnion: true },
+  { id: 'superior',          label: `${relationLabelMulti('superior')} →（上→下）`, type: 'superior', swap: false, canUnion: true },
+  { id: 'leader',            label: `${relationLabelMulti('leader')} →（上→下）`,  type: 'leader',   swap: false, canUnion: true },
   { id: 'comrade',           label: relationLabelMulti('comrade'),          type: 'comrade',      swap: false, canUnion: true },
   { id: 'rival',             label: relationLabelMulti('rival'),            type: 'rival',        swap: false, canUnion: true },
   { id: 'enemy',             label: relationLabelMulti('enemy'),            type: 'enemy',        swap: false, canUnion: true },

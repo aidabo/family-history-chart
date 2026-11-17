@@ -21,7 +21,7 @@ type RelType = Relationship['type']
 // Labels shown trilingual (ja / zh / en) via relationLabelMulti.
 const TYPE_OPTIONS: RelType[] = [
   'parent-child', 'marriage', 'remarriage', 'sibling', 'succession', 'friend',
-  'ally', 'liege', 'master', 'disciple', 'comrade', 'rival', 'enemy', 'custom',
+  'ally', 'liege', 'master', 'disciple', 'superior', 'leader', 'comrade', 'rival', 'enemy', 'custom',
 ]
 
 export function EdgeCard({ relationship, persons, position, onUpdate, onDelete, onConvertToUnion, onClose }: Props) {

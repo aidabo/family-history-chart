@@ -23,6 +23,8 @@ const TYPE_BADGE: Record<string, string> = {
   'mentor':       'bg-orange-100 text-orange-700',
   'master':       'bg-orange-100 text-orange-800',
   'disciple':     'bg-yellow-100 text-yellow-700',
+  'superior':     'bg-indigo-100 text-indigo-700',
+  'leader':       'bg-cyan-100 text-cyan-700',
   'comrade':      'bg-teal-100 text-teal-700',
   'rival':        'bg-rose-100 text-rose-700',
   'enemy':        'bg-red-100 text-red-700',
@@ -41,6 +43,8 @@ const TYPE_LABEL: Record<string, string> = {
   'mentor':       '師弟',
   'master':       '師匠',
   'disciple':     '弟子',
+  'superior':     '上司',
+  'leader':       'リーダー',
   'comrade':      '戦友',
   'rival':        '対立',
   'enemy':        '敵対',
@@ -51,7 +55,7 @@ const TYPE_LABEL: Record<string, string> = {
 const REL_WORD: Record<string, string> = {
   'marriage': '結婚', 'remarriage': '再婚', 'sibling': '兄弟姉妹', 'succession': '継承',
   'friend': '親友', 'ally': '同盟', 'mentor': '師弟', 'rival': '対立', 'enemy': '敵対',
-  'master': '師匠', 'disciple': '弟子', 'comrade': '戦友',
+  'master': '師匠', 'disciple': '弟子', 'superior': '上司', 'leader': 'リーダー', 'comrade': '戦友',
   'parent-child': '親子', 'custom': '関係', 'partner': 'パートナー',
 }
 
@@ -84,6 +88,8 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
       case 'mentor':       return t('Mentor', '師弟')
       case 'master':       return t('Master', '師匠')
       case 'disciple':     return t('Disciple', '弟子')
+      case 'superior':     return t('Supervisor', '上司')
+      case 'leader':       return t('Leader', 'リーダー')
       case 'comrade':      return t('Comrade', '戦友')
       case 'rival':        return t('Rival', '対立')
       case 'enemy':        return t('Enemy', '敵対')
@@ -106,6 +112,8 @@ export function RelationshipsSection({ node, relationships, persons, onRemove, o
       case 'enemy':        return t('Enemy', '敵対')
       case 'master':       return t('Master', '師匠')
       case 'disciple':     return t('Disciple', '弟子')
+      case 'superior':     return t('Supervisor', '上司')
+      case 'leader':       return t('Leader', 'リーダー')
       case 'comrade':      return t('Comrade', '戦友')
       case 'parent-child': return t('Parent-child pair', '親子')
       case 'custom':       return t('Custom rel', '関係')

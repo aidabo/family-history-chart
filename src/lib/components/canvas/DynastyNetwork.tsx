@@ -1235,6 +1235,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       d.type === 'mentor'       ? '#d97706' :
       d.type === 'master'       ? '#c2410c' :
       d.type === 'disciple'     ? '#ca8a04' :
+      d.type === 'superior'     ? '#4f46e5' :
+      d.type === 'leader'       ? '#0891b2' :
       d.type === 'comrade'      ? '#0d9488' :
       d.type === 'liege'        ? '#9333ea' :
       d.type === 'enemy'        ? '#dc2626' :
@@ -1260,6 +1262,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         if (d.type === 'marriage' || d.type === 'remarriage') return 'url(#marriage-dot)'
         if (d.type === 'succession') return 'url(#succession-circle)'
         if (d.type === 'liege') return 'url(#arrow)'   // 君→臣 direction
+        if (d.type === 'superior' || d.type === 'leader') return 'url(#arrow)'   // 上→下
         if (d.type === 'sibling') return 'url(#sibling-square)'
         if (d.type === 'partner') return 'url(#partner-dot)'
         return null

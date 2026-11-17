@@ -129,7 +129,24 @@ AI にレイアウト込みで図を生成させる用途（位置つき JSON �
 | `start` / `end` | string | — | 期間（結婚等） |
 | `color` / `width` | string / number | — | 線色 / 太さ |
 
-`RelationType` = `parent-child` `marriage` `remarriage` `partner` `sibling` `succession` `ally` `rival` `mentor` `enemy` `friend` `custom` `master` `disciple` `comrade`
+`RelationType` = `parent-child` `marriage` `remarriage` `partner` `sibling` `succession` `ally` `rival` `mentor` `enemy` `friend` `custom` `master` `disciple` `comrade` `liege` `superior` `leader`
+
+### 上下関係（縦に並べる関係）と向き
+
+系図(構造)では、以下の関係は**上→下**として親子と同じように並びます（`superior`・`leader` は v1.1 で追加）。
+
+| type | 意味 | 上の人 |
+|---|---|---|
+| `parent-child` | 親子 | source（親・union） |
+| `master` | 師匠→弟子 | source |
+| `disciple` | 弟子→師匠 | **target**（保存の起点は弟子） |
+| `mentor` | 師弟（弟子→師匠） | **target** |
+| `succession` | 継承（先代→後継） | source |
+| `liege` | 君臣（君→臣） | source |
+| `superior` | 上司→部下 | source |
+| `leader` | リーダー→メンバー | source |
+
+その他の関係（`ally` `rival` `enemy` `friend` `comrade` `sibling` `custom` など）は上下を作らず、交差を避ける対象にもなりません。
 
 ### 関係の表し方（重要）
 - **血縁（親→子）**：`parent-child`（source=親 or union、target=子）。
