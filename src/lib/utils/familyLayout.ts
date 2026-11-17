@@ -281,31 +281,48 @@ function assignGenerations(g: Graph): Map<string, number> {
   return gen
 }
 
-// Horizontal ordering: post-order descendant walk that keeps families together,
-// centers parents over their children and flanks unions with their partners.
-// Returns x in "slot" units (1 slot ≈ one person width).
 /**
  * 世代をそろえる（本当の系図のための後始末）。
  * - 親をたどれない人（親の情報が欠けている子孫）が最上段に浮くのを防ぐ: 子どもより 1 つ上に置く
  * - 親は必ず子より上（gen < 子の gen）
  * - 夫婦は同じ段
  * - 最後に最上段を 0 にそろえる
- * 収束しない異常な入力（循環など）でも止まるよう、回数に上限を置く。
+ *
+ * 段は「下げる」方向にだけ動かす（上げない）。上げ下げを混ぜると、世代をまたぐ結婚
+ * （叔父と姪など）で夫婦をそろえる処理と親を子より上へ戻す処理が打ち消し合い、
+ * 親と子が同じ段になって収束しない。下げるだけなら必ず止まり、両立しない入力
+ * （自分の子孫と結婚している等）は上限で打ち切って元の段に戻す。
  */
 function alignGenerations(g: Graph, gen: Map<string, number>) {
-  for (let pass = 0; pass < 20; pass++) {
+  const initial = new Map(gen)
+  const limit = g.persons.length * 2 + 16
+  let pass = 0
+  for (; pass < limit; pass++) {
     let changed = false
+    // 親は必ず子より上: 破れていたら子の方を下げる。
     for (const p of g.persons) {
       const kids = g.effChildren.get(p.id)
       if (!kids || !kids.size) continue
-      const minChild = Math.min(...[...kids].map(k => gen.get(k) ?? 0))
-      const cur = gen.get(p.id) ?? 0
-      const want = g.effParents.get(p.id)?.size ? Math.min(cur, minChild - 1) : minChild - 1
-      if (want >= 0 && cur !== want) {
+      const pg = gen.get(p.id) ?? 0
+      for (const k of kids) {
+        if ((gen.get(k) ?? 0) <= pg) {
+          gen.set(k, pg + 1)
+          changed = true
+        }
+      }
+    }
+    // 親をたどれない人は子の 1 つ上まで下げる（最上段に浮かせない）。
+    for (const p of g.persons) {
+      if (g.effParents.get(p.id)?.size) continue
+      const kids = g.effChildren.get(p.id)
+      if (!kids || !kids.size) continue
+      const want = Math.min(...[...kids].map(k => gen.get(k) ?? 0)) - 1
+      if (want > (gen.get(p.id) ?? 0)) {
         gen.set(p.id, want)
         changed = true
       }
     }
+    // 夫婦は同じ段（浅い方を深い方へ下げる）。
     for (const partners of g.partnersOfUnion.values()) {
       const m = Math.max(0, ...partners.map(x => gen.get(x) ?? 0))
       for (const x of partners) {
@@ -317,12 +334,20 @@ function alignGenerations(g: Graph, gen: Map<string, number>) {
     }
     if (!changed) break
   }
+  if (pass >= limit) {
+    // 収束しない異常な入力（循環、子孫との結婚など）。元の段に戻す。
+    console.warn('[familyLayout] alignGenerations did not converge; keeping the initial generations')
+    for (const [k, v] of initial) gen.set(k, v)
+  }
   const min = Math.min(...[...gen.values()])
   if (Number.isFinite(min) && min !== 0) {
     for (const [k, v] of gen) gen.set(k, v - min)
   }
 }
 
+// Horizontal ordering: post-order descendant walk that keeps families together,
+// centers parents over their children and flanks unions with their partners.
+// Returns x in "slot" units (1 slot ≈ one person width).
 function assignSlots(g: Graph, gen: Map<string, number>): Map<string, number> {
   const x = new Map<string, number>()
   const seenP = new Set<string>()
@@ -1132,14 +1157,12 @@ function computeSingleLayout(
   }
 
   // Horizontal zigzag for vertical "spine" runs: timeline only. In 系図 the zigzag breaks
-  // the tidy columns (ancestors stop lining up), so it is skipped for tidy.
+  // the tidy columns (ancestors stop lining up), so it is skipped for tidy. In timeline it
+  // shifts a node left/right by its GENERATION parity so a long straight vertical lineage
+  // (e.g. the shogun succession) fans into a readable left–right zigzag. Only SPARSE
+  // generations (a lone-heir chain, ≤2 people incl. spouse) are moved; wide branching
+  // generations stay centered so they aren't tilted.
   if (mode === 'timeline') {
-  // Horizontal zigzag for vertical "spine" runs: shift a node
-  // left/right by its GENERATION parity so a long straight vertical lineage (e.g. the
-  // shogun succession) fans into a readable left–right zigzag. Only SPARSE generations
-  // (a lone-heir chain, ≤2 people incl. spouse) are moved; wide branching generations
-  // stay centered so they aren't tilted.
-  {
     const genOf = (id: string) =>
       isUnion(g.nodeMap.get(id)!)
         ? Math.max(0, ...(g.partnersOfUnion.get(id) || []).map(p => gen.get(p) ?? 0))
@@ -1148,14 +1171,13 @@ function computeSingleLayout(
     for (const p of g.persons) { const gg = gen.get(p.id) ?? 0; perGen.set(gg, (perGen.get(gg) ?? 0) + 1) }
     // Amplitude grows with depth so a long lone-heir chain opens into a wider fan the
     // further down it goes (deeper generation → bigger swing), capped so it stays sane.
-    const base = mode === 'timeline' ? col * 1.1 : col * 0.6
+    const base = col * 1.1
     for (const id of px.keys()) {
       const gg = genOf(id)
       if ((perGen.get(gg) ?? 0) > 2) continue   // keep branching generations centered
       const amp = base * (1 + Math.min(gg, 12) * 0.22)
       px.set(id, (px.get(id) ?? 0) + (gg % 2 === 0 ? -1 : 1) * amp)
     }
-  }
   }
 
   // Center the whole thing on centerX.
