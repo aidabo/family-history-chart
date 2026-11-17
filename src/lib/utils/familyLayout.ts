@@ -564,8 +564,6 @@ function optimizeOrdering(g: Graph, layer: Map<string, number>, initX: Map<strin
 const halfWidth = (n: LayoutNode | undefined, col: number) =>
   n && isUnion(n) ? col * 0.16 : col * 0.5
 
-// Remove overlaps within each row while preserving left→right order, then nudge
-// parents back toward the center of their children for tidiness.
 // Number of crossings among the drawn parent→child edges at the current x positions.
 function countDrawnCrossings(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, limit = 240): number {
   const edges: Array<[string, string]> = []
@@ -591,6 +589,24 @@ function countDrawnCrossings(g: Graph, px: Map<string, number>, rowOf: (id: stri
     }
   }
   return n
+}
+
+// Push nodes right until every row clears the minimum gap for its node kinds. Used as a
+// safety net after the reordering passes so no two cards can overlap.
+function sweepRowGaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, col: number) {
+  const rows = new Map<number, string[]>()
+  for (const id of px.keys()) {
+    const r = Math.round(rowOf(id) * 1000)
+    const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+  }
+  for (const ids of rows.values()) {
+    ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+    for (let i = 1; i < ids.length; i++) {
+      const prev = ids[i - 1], cur = ids[i]
+      const minGap = halfWidth(g.nodeMap.get(prev), col) + halfWidth(g.nodeMap.get(cur), col)
+      if ((px.get(cur) ?? 0) - (px.get(prev) ?? 0) < minGap) px.set(cur, (px.get(prev) ?? 0) + minGap)
+    }
+  }
 }
 
 // Crossing reduction (tidy): after the centering/overlap sweeps, exchange the x of
@@ -633,6 +649,17 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
   }
   const locked = new Set<string>()
   for (const p of g.persons) if ((g.unionsOfPerson.get(p.id)?.length ?? 0) > 1) locked.add(p.id)
+  // Gaps differ by node kind (person↔person needs col, person↔union only 0.66col), so a
+  // reorder is only valid when every gap on the row still clears its own minimum.
+  const rowHasRoom = (rowIds: string[]): boolean => {
+    const sorted = [...rowIds].sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1], cur = sorted[i]
+      const minGap = halfWidth(g.nodeMap.get(prev), col) + halfWidth(g.nodeMap.get(cur), col)
+      if ((px.get(cur) ?? 0) - (px.get(prev) ?? 0) < minGap - 0.001) return false
+    }
+    return true
+  }
   let best = total()
   if (!best) return
   for (let pass = 0; pass < 10; pass++) {
@@ -662,15 +689,16 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
         const all = axs.concat(bxs)
         if (all.some(v => !Number.isFinite(v))) continue
         all.sort((p, q) => p - q)
+        const snap = new Map(ids.map(id => [id, px.get(id)!]))
         B.ids.forEach((id, k) => px.set(id, all[k]))
         A.ids.forEach((id, k) => px.set(id, all[B.ids.length + k]))
+        sweepRowGaps(g, px, rowOf, col)   // re-spacing keeps person↔person gaps
         const now = total()
         if (now < best) {
           best = now
           improved = true
         } else {
-          A.ids.forEach((id, k) => px.set(id, axs[k]))
-          B.ids.forEach((id, k) => px.set(id, bxs[k]))
+          for (const [id, v] of snap) px.set(id, v)
         }
       }
     }
@@ -695,9 +723,10 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
         else units.push({ u, ids: [id], ok: true })
       }
       for (const unit of units) if (unit.ids.some(id => locked.has(id))) unit.ok = false
-      const slots = ids.map(id => px.get(id)!).filter(v => Number.isFinite(v)).sort((a, b) => a - b)
-      if (slots.length !== ids.length) continue
+      if (ids.some(id => !Number.isFinite(px.get(id)))) continue
+      if (units.length > 16) continue   // keep units² × O(E²) affordable on very wide rows
       const apply = (order: Array<{ ids: string[] }>) => {
+        const slots = ids.map(id => px.get(id)!).sort((a, b) => a - b)
         let k = 0
         for (const unit of order) for (const id of unit.ids) px.set(id, slots[k++])
       }
@@ -708,7 +737,9 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
           const moved = [...units]
           const [u] = moved.splice(i, 1)
           moved.splice(j, 0, u)
+          const snap = new Map(ids.map(id => [id, px.get(id)!]))
           apply(moved)
+          sweepRowGaps(g, px, rowOf, col)
           const now = total()
           if (now < best) {
             best = now
@@ -717,7 +748,7 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
             units.push(...moved)
             break
           }
-          apply(units)   // restore
+          for (const [id, v] of snap) px.set(id, v)   // restore
         }
       }
     }
@@ -726,15 +757,6 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
   // Third phase: seat a couple back under the middle of its (few) children where there is
   // room, so parent→child lines are straight verticals instead of long horizontal buses.
   // Crossings must not increase.
-  const rowHasRoom = (rowIds: string[]): boolean => {
-    const sorted = [...rowIds].sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1], cur = sorted[i]
-      const minGap = halfWidth(g.nodeMap.get(prev), col) + halfWidth(g.nodeMap.get(cur), col)
-      if ((px.get(cur) ?? 0) - (px.get(prev) ?? 0) < minGap - 0.001) return false
-    }
-    return true
-  }
   for (let pass = 0; pass < 6; pass++) {
     let moved = false
     const rows = new Map<number, string[]>()
@@ -801,6 +823,8 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
   }
 }
 
+// Remove overlaps within each row while preserving left→right order, then nudge
+// parents back toward the center of their children for tidiness.
 function relaxRows(
   g: Graph,
   gen: Map<string, number>,
@@ -1430,9 +1454,27 @@ function computeSingleLayout(
   // partner so it is clear which children belong to which marriage (otherwise the two
   // unions sit on one row and the child-groups blur together). Tidy view only.
   if (mode === 'tidy') {
+    // Final pass: reorder couples/people inside each row to remove the diagonal crossing
+    // lines the centering sweeps introduce (evaluated on the drawn parent→child edges),
+    // then alternate with centering again — centering shortens the parent→child lines but
+    // can add crossings, the swap pass takes them out. Keep the best round.
+    const rowOf = (id: string) => rowValue.get(id) ?? 0
+    reduceCrossingSwaps(g, px, rowOf, col)
+    let bestC = countDrawnCrossings(g, px, rowOf)
+    let bestPx = new Map(px)
+    for (let round = 0; round < 4; round++) {
+      relaxRows(g, gen, px, rowOf, col)
+      reduceCrossingSwaps(g, px, rowOf, col)
+      const c = countDrawnCrossings(g, px, rowOf)
+      if (c < bestC) { bestC = c; bestPx = new Map(px) }
+      else break
+    }
+    for (const [id, v] of bestPx) px.set(id, v)
+    sweepRowGaps(g, px, rowOf, col)   // guarantee no overlap after the reordering passes
     // Multiple marriages: stagger each spouse + their union vertically ONLY when the two
     // child groups would overlap horizontally; otherwise the spouses stay level (the user
-    // prefers a straight horizontal marriage over a decorative offset).
+    // prefers a straight horizontal marriage over a decorative offset). Judged on the
+    // FINAL x positions, after the reordering above.
     const VST = rowGap * 0.34
     const childSpan = (u: string): [number, number] | null => {
       const xs = (g.childrenOfUnion.get(u) || []).map(k => px.get(k)).filter((v): v is number => v != null)
@@ -1458,22 +1500,6 @@ function computeSingleLayout(
         if (sp && yOf.has(sp)) yOf.set(sp, (yOf.get(sp) ?? topY) + dy)
       })
     }
-    // Final pass: reorder couples/people inside each row to remove the diagonal crossing
-    // lines the centering sweeps introduce (evaluated on the drawn parent→child edges),
-    // then alternate with centering again — centering shortens the parent→child lines but
-    // can add crossings, the swap pass takes them out. Keep the best round.
-    const rowOf = (id: string) => rowValue.get(id) ?? 0
-    reduceCrossingSwaps(g, px, rowOf, col)
-    let bestC = countDrawnCrossings(g, px, rowOf)
-    let bestPx = new Map(px)
-    for (let round = 0; round < 4; round++) {
-      relaxRows(g, gen, px, rowOf, col)
-      reduceCrossingSwaps(g, px, rowOf, col)
-      const c = countDrawnCrossings(g, px, rowOf)
-      if (c < bestC) { bestC = c; bestPx = new Map(px) }
-      else break
-    }
-    for (const [id, v] of bestPx) px.set(id, v)
   }
 
   // Horizontal zigzag for vertical "spine" runs: timeline only. In 系図 the zigzag breaks
