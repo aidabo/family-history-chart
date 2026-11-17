@@ -1046,6 +1046,33 @@ function measure(positions: Record<string, { x: number; y: number }>, size: numb
   return { positions, minX: minX - pad, minY: minY - pad, w: (maxX - minX) + 2 * pad, h: (maxY - minY) + 2 * pad, size }
 }
 
+// Place unrelated blocks in ONE row, tall ones first, tops aligned — a separate block
+// belongs to the right of the chart (as the user asked), not dropped below it. Falls back
+// to shelf packing when one row would become a sliver (wider than `maxAspect` × the
+// tallest block), which is what keeps the result close to a printable page shape.
+function packSideBySide(
+  laid: Laid[], gap: number, centerX: number, topY: number, maxAspect = 3,
+): Record<string, { x: number; y: number }> | null {
+  if (laid.length < 2) return null
+  const totalW = laid.reduce((s, c) => s + c.w, 0) + gap * (laid.length - 1)
+  const maxH = Math.max(...laid.map(c => c.h))
+  if (totalW > maxH * maxAspect) return null
+  const order = [...laid].sort((a, b) => b.size - a.size || b.h - a.h || b.w - a.w)
+  const out: Record<string, { x: number; y: number }> = {}
+  let x = 0
+  for (const c of order) {
+    const ox = x - c.minX
+    const oy = -c.minY            // top-align: generation 0 stays on one line
+    for (const id in c.positions) out[id] = { x: c.positions[id].x + ox, y: c.positions[id].y + oy }
+    x += c.w + gap
+  }
+  const xs = Object.values(out).map(p => p.x), ys = Object.values(out).map(p => p.y)
+  const shiftX = centerX - (Math.min(...xs) + Math.max(...xs)) / 2
+  const shiftY = topY - Math.min(...ys)
+  for (const id in out) { out[id].x += shiftX; out[id].y += shiftY }
+  return out
+}
+
 // Shelf-pack blocks into a roughly square area, zigzagging every other block in a row
 // (dropped down) so neighbours are easy to tell apart and connector lines don't pile up.
 function shelfPack(laid: Laid[], col: number, gap: number, centerX: number, topY: number): Record<string, { x: number; y: number }> {
@@ -1104,7 +1131,8 @@ function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: L
     const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: resolved, centerX: 0, topY: 0 })
     return measure(positions, idset.size, col * 0.3)
   })
-  const out = shelfPack(laid, col, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
+  const out = packSideBySide(laid, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
+    ?? shelfPack(laid, col, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
   return { positions: out, mode: resolved }
 }
 
@@ -1298,8 +1326,10 @@ export function computeFamilyLayout(
     const { positions } = layoutOneComponent(sub, subLinks, { ...options, centerX: 0, topY: 0 }, resolved)
     return measure(positions, idset.size, col * 0.5)
   })
-  // Independent components separated with a wide gap so separate imports don't cross.
-  const out = shelfPack(laid, col, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
+  // Independent components: side by side (right), with a wide gap so they read as
+  // separate imports; shelf-pack only when one row would become too wide.
+  const out = packSideBySide(laid, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
+    ?? shelfPack(laid, col, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
   return { positions: out, mode: resolved }
 }
 
