@@ -566,6 +566,33 @@ const halfWidth = (n: LayoutNode | undefined, col: number) =>
 
 // Remove overlaps within each row while preserving left→right order, then nudge
 // parents back toward the center of their children for tidiness.
+// Number of crossings among the drawn parent→child edges at the current x positions.
+function countDrawnCrossings(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, limit = 240): number {
+  const edges: Array<[string, string]> = []
+  for (const [child, parents] of g.drawParents) for (const p of parents) edges.push([p, child])
+  if (!edges.length || edges.length > limit) return Infinity
+  const o = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) =>
+    Math.sign((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1))
+  let n = 0
+  for (let i = 0; i < edges.length; i++) {
+    const [a, b] = edges[i]
+    const ax = px.get(a), bx = px.get(b)
+    if (ax == null || bx == null) continue
+    const ay = rowOf(a), by = rowOf(b)
+    for (let j = i + 1; j < edges.length; j++) {
+      const [c, d] = edges[j]
+      if (a === c || b === d) continue
+      const cx = px.get(c), dx = px.get(d)
+      if (cx == null || dx == null) continue
+      const cy = rowOf(c), dy = rowOf(d)
+      const o1 = o(ax, ay, bx, by, cx, cy), o2 = o(ax, ay, bx, by, dx, dy)
+      const o3 = o(cx, cy, dx, dy, ax, ay), o4 = o(cx, cy, dx, dy, bx, by)
+      if (o1 !== o2 && o3 !== o4 && o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0) n++
+    }
+  }
+  return n
+}
+
 // Crossing reduction (tidy): after the centering/overlap sweeps, exchange the x of
 // adjacent COUPLES/people inside a row whenever that removes diagonal crossing lines.
 // A couple (its union + partners on the same row) moves as one unit, and only x values
@@ -1402,8 +1429,21 @@ function computeSingleLayout(
       })
     }
     // Final pass: reorder couples/people inside each row to remove the diagonal crossing
-    // lines the centering sweeps introduce (evaluated on the drawn parent→child edges).
-    reduceCrossingSwaps(g, px, id => rowValue.get(id) ?? 0, col)
+    // lines the centering sweeps introduce (evaluated on the drawn parent→child edges),
+    // then alternate with centering again — centering shortens the parent→child lines but
+    // can add crossings, the swap pass takes them out. Keep the best round.
+    const rowOf = (id: string) => rowValue.get(id) ?? 0
+    reduceCrossingSwaps(g, px, rowOf, col)
+    let bestC = countDrawnCrossings(g, px, rowOf)
+    let bestPx = new Map(px)
+    for (let round = 0; round < 4; round++) {
+      relaxRows(g, gen, px, rowOf, col)
+      reduceCrossingSwaps(g, px, rowOf, col)
+      const c = countDrawnCrossings(g, px, rowOf)
+      if (c < bestC) { bestC = c; bestPx = new Map(px) }
+      else break
+    }
+    for (const [id, v] of bestPx) px.set(id, v)
   }
 
   // Horizontal zigzag for vertical "spine" runs: timeline only. In 系図 the zigzag breaks
