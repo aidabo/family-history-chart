@@ -564,6 +564,265 @@ function optimizeOrdering(g: Graph, layer: Map<string, number>, initX: Map<strin
 const halfWidth = (n: LayoutNode | undefined, col: number) =>
   n && isUnion(n) ? col * 0.16 : col * 0.5
 
+// Number of crossings among the drawn parent→child edges at the current x positions.
+function countDrawnCrossings(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, limit = 240): number {
+  const edges: Array<[string, string]> = []
+  for (const [child, parents] of g.drawParents) for (const p of parents) edges.push([p, child])
+  if (!edges.length || edges.length > limit) return Infinity
+  const o = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) =>
+    Math.sign((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1))
+  let n = 0
+  for (let i = 0; i < edges.length; i++) {
+    const [a, b] = edges[i]
+    const ax = px.get(a), bx = px.get(b)
+    if (ax == null || bx == null) continue
+    const ay = rowOf(a), by = rowOf(b)
+    for (let j = i + 1; j < edges.length; j++) {
+      const [c, d] = edges[j]
+      if (a === c || b === d) continue
+      const cx = px.get(c), dx = px.get(d)
+      if (cx == null || dx == null) continue
+      const cy = rowOf(c), dy = rowOf(d)
+      const o1 = o(ax, ay, bx, by, cx, cy), o2 = o(ax, ay, bx, by, dx, dy)
+      const o3 = o(cx, cy, dx, dy, ax, ay), o4 = o(cx, cy, dx, dy, bx, by)
+      if (o1 !== o2 && o3 !== o4 && o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0) n++
+    }
+  }
+  return n
+}
+
+// Push nodes right until every row clears the minimum gap for its node kinds. Used as a
+// safety net after the reordering passes so no two cards can overlap.
+function sweepRowGaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, col: number) {
+  const rows = new Map<number, string[]>()
+  for (const id of px.keys()) {
+    const r = Math.round(rowOf(id) * 1000)
+    const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+  }
+  for (const ids of rows.values()) {
+    ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+    for (let i = 1; i < ids.length; i++) {
+      const prev = ids[i - 1], cur = ids[i]
+      const minGap = halfWidth(g.nodeMap.get(prev), col) + halfWidth(g.nodeMap.get(cur), col)
+      if ((px.get(cur) ?? 0) - (px.get(prev) ?? 0) < minGap) px.set(cur, (px.get(prev) ?? 0) + minGap)
+    }
+  }
+}
+
+// Crossing reduction (tidy): after the centering/overlap sweeps, exchange the x of
+// adjacent COUPLES/people inside a row whenever that removes diagonal crossing lines.
+// A couple (its union + partners on the same row) moves as one unit, and only x values
+// are exchanged, so nothing overlaps and every node keeps its generation row.
+function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, col: number) {
+  const edges: Array<[string, string]> = []
+  for (const [child, parents] of g.drawParents) for (const p of parents) edges.push([p, child])
+  if (!edges.length || edges.length > 240) return   // keep the O(E²) check affordable
+  const rowKey = (id: string) => Math.round(rowOf(id) * 1000)
+  const crosses = (a: string, b: string, c: string, d: string): boolean => {
+    const ax = px.get(a), bx = px.get(b), cx = px.get(c), dx = px.get(d)
+    if (ax == null || bx == null || cx == null || dx == null) return false
+    const ay = rowOf(a), by = rowOf(b), cy = rowOf(c), dy2 = rowOf(d)
+    const o = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) =>
+      Math.sign((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1))
+    const o1 = o(ax, ay, bx, by, cx, cy), o2 = o(ax, ay, bx, by, dx, dy2)
+    const o3 = o(cx, cy, dx, dy2, ax, ay), o4 = o(cx, cy, dx, dy2, bx, by)
+    return o1 !== o2 && o3 !== o4 && o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0
+  }
+  const total = (): number => {
+    let n = 0
+    for (let i = 0; i < edges.length; i++) {
+      for (let j = i + 1; j < edges.length; j++) {
+        const [a, b] = edges[i], [c, d] = edges[j]
+        if (a === c || b === d) continue
+        if (crosses(a, b, c, d)) n++
+      }
+    }
+    return n
+  }
+  // A unit is a couple on this row (union + its partners), or a lone node. People with
+  // two marriages on one row are left in place (their staggered unions must stay near).
+  const unitOf = (id: string): string => {
+    const u = g.unionsOfPerson.get(id)
+    if (!u || u.length !== 1) return id
+    const row = rowKey(id)
+    return rowKey(u[0]) === row ? u[0] : id
+  }
+  const locked = new Set<string>()
+  for (const p of g.persons) if ((g.unionsOfPerson.get(p.id)?.length ?? 0) > 1) locked.add(p.id)
+  // Gaps differ by node kind (person↔person needs col, person↔union only 0.66col), so a
+  // reorder is only valid when every gap on the row still clears its own minimum.
+  const rowHasRoom = (rowIds: string[]): boolean => {
+    const sorted = [...rowIds].sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1], cur = sorted[i]
+      const minGap = halfWidth(g.nodeMap.get(prev), col) + halfWidth(g.nodeMap.get(cur), col)
+      if ((px.get(cur) ?? 0) - (px.get(prev) ?? 0) < minGap - 0.001) return false
+    }
+    return true
+  }
+  let best = total()
+  if (!best) return
+  for (let pass = 0; pass < 10; pass++) {
+    let improved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const ids of rows.values()) {
+      ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+      const units: Array<{ u: string; ids: string[]; ok: boolean }> = []
+      for (const id of ids) {
+        const u = unitOf(id)
+        const last = units[units.length - 1]
+        if (last && last.u === u) last.ids.push(id)
+        else units.push({ u, ids: [id], ok: true })
+      }
+      for (const unit of units) if (unit.ids.some(id => locked.has(id))) unit.ok = false
+      // Two units of the same couple (a person with two marriages was locked above);
+      // swap only when neither is locked.
+      for (let i = 0; i + 1 < units.length; i++) {
+        const A = units[i], B = units[i + 1]
+        if (!A.ok || !B.ok || A.u === B.u) continue
+        const axs = A.ids.map(id => px.get(id)!)
+        const bxs = B.ids.map(id => px.get(id)!)
+        const all = axs.concat(bxs)
+        if (all.some(v => !Number.isFinite(v))) continue
+        all.sort((p, q) => p - q)
+        const snap = new Map(ids.map(id => [id, px.get(id)!]))
+        B.ids.forEach((id, k) => px.set(id, all[k]))
+        A.ids.forEach((id, k) => px.set(id, all[B.ids.length + k]))
+        sweepRowGaps(g, px, rowOf, col)   // re-spacing keeps person↔person gaps
+        const now = total()
+        if (now < best) {
+          best = now
+          improved = true
+        } else {
+          for (const [id, v] of snap) px.set(id, v)
+        }
+      }
+    }
+    if (!improved) break
+  }
+  // Second phase: move a whole couple/person to any position in its row (an adjacent
+  // swap alone cannot pull a node past an unrelated couple).
+  for (let pass = 0; pass < 6; pass++) {
+    let improved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const ids of rows.values()) {
+      ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+      const units: Array<{ u: string; ids: string[]; ok: boolean }> = []
+      for (const id of ids) {
+        const u = unitOf(id)
+        const last = units[units.length - 1]
+        if (last && last.u === u) last.ids.push(id)
+        else units.push({ u, ids: [id], ok: true })
+      }
+      for (const unit of units) if (unit.ids.some(id => locked.has(id))) unit.ok = false
+      if (ids.some(id => !Number.isFinite(px.get(id)))) continue
+      if (units.length > 16) continue   // keep units² × O(E²) affordable on very wide rows
+      const apply = (order: Array<{ ids: string[] }>) => {
+        const slots = ids.map(id => px.get(id)!).sort((a, b) => a - b)
+        let k = 0
+        for (const unit of order) for (const id of unit.ids) px.set(id, slots[k++])
+      }
+      for (let i = 0; i < units.length; i++) {
+        if (!units[i].ok) continue
+        for (let j = 0; j < units.length; j++) {
+          if (i === j) continue
+          const moved = [...units]
+          const [u] = moved.splice(i, 1)
+          moved.splice(j, 0, u)
+          const snap = new Map(ids.map(id => [id, px.get(id)!]))
+          apply(moved)
+          sweepRowGaps(g, px, rowOf, col)
+          const now = total()
+          if (now < best) {
+            best = now
+            improved = true
+            units.length = 0
+            units.push(...moved)
+            break
+          }
+          for (const [id, v] of snap) px.set(id, v)   // restore
+        }
+      }
+    }
+    if (!improved) break
+  }
+  // Third phase: seat a couple back under the middle of its (few) children where there is
+  // room, so parent→child lines are straight verticals instead of long horizontal buses.
+  // Crossings must not increase.
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const [uid, kids] of g.childrenOfUnion) {
+      if (!px.has(uid) || kids.length > 3) continue   // wide sibling groups need the bus
+      const kx = kids.map(k => px.get(k)).filter((v): v is number => v != null)
+      if (!kx.length) continue
+      const delta = (Math.min(...kx) + Math.max(...kx)) / 2 - px.get(uid)!
+      if (Math.abs(delta) < 0.5) continue
+      const unit = unitOf(uid)
+      const unitIds = (rows.get(rowKey(uid)) || []).filter(id => unitOf(id) === unit)
+      if (!unitIds.length || unitIds.some(id => locked.has(id))) continue
+      const before = unitIds.map(id => px.get(id)!)
+      const bestBefore = total()
+      unitIds.forEach((id, k) => px.set(id, before[k] + delta))
+      const now = rowHasRoom(rows.get(rowKey(uid)) || []) ? total() : Infinity
+      if (now <= bestBefore) {
+        best = now
+        moved = true
+      } else {
+        unitIds.forEach((id, k) => px.set(id, before[k]))
+      }
+    }
+    if (!moved) break
+  }
+  // Fourth phase: a parent/union with ONE child keeps that child directly below it (no
+  // horizontal jog) when the child's row has room. The child's couple moves as a unit.
+  const straightened = new Set<string>()
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const [pid, kids] of g.drawChildrenNext) {
+      if (kids.length !== 1) continue
+      const c = kids[0]
+      if (straightened.has(c)) continue   // a second parent must not move it back
+      if (!px.has(pid) || !px.has(c)) continue
+      if (Math.abs(rowOf(c) - rowOf(pid) - 1) > 1e-6) continue   // adjacent rows only
+      const delta = px.get(pid)! - px.get(c)!
+      if (Math.abs(delta) < 0.5) continue
+      const unit = unitOf(c)
+      const unitIds = (rows.get(rowKey(c)) || []).filter(id => unitOf(id) === unit)
+      if (!unitIds.length || unitIds.some(id => locked.has(id))) continue
+      const before = unitIds.map(id => px.get(id)!)
+      const bestBefore = total()
+      unitIds.forEach((id, k) => px.set(id, before[k] + delta))
+      const now = rowHasRoom(rows.get(rowKey(c)) || []) ? total() : Infinity
+      if (now <= bestBefore) {
+        best = now
+        moved = true
+        straightened.add(c)
+      } else {
+        unitIds.forEach((id, k) => px.set(id, before[k]))
+      }
+    }
+    if (!moved) break
+  }
+}
+
 // Remove overlaps within each row while preserving left→right order, then nudge
 // parents back toward the center of their children for tidiness.
 function relaxRows(
@@ -811,6 +1070,33 @@ function measure(positions: Record<string, { x: number; y: number }>, size: numb
   return { positions, minX: minX - pad, minY: minY - pad, w: (maxX - minX) + 2 * pad, h: (maxY - minY) + 2 * pad, size }
 }
 
+// Place unrelated blocks in ONE row, tall ones first, tops aligned — a separate block
+// belongs to the right of the chart (as the user asked), not dropped below it. Falls back
+// to shelf packing when one row would become a sliver (wider than `maxAspect` × the
+// tallest block), which is what keeps the result close to a printable page shape.
+function packSideBySide(
+  laid: Laid[], gap: number, centerX: number, topY: number, maxAspect = 3,
+): Record<string, { x: number; y: number }> | null {
+  if (laid.length < 2) return null
+  const totalW = laid.reduce((s, c) => s + c.w, 0) + gap * (laid.length - 1)
+  const maxH = Math.max(...laid.map(c => c.h))
+  if (totalW > maxH * maxAspect) return null
+  const order = [...laid].sort((a, b) => b.size - a.size || b.h - a.h || b.w - a.w)
+  const out: Record<string, { x: number; y: number }> = {}
+  let x = 0
+  for (const c of order) {
+    const ox = x - c.minX
+    const oy = -c.minY            // top-align: generation 0 stays on one line
+    for (const id in c.positions) out[id] = { x: c.positions[id].x + ox, y: c.positions[id].y + oy }
+    x += c.w + gap
+  }
+  const xs = Object.values(out).map(p => p.x), ys = Object.values(out).map(p => p.y)
+  const shiftX = centerX - (Math.min(...xs) + Math.max(...xs)) / 2
+  const shiftY = topY - Math.min(...ys)
+  for (const id in out) { out[id].x += shiftX; out[id].y += shiftY }
+  return out
+}
+
 // Shelf-pack blocks into a roughly square area, zigzagging every other block in a row
 // (dropped down) so neighbours are easy to tell apart and connector lines don't pile up.
 function shelfPack(laid: Laid[], col: number, gap: number, centerX: number, topY: number): Record<string, { x: number; y: number }> {
@@ -834,19 +1120,43 @@ function shelfPack(laid: Laid[], col: number, gap: number, centerX: number, topY
   return out
 }
 
-// Lay out ONE connected component: split into lineage blocks and pack them (tight gap).
+// Lay out ONE connected component: split into lineage blocks, then pack the blocks.
+// A marriage out of one blood line into another is a VERTICAL edge between two blocks
+// (the daughter's parents sit in her birth block, the daughter in her husband's). Laid
+// out separately, those two blocks get unrelated rows and the parent can end up below
+// the child. Blocks joined by such an edge therefore share one layout; only the blood
+// lines with no vertical tie to each other are laid out and packed as separate blocks.
 function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: LayoutOptions, resolved: 'tidy' | 'timeline'): LayoutResult {
   const comps = lineageBlocks(nodes, links)
   if (comps.length <= 1) return computeSingleLayout(nodes, links, { ...options, mode: resolved })
   const col = options.colGap ?? 150
-  const laid = comps.map(idsArr => {
+  const blockOf = new Map<string, number>()
+  comps.forEach((ids, i) => ids.forEach(id => blockOf.set(id, i)))
+  const root = comps.map((_, i) => i)
+  const find = (x: number): number => { while (root[x] !== x) { root[x] = root[root[x]]; x = root[x] } return x }
+  const merge = (a: number, b: number) => { const ra = find(a), rb = find(b); if (ra !== rb) root[ra] = rb }
+  const isVerticalEdgeType = (t?: string) => t === 'parent-child' || t === 'disciple' || t === 'master'
+  for (const l of links) {
+    if (!isVerticalEdgeType(l.type)) continue
+    const a = blockOf.get(l.source), b = blockOf.get(l.target)
+    if (a != null && b != null && a !== b) merge(a, b)
+  }
+  const groups = new Map<number, string[]>()
+  for (let i = 0; i < comps.length; i++) {
+    const r = find(i)
+    const g = groups.get(r)
+    if (g) g.push(...comps[i])
+    else groups.set(r, [...comps[i]])
+  }
+  const laid = [...groups.values()].map(idsArr => {
     const idset = new Set(idsArr)
     const sub = nodes.filter(n => idset.has(n.id))
     const subLinks = links.filter(l => idset.has(l.source) && idset.has(l.target))
     const { positions } = computeSingleLayout(sub, subLinks, { ...options, mode: resolved, centerX: 0, topY: 0 })
     return measure(positions, idset.size, col * 0.3)
   })
-  const out = shelfPack(laid, col, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
+  const out = packSideBySide(laid, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
+    ?? shelfPack(laid, col, col * 0.7, options.centerX ?? 600, options.topY ?? 100)
   return { positions: out, mode: resolved }
 }
 
@@ -1040,8 +1350,10 @@ export function computeFamilyLayout(
     const { positions } = layoutOneComponent(sub, subLinks, { ...options, centerX: 0, topY: 0 }, resolved)
     return measure(positions, idset.size, col * 0.5)
   })
-  // Independent components separated with a wide gap so separate imports don't cross.
-  const out = shelfPack(laid, col, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
+  // Independent components: side by side (right), with a wide gap so they read as
+  // separate imports; shelf-pack only when one row would become too wide.
+  const out = packSideBySide(laid, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
+    ?? shelfPack(laid, col, col * 1.6, options.centerX ?? 600, options.topY ?? 100)
   return { positions: out, mode: resolved }
 }
 
@@ -1142,11 +1454,45 @@ function computeSingleLayout(
   // partner so it is clear which children belong to which marriage (otherwise the two
   // unions sit on one row and the child-groups blur together). Tidy view only.
   if (mode === 'tidy') {
+    // Final pass: reorder couples/people inside each row to remove the diagonal crossing
+    // lines the centering sweeps introduce (evaluated on the drawn parent→child edges),
+    // then alternate with centering again — centering shortens the parent→child lines but
+    // can add crossings, the swap pass takes them out. Keep the best round.
+    const rowOf = (id: string) => rowValue.get(id) ?? 0
+    reduceCrossingSwaps(g, px, rowOf, col)
+    let bestC = countDrawnCrossings(g, px, rowOf)
+    let bestPx = new Map(px)
+    for (let round = 0; round < 4; round++) {
+      relaxRows(g, gen, px, rowOf, col)
+      reduceCrossingSwaps(g, px, rowOf, col)
+      const c = countDrawnCrossings(g, px, rowOf)
+      if (c < bestC) { bestC = c; bestPx = new Map(px) }
+      else break
+    }
+    for (const [id, v] of bestPx) px.set(id, v)
+    sweepRowGaps(g, px, rowOf, col)   // guarantee no overlap after the reordering passes
+    // Multiple marriages: stagger each spouse + their union vertically ONLY when the two
+    // child groups would overlap horizontally; otherwise the spouses stay level (the user
+    // prefers a straight horizontal marriage over a decorative offset). Judged on the
+    // FINAL x positions, after the reordering above.
     const VST = rowGap * 0.34
+    const childSpan = (u: string): [number, number] | null => {
+      const xs = (g.childrenOfUnion.get(u) || []).map(k => px.get(k)).filter((v): v is number => v != null)
+      return xs.length ? [Math.min(...xs), Math.max(...xs)] : null
+    }
     for (const p of g.persons) {
       const us = (g.unionsOfPerson.get(p.id) || []).filter(u => yOf.has(u))
       if (us.length < 2) continue
       us.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+      const spans = us.map(childSpan)
+      let overlaps = false
+      for (let i = 0; i < spans.length && !overlaps; i++) {
+        for (let j = i + 1; j < spans.length; j++) {
+          const a = spans[i], b = spans[j]
+          if (a && b && a[0] <= b[1] && b[0] <= a[1]) { overlaps = true; break }
+        }
+      }
+      if (!overlaps) continue
       us.forEach((u, i) => {
         const dy = (i - (us.length - 1) / 2) * VST
         yOf.set(u, (yOf.get(u) ?? topY) + dy)
