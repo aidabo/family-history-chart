@@ -21,6 +21,8 @@ export const RELATION_LABELS: Record<string, { ja: string; zh: string; en: strin
   'disciple':     { ja: '弟子', zh: '弟子', en: 'Disciple' },
   'comrade':      { ja: '戦友', zh: '战友', en: 'Comrade' },
   'liege':        { ja: '君臣', zh: '君臣', en: 'Lord–Vassal' },
+  'superior':     { ja: '上司', zh: '上级', en: 'Supervisor' },
+  'leader':       { ja: 'リーダー', zh: '领导', en: 'Leader' },
   'custom':       { ja: 'カスタム', zh: '自定义', en: 'Custom' },
 }
 

@@ -161,9 +161,13 @@ export function periodEnd(period?: string): string | undefined {
 
 const isUnion = (n: LayoutNode) => n.type === 'union'
 
-// Vertical (generation) edges: parent-child (incl. 養子/義理) and disciple/master.
+// Vertical (generation) edges: parent-child (incl. 養子/義理) plus the hierarchy relations
+// that read the same way — teacher→student (師匠/弟子/師弟), lord→vassal (君臣),
+// predecessor→successor (継承), supervisor→report (上司), leader→member (リーダー).
+// For every one of them the SOURCE is the upper end.
 const isVerticalEdge = (t?: string) =>
-  t === 'parent-child' || t === 'disciple' || t === 'master'
+  t === 'parent-child' || t === 'disciple' || t === 'master' || t === 'mentor' ||
+  t === 'succession' || t === 'liege' || t === 'superior' || t === 'leader'
 
 interface Graph {
   nodeMap: Map<string, LayoutNode>
@@ -221,15 +225,20 @@ function buildGraph(nodes: LayoutNode[], links: LayoutLink[]): Graph {
     for (const k of kids) for (const p of parents) addEff(p, k)
   }
   for (const [p, kids] of directChildren) for (const k of kids) addEff(p, k)
-  // disciple/master → vertical (source above target).
+  // Teacher, lord, supervisor, leader … → vertical, source above target (same rule as a
+  // parent above a child).
+  const hierarchyEdges: Array<[string, string]> = []
   for (const l of links) {
-    if (l.type === 'disciple' || l.type === 'master') {
-      const s = nodeMap.get(l.source), t = nodeMap.get(l.target)
-      if (s && t && !isUnion(s) && !isUnion(t)) addEff(s.id, t.id)
+    if (!isVerticalEdge(l.type) || l.type === 'parent-child') continue
+    const s = nodeMap.get(l.source), t = nodeMap.get(l.target)
+    if (s && t && !isUnion(s) && !isUnion(t) && s.id !== t.id) {
+      addEff(s.id, t.id)
+      hierarchyEdges.push([s.id, t.id])
     }
   }
 
-  // Drawn inter-layer edges: union→child and person→child (single parent).
+  // Drawn inter-layer edges: union→child, person→child (single parent), plus the hierarchy
+  // edges above (they are drawn person→person and must count for ordering/crossings).
   const drawParents = new Map<string, string[]>()
   const drawChildrenNext = new Map<string, string[]>()
   for (const [uid, kids] of childrenOfUnion) {
@@ -240,6 +249,10 @@ function buildGraph(nodes: LayoutNode[], links: LayoutLink[]): Graph {
     const prev = drawChildrenNext.get(pid) || []
     drawChildrenNext.set(pid, prev.concat(kids))
     for (const k of kids) push(drawParents, k, pid)
+  }
+  for (const [s, t] of hierarchyEdges) {
+    drawChildrenNext.set(s, [...(drawChildrenNext.get(s) || []), t])
+    push(drawParents, t, s)
   }
 
   return { nodeMap, persons, partnersOfUnion, childrenOfUnion, unionsOfPerson, directChildren, effParents, effChildren, drawParents, drawChildrenNext }
@@ -963,7 +976,8 @@ export function pickAutoMode(nodes: LayoutNode[], links: LayoutLink[]): 'tidy' |
   const years = dated.map(p => parseYear(p.birth) ?? parseYear(p.death)!).sort((a, b) => a - b)
   const datedSpan = years.length ? years[years.length - 1] - years[0] : 0
   const ratio = dated.length / persons.length
-  const parentChild = links.filter(l => l.type === 'parent-child').length
+  // Parent→child and the other hierarchy edges (師弟/君臣/継承/上司/リーダー) make a tree.
+  const parentChild = links.filter(l => isVerticalEdge(l.type)).length
   const treeLike = parentChild >= persons.length * 0.25
   if (ratio >= 0.6 && datedSpan >= 40 && treeLike) return 'timeline'
   if (treeLike) return 'tidy'
@@ -1135,7 +1149,7 @@ function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: L
   const root = comps.map((_, i) => i)
   const find = (x: number): number => { while (root[x] !== x) { root[x] = root[root[x]]; x = root[x] } return x }
   const merge = (a: number, b: number) => { const ra = find(a), rb = find(b); if (ra !== rb) root[ra] = rb }
-  const isVerticalEdgeType = (t?: string) => t === 'parent-child' || t === 'disciple' || t === 'master'
+  const isVerticalEdgeType = (t?: string) => isVerticalEdge(t)
   for (const l of links) {
     if (!isVerticalEdgeType(l.type)) continue
     const a = blockOf.get(l.source), b = blockOf.get(l.target)

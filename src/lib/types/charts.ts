@@ -12,6 +12,8 @@ export type RelationType =
   | 'succession' | 'ally' | 'rival' | 'mentor' | 'enemy' | 'friend' | 'custom'
   | 'master' | 'disciple' | 'comrade'
   | 'liege'   // 君臣（主従）: source=君(lord) → target=臣(vassal). Roles 臣/将/谋士 via title.
+  | 'superior' // 上司→部下（職務上の上下）: source=上司 → target=部下.
+  | 'leader'   // リーダー→メンバー（組織・チーム）: source=リーダー → target=メンバー.
 
 export type EpisodeType = 'event' | 'article' | 'episode' | 'note'
 
