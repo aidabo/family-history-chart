@@ -284,6 +284,45 @@ function assignGenerations(g: Graph): Map<string, number> {
 // Horizontal ordering: post-order descendant walk that keeps families together,
 // centers parents over their children and flanks unions with their partners.
 // Returns x in "slot" units (1 slot ≈ one person width).
+/**
+ * 世代をそろえる（本当の系図のための後始末）。
+ * - 親をたどれない人（親の情報が欠けている子孫）が最上段に浮くのを防ぐ: 子どもより 1 つ上に置く
+ * - 親は必ず子より上（gen < 子の gen）
+ * - 夫婦は同じ段
+ * - 最後に最上段を 0 にそろえる
+ * 収束しない異常な入力（循環など）でも止まるよう、回数に上限を置く。
+ */
+function alignGenerations(g: Graph, gen: Map<string, number>) {
+  for (let pass = 0; pass < 20; pass++) {
+    let changed = false
+    for (const p of g.persons) {
+      const kids = g.effChildren.get(p.id)
+      if (!kids || !kids.size) continue
+      const minChild = Math.min(...[...kids].map(k => gen.get(k) ?? 0))
+      const cur = gen.get(p.id) ?? 0
+      const want = g.effParents.get(p.id)?.size ? Math.min(cur, minChild - 1) : minChild - 1
+      if (want >= 0 && cur !== want) {
+        gen.set(p.id, want)
+        changed = true
+      }
+    }
+    for (const partners of g.partnersOfUnion.values()) {
+      const m = Math.max(0, ...partners.map(x => gen.get(x) ?? 0))
+      for (const x of partners) {
+        if ((gen.get(x) ?? 0) !== m) {
+          gen.set(x, m)
+          changed = true
+        }
+      }
+    }
+    if (!changed) break
+  }
+  const min = Math.min(...[...gen.values()])
+  if (Number.isFinite(min) && min !== 0) {
+    for (const [k, v] of gen) gen.set(k, v - min)
+  }
+}
+
 function assignSlots(g: Graph, gen: Map<string, number>): Map<string, number> {
   const x = new Map<string, number>()
   const seenP = new Set<string>()
@@ -1000,6 +1039,7 @@ function computeSingleLayout(
   const mode: 'tidy' | 'timeline' = resolved === 'timeline' ? 'timeline' : 'tidy'
 
   const gen = assignGenerations(g)
+  alignGenerations(g, gen)
   const slots = assignSlots(g, gen)                 // family-DFS initial order (low crossings, couples together)
   const layer = layerOf(g, gen)
   const order = optimizeOrdering(g, layer, slots)   // Sugiyama crossing minimization
@@ -1091,7 +1131,10 @@ function computeSingleLayout(
     }
   }
 
-  // Horizontal zigzag for vertical "spine" runs (both 系図 and timeline): shift a node
+  // Horizontal zigzag for vertical "spine" runs: timeline only. In 系図 the zigzag breaks
+  // the tidy columns (ancestors stop lining up), so it is skipped for tidy.
+  if (mode === 'timeline') {
+  // Horizontal zigzag for vertical "spine" runs: shift a node
   // left/right by its GENERATION parity so a long straight vertical lineage (e.g. the
   // shogun succession) fans into a readable left–right zigzag. Only SPARSE generations
   // (a lone-heir chain, ≤2 people incl. spouse) are moved; wide branching generations
@@ -1112,6 +1155,7 @@ function computeSingleLayout(
       const amp = base * (1 + Math.min(gg, 12) * 0.22)
       px.set(id, (px.get(id) ?? 0) + (gg % 2 === 0 ? -1 : 1) * amp)
     }
+  }
   }
 
   // Center the whole thing on centerX.
