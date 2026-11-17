@@ -1208,15 +1208,26 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       group.forEach((l, i) => edgeCurveIndex.set(l.id, i - Math.floor(group.length / 2)))
     }
 
-    // Orthogonal "bus" wiring (系図 only): group parent-child links by their parent so
-    // siblings share one horizontal bar. Each link stays its own <path> (per-edge click /
-    // EdgeCard preserved); they just share the same bus Y, so the horizontals line up.
+    // Orthogonal "bus" wiring (系図 only). Links that share an upper node share one
+    // horizontal bar: parent→child, the typed hierarchy edges (師弟/君臣/継承/上司/
+    // リーダー) and free-form subordinate labels (神将/天王/… stored as custom). So the
+    // 系図 is drawn with horizontal / vertical / right-angle lines instead of diagonals
+    // cutting across the chart; marriages and partners keep their short direct line.
+    // Each link stays its own <path> (per-edge click / EdgeCard preserved).
     const orthoBus = edgeStyle === 'ortho' && lastLayoutKind === 'tidy'
+    const BUS_EXCLUDED = new Set(['partner', 'marriage', 'remarriage'])
+    const UPPER_IS_TARGET = new Set(['disciple', 'mentor'])   // stored disciple → master
+    const FREE_FORM = new Set(['custom', 'ally', 'rival', 'enemy', 'friend', 'comrade', 'sibling'])
+    const busEnds = (l: SimLink): [SimNode, SimNode] => {
+      if (UPPER_IS_TARGET.has(l.type ?? '')) return [l.target, l.source]
+      if (FREE_FORM.has(l.type ?? '')) return l.source.y <= l.target.y ? [l.source, l.target] : [l.target, l.source]
+      return [l.source, l.target]
+    }
     const busGroups = new Map<string, SimLink[]>()
     if (orthoBus) {
       for (const l of links) {
-        if (l.type !== 'parent-child') continue
-        const k = l.source.id
+        if (BUS_EXCLUDED.has(l.type ?? '')) continue
+        const k = busEnds(l)[0].id
         if (!busGroups.has(k)) busGroups.set(k, [])
         busGroups.get(k)!.push(l)
       }
@@ -2508,25 +2519,34 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
 
     // Helper: build a curved SVG path for a link
     const buildLinkPath = (d: SimLink) => {
-      // Orthogonal bus (系図 only): parent → drop to shared bus Y → across → drop to child.
-      // Siblings share busY so their horizontals form one continuous bar. Each path is still
-      // its own element, so clicking a child's drop selects that specific relationship.
-      if (orthoBus && d.type === 'parent-child') {
-        const group = busGroups.get(d.source.id)
-        const rSb = getNodeRadius(d.source)
-        const rTb = getNodeRadius(d.target)
-        const sx = snapToGrid(d.source.x)
-        const sBottom = d.source.y + rSb
-        // Topmost child in the group decides the bus line (consistent for all siblings).
-        let minChildTop = d.target.y - rTb
-        if (group) for (const m of group) minChildTop = Math.min(minChildTop, m.target.y - getNodeRadius(m.target))
-        // Only valid when children sit below the parent; otherwise fall through to straight.
+      // Orthogonal bus (系図 only): upper → drop to the shared bus Y → across → drop to
+      // the lower node. All links from the same upper node share busY, so their
+      // horizontals form one continuous bar. Each path is still its own element, so
+      // clicking a link selects that specific relationship.
+      if (orthoBus && !BUS_EXCLUDED.has(d.type ?? '')) {
+        const [up, lo] = busEnds(d)
+        const rUp = getNodeRadius(up)
+        const rLo = getNodeRadius(lo)
+        const sx = snapToGrid(up.x)
+        const sBottom = up.y + rUp
+        const cx = snapToGrid(lo.x)
+        const cTop = lo.y - rLo
+        const group = busGroups.get(up.id)
+        // Topmost lower node in the group decides the bus line (consistent for siblings).
+        let minChildTop = cTop
+        if (group) for (const m of group) {
+          const mlo = busEnds(m)[1]
+          minChildTop = Math.min(minChildTop, mlo.y - getNodeRadius(mlo))
+        }
         if (minChildTop > sBottom + 4) {
           const busY = snapToGrid(sBottom + (minChildTop - sBottom) * 0.5)
-          const cx = snapToGrid(d.target.x)
-          const cTop = snapToGrid(d.target.y - rTb)
-          const y1b = snapToGrid(sBottom)
-          return `M ${sx} ${y1b} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
+          return `M ${sx} ${snapToGrid(sBottom)} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
+        }
+        // Same row (a horizontal relation): a plain horizontal line, never a diagonal.
+        if (Math.abs(up.y - lo.y) < 2 && Math.abs(cx - sx) > 1) {
+          const dir = cx > sx ? 1 : -1
+          const y = snapToGrid(up.y)
+          return `M ${snapToGrid(sx + dir * rUp)} ${y} L ${snapToGrid(cx - dir * rLo)} ${y}`
         }
       }
       const dx = d.target.x - d.source.x

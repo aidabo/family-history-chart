@@ -174,6 +174,16 @@ const isVerticalEdge = (t?: string) =>
 const upperEndOf = (type: string, source: string, target: string): [string, string] =>
   type === 'disciple' || type === 'mentor' ? [target, source] : [source, target]
 
+// Free-form (type:'custom') relations whose label reads as a chain of command. They are
+// treated like the typed hierarchy edges below so an org/sect chart lines up top→down
+// even when the edges came from an import that used custom labels.
+const HIERARCHY_LABELS = new Set([
+  '師', '弟子', '神将', '部将', '天王', '上司', '部下', '上長', '主', '臣', '家臣', '配下', '統率',
+  'leader', 'member', 'boss', 'chief', 'superior', 'subordinate',
+])
+const isHierarchyLink = (l: LayoutLink): boolean =>
+  isVerticalEdge(l.type) || (l.type === 'custom' && HIERARCHY_LABELS.has((l.label || '').trim()))
+
 interface Graph {
   nodeMap: Map<string, LayoutNode>
   persons: LayoutNode[]
@@ -234,7 +244,7 @@ function buildGraph(nodes: LayoutNode[], links: LayoutLink[]): Graph {
   // top (disciple/mentor edges are stored starting at the disciple).
   const hierarchyEdges: Array<[string, string]> = []
   for (const l of links) {
-    if (!isVerticalEdge(l.type) || l.type === 'parent-child') continue
+    if (!isHierarchyLink(l) || l.type === 'parent-child') continue
     const s = nodeMap.get(l.source), t = nodeMap.get(l.target)
     if (s && t && !isUnion(s) && !isUnion(t) && s.id !== t.id) {
       const [up, down] = upperEndOf(l.type, s.id, t.id)
@@ -983,7 +993,7 @@ export function pickAutoMode(nodes: LayoutNode[], links: LayoutLink[]): 'tidy' |
   const datedSpan = years.length ? years[years.length - 1] - years[0] : 0
   const ratio = dated.length / persons.length
   // Parent→child and the other hierarchy edges (師弟/君臣/継承/上司/リーダー) make a tree.
-  const parentChild = links.filter(l => isVerticalEdge(l.type)).length
+  const parentChild = links.filter(l => isHierarchyLink(l)).length
   const treeLike = parentChild >= persons.length * 0.25
   if (ratio >= 0.6 && datedSpan >= 40 && treeLike) return 'timeline'
   if (treeLike) return 'tidy'
@@ -1167,9 +1177,8 @@ function layoutOneComponent(nodes: LayoutNode[], links: LayoutLink[], options: L
   const root = comps.map((_, i) => i)
   const find = (x: number): number => { while (root[x] !== x) { root[x] = root[root[x]]; x = root[x] } return x }
   const merge = (a: number, b: number) => { const ra = find(a), rb = find(b); if (ra !== rb) root[ra] = rb }
-  const isVerticalEdgeType = (t?: string) => isVerticalEdge(t)
   for (const l of links) {
-    if (!isVerticalEdgeType(l.type)) continue
+    if (!isHierarchyLink(l)) continue
     const a = blockOf.get(l.source), b = blockOf.get(l.target)
     if (a != null && b != null && a !== b) merge(a, b)
   }
