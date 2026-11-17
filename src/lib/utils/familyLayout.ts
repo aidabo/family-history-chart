@@ -1106,12 +1106,24 @@ function shelfPack(laid: Laid[], col: number, gap: number, centerX: number, topY
   const zig = (h: number) => Math.min(h * 0.6, col * 1.6)
   let x = 0, y = 0, rowH = 0, col0 = 0
   const out: Record<string, { x: number; y: number }> = {}
+  // Remember which nodes belong to each shelf row so a short row can be centred under a
+  // wide one instead of hugging the left edge (looks like a page, not a ragged list).
+  const rows: Array<{ ids: string[]; w: number }> = []
+  let rowIds: string[] = [], rowW = 0
+  const endRow = () => { if (rowIds.length) { rows.push({ ids: rowIds, w: rowW }); rowIds = []; rowW = 0 } }
   for (const c of laid) {
-    if (x > 0 && x + c.w > maxRow) { x = 0; y += rowH + gap; rowH = 0; col0 = 0 }
+    if (x > 0 && x + c.w > maxRow) { x = 0; y += rowH + gap; rowH = 0; col0 = 0; endRow() }
     const stagger = (col0 % 2) * zig(c.h)
     const ox = x - c.minX, oy = y + stagger - c.minY
     for (const id in c.positions) out[id] = { x: c.positions[id].x + ox, y: c.positions[id].y + oy }
     x += c.w + gap; rowH = Math.max(rowH, c.h + stagger); col0++
+    rowIds.push(...Object.keys(c.positions)); rowW = Math.max(rowW, x - gap)
+  }
+  endRow()
+  const widest = Math.max(...rows.map(r => r.w), 0)
+  for (const r of rows) {
+    const dx = (widest - r.w) / 2
+    if (dx > 0) for (const id of r.ids) out[id].x += dx
   }
   const xs = Object.values(out).map(p => p.x), ys = Object.values(out).map(p => p.y)
   const shiftX = centerX - (Math.min(...xs) + Math.max(...xs)) / 2
