@@ -161,13 +161,18 @@ export function periodEnd(period?: string): string | undefined {
 
 const isUnion = (n: LayoutNode) => n.type === 'union'
 
-// Vertical (generation) edges: parent-child (incl. 養子/義理) plus the hierarchy relations
-// that read the same way — teacher→student (師匠/弟子/師弟), lord→vassal (君臣),
-// predecessor→successor (継承), supervisor→report (上司), leader→member (リーダー).
-// For every one of them the SOURCE is the upper end.
+// Vertical (generation) edges: parent-child (incl. 養子/義理) plus the hierarchy relations.
+// Direction differs by type (see `upperEndOf`):
+//   source is the upper end — parent-child, master (師匠→弟子), succession (先代→後継),
+//   liege (君→臣), superior (上司→部下), leader (リーダー→メンバー)
+//   target is the upper end — disciple and mentor (the stored edge starts at the disciple:
+//   RelationshipsSection shows "師: …" for the source side)
 const isVerticalEdge = (t?: string) =>
   t === 'parent-child' || t === 'disciple' || t === 'master' || t === 'mentor' ||
   t === 'succession' || t === 'liege' || t === 'superior' || t === 'leader'
+// The (upper, lower) person ids for a hierarchy link, following the stored direction above.
+const upperEndOf = (type: string, source: string, target: string): [string, string] =>
+  type === 'disciple' || type === 'mentor' ? [target, source] : [source, target]
 
 interface Graph {
   nodeMap: Map<string, LayoutNode>
@@ -225,35 +230,36 @@ function buildGraph(nodes: LayoutNode[], links: LayoutLink[]): Graph {
     for (const k of kids) for (const p of parents) addEff(p, k)
   }
   for (const [p, kids] of directChildren) for (const k of kids) addEff(p, k)
-  // Teacher, lord, supervisor, leader … → vertical, source above target (same rule as a
-  // parent above a child).
+  // Teacher, lord, supervisor, leader … → vertical. `upperEndOf` puts the right person on
+  // top (disciple/mentor edges are stored starting at the disciple).
   const hierarchyEdges: Array<[string, string]> = []
   for (const l of links) {
     if (!isVerticalEdge(l.type) || l.type === 'parent-child') continue
     const s = nodeMap.get(l.source), t = nodeMap.get(l.target)
     if (s && t && !isUnion(s) && !isUnion(t) && s.id !== t.id) {
-      addEff(s.id, t.id)
-      hierarchyEdges.push([s.id, t.id])
+      const [up, down] = upperEndOf(l.type, s.id, t.id)
+      addEff(up, down)
+      hierarchyEdges.push([up, down])
     }
   }
 
   // Drawn inter-layer edges: union→child, person→child (single parent), plus the hierarchy
   // edges above (they are drawn person→person and must count for ordering/crossings).
+  // Deduplicate: e.g. a succession that repeats a parent→child edge must count once.
   const drawParents = new Map<string, string[]>()
   const drawChildrenNext = new Map<string, string[]>()
-  for (const [uid, kids] of childrenOfUnion) {
-    drawChildrenNext.set(uid, [...kids])
-    for (const k of kids) push(drawParents, k, uid)
+  const drawn = new Set<string>()
+  const drawEdge = (parent: string, child: string) => {
+    const k = parent + '\u0000' + child
+    if (drawn.has(k)) return
+    drawn.add(k)
+    const kids = drawChildrenNext.get(parent)
+    if (kids) kids.push(child); else drawChildrenNext.set(parent, [child])
+    push(drawParents, child, parent)
   }
-  for (const [pid, kids] of directChildren) {
-    const prev = drawChildrenNext.get(pid) || []
-    drawChildrenNext.set(pid, prev.concat(kids))
-    for (const k of kids) push(drawParents, k, pid)
-  }
-  for (const [s, t] of hierarchyEdges) {
-    drawChildrenNext.set(s, [...(drawChildrenNext.get(s) || []), t])
-    push(drawParents, t, s)
-  }
+  for (const [uid, kids] of childrenOfUnion) for (const k of kids) drawEdge(uid, k)
+  for (const [pid, kids] of directChildren) for (const k of kids) drawEdge(pid, k)
+  for (const [s, t] of hierarchyEdges) drawEdge(s, t)
 
   return { nodeMap, persons, partnersOfUnion, childrenOfUnion, unionsOfPerson, directChildren, effParents, effChildren, drawParents, drawChildrenNext }
 }
