@@ -570,7 +570,7 @@ const halfWidth = (n: LayoutNode | undefined, col: number) =>
 // adjacent COUPLES/people inside a row whenever that removes diagonal crossing lines.
 // A couple (its union + partners on the same row) moves as one unit, and only x values
 // are exchanged, so nothing overlaps and every node keeps its generation row.
-function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => number) {
+function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, col: number) {
   const edges: Array<[string, string]> = []
   for (const [child, parents] of g.drawParents) for (const p of parents) edges.push([p, child])
   if (!edges.length || edges.length > 240) return   // keep the O(E²) check affordable
@@ -695,6 +695,82 @@ function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: stri
       }
     }
     if (!improved) break
+  }
+  // Third phase: seat a couple back under the middle of its (few) children where there is
+  // room, so parent→child lines are straight verticals instead of long horizontal buses.
+  // Crossings must not increase.
+  const rowHasRoom = (rowIds: string[]): boolean => {
+    const sorted = [...rowIds].sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1], cur = sorted[i]
+      const minGap = halfWidth(g.nodeMap.get(prev), col) + halfWidth(g.nodeMap.get(cur), col)
+      if ((px.get(cur) ?? 0) - (px.get(prev) ?? 0) < minGap - 0.001) return false
+    }
+    return true
+  }
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const [uid, kids] of g.childrenOfUnion) {
+      if (!px.has(uid) || kids.length > 3) continue   // wide sibling groups need the bus
+      const kx = kids.map(k => px.get(k)).filter((v): v is number => v != null)
+      if (!kx.length) continue
+      const delta = (Math.min(...kx) + Math.max(...kx)) / 2 - px.get(uid)!
+      if (Math.abs(delta) < 0.5) continue
+      const unit = unitOf(uid)
+      const unitIds = (rows.get(rowKey(uid)) || []).filter(id => unitOf(id) === unit)
+      if (!unitIds.length || unitIds.some(id => locked.has(id))) continue
+      const before = unitIds.map(id => px.get(id)!)
+      const bestBefore = total()
+      unitIds.forEach((id, k) => px.set(id, before[k] + delta))
+      const now = rowHasRoom(rows.get(rowKey(uid)) || []) ? total() : Infinity
+      if (now <= bestBefore) {
+        best = now
+        moved = true
+      } else {
+        unitIds.forEach((id, k) => px.set(id, before[k]))
+      }
+    }
+    if (!moved) break
+  }
+  // Fourth phase: a parent/union with ONE child keeps that child directly below it (no
+  // horizontal jog) when the child's row has room. The child's couple moves as a unit.
+  const straightened = new Set<string>()
+  for (let pass = 0; pass < 6; pass++) {
+    let moved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const [pid, kids] of g.drawChildrenNext) {
+      if (kids.length !== 1) continue
+      const c = kids[0]
+      if (straightened.has(c)) continue   // a second parent must not move it back
+      if (!px.has(pid) || !px.has(c)) continue
+      if (Math.abs(rowOf(c) - rowOf(pid) - 1) > 1e-6) continue   // adjacent rows only
+      const delta = px.get(pid)! - px.get(c)!
+      if (Math.abs(delta) < 0.5) continue
+      const unit = unitOf(c)
+      const unitIds = (rows.get(rowKey(c)) || []).filter(id => unitOf(id) === unit)
+      if (!unitIds.length || unitIds.some(id => locked.has(id))) continue
+      const before = unitIds.map(id => px.get(id)!)
+      const bestBefore = total()
+      unitIds.forEach((id, k) => px.set(id, before[k] + delta))
+      const now = rowHasRoom(rows.get(rowKey(c)) || []) ? total() : Infinity
+      if (now <= bestBefore) {
+        best = now
+        moved = true
+        straightened.add(c)
+      } else {
+        unitIds.forEach((id, k) => px.set(id, before[k]))
+      }
+    }
+    if (!moved) break
   }
 }
 
@@ -1297,11 +1373,27 @@ function computeSingleLayout(
   // partner so it is clear which children belong to which marriage (otherwise the two
   // unions sit on one row and the child-groups blur together). Tidy view only.
   if (mode === 'tidy') {
+    // Multiple marriages: stagger each spouse + their union vertically ONLY when the two
+    // child groups would overlap horizontally; otherwise the spouses stay level (the user
+    // prefers a straight horizontal marriage over a decorative offset).
     const VST = rowGap * 0.34
+    const childSpan = (u: string): [number, number] | null => {
+      const xs = (g.childrenOfUnion.get(u) || []).map(k => px.get(k)).filter((v): v is number => v != null)
+      return xs.length ? [Math.min(...xs), Math.max(...xs)] : null
+    }
     for (const p of g.persons) {
       const us = (g.unionsOfPerson.get(p.id) || []).filter(u => yOf.has(u))
       if (us.length < 2) continue
       us.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+      const spans = us.map(childSpan)
+      let overlaps = false
+      for (let i = 0; i < spans.length && !overlaps; i++) {
+        for (let j = i + 1; j < spans.length; j++) {
+          const a = spans[i], b = spans[j]
+          if (a && b && a[0] <= b[1] && b[0] <= a[1]) { overlaps = true; break }
+        }
+      }
+      if (!overlaps) continue
       us.forEach((u, i) => {
         const dy = (i - (us.length - 1) / 2) * VST
         yOf.set(u, (yOf.get(u) ?? topY) + dy)
@@ -1311,7 +1403,7 @@ function computeSingleLayout(
     }
     // Final pass: reorder couples/people inside each row to remove the diagonal crossing
     // lines the centering sweeps introduce (evaluated on the drawn parent→child edges).
-    reduceCrossingSwaps(g, px, id => rowValue.get(id) ?? 0)
+    reduceCrossingSwaps(g, px, id => rowValue.get(id) ?? 0, col)
   }
 
   // Horizontal zigzag for vertical "spine" runs: timeline only. In 系図 the zigzag breaks
