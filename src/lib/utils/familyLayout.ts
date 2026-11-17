@@ -566,6 +566,138 @@ const halfWidth = (n: LayoutNode | undefined, col: number) =>
 
 // Remove overlaps within each row while preserving left→right order, then nudge
 // parents back toward the center of their children for tidiness.
+// Crossing reduction (tidy): after the centering/overlap sweeps, exchange the x of
+// adjacent COUPLES/people inside a row whenever that removes diagonal crossing lines.
+// A couple (its union + partners on the same row) moves as one unit, and only x values
+// are exchanged, so nothing overlaps and every node keeps its generation row.
+function reduceCrossingSwaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => number) {
+  const edges: Array<[string, string]> = []
+  for (const [child, parents] of g.drawParents) for (const p of parents) edges.push([p, child])
+  if (!edges.length || edges.length > 240) return   // keep the O(E²) check affordable
+  const rowKey = (id: string) => Math.round(rowOf(id) * 1000)
+  const crosses = (a: string, b: string, c: string, d: string): boolean => {
+    const ax = px.get(a), bx = px.get(b), cx = px.get(c), dx = px.get(d)
+    if (ax == null || bx == null || cx == null || dx == null) return false
+    const ay = rowOf(a), by = rowOf(b), cy = rowOf(c), dy2 = rowOf(d)
+    const o = (x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) =>
+      Math.sign((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1))
+    const o1 = o(ax, ay, bx, by, cx, cy), o2 = o(ax, ay, bx, by, dx, dy2)
+    const o3 = o(cx, cy, dx, dy2, ax, ay), o4 = o(cx, cy, dx, dy2, bx, by)
+    return o1 !== o2 && o3 !== o4 && o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0
+  }
+  const total = (): number => {
+    let n = 0
+    for (let i = 0; i < edges.length; i++) {
+      for (let j = i + 1; j < edges.length; j++) {
+        const [a, b] = edges[i], [c, d] = edges[j]
+        if (a === c || b === d) continue
+        if (crosses(a, b, c, d)) n++
+      }
+    }
+    return n
+  }
+  // A unit is a couple on this row (union + its partners), or a lone node. People with
+  // two marriages on one row are left in place (their staggered unions must stay near).
+  const unitOf = (id: string): string => {
+    const u = g.unionsOfPerson.get(id)
+    if (!u || u.length !== 1) return id
+    const row = rowKey(id)
+    return rowKey(u[0]) === row ? u[0] : id
+  }
+  const locked = new Set<string>()
+  for (const p of g.persons) if ((g.unionsOfPerson.get(p.id)?.length ?? 0) > 1) locked.add(p.id)
+  let best = total()
+  if (!best) return
+  for (let pass = 0; pass < 10; pass++) {
+    let improved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const ids of rows.values()) {
+      ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+      const units: Array<{ u: string; ids: string[]; ok: boolean }> = []
+      for (const id of ids) {
+        const u = unitOf(id)
+        const last = units[units.length - 1]
+        if (last && last.u === u) last.ids.push(id)
+        else units.push({ u, ids: [id], ok: true })
+      }
+      for (const unit of units) if (unit.ids.some(id => locked.has(id))) unit.ok = false
+      // Two units of the same couple (a person with two marriages was locked above);
+      // swap only when neither is locked.
+      for (let i = 0; i + 1 < units.length; i++) {
+        const A = units[i], B = units[i + 1]
+        if (!A.ok || !B.ok || A.u === B.u) continue
+        const axs = A.ids.map(id => px.get(id)!)
+        const bxs = B.ids.map(id => px.get(id)!)
+        const all = axs.concat(bxs)
+        if (all.some(v => !Number.isFinite(v))) continue
+        all.sort((p, q) => p - q)
+        B.ids.forEach((id, k) => px.set(id, all[k]))
+        A.ids.forEach((id, k) => px.set(id, all[B.ids.length + k]))
+        const now = total()
+        if (now < best) {
+          best = now
+          improved = true
+        } else {
+          A.ids.forEach((id, k) => px.set(id, axs[k]))
+          B.ids.forEach((id, k) => px.set(id, bxs[k]))
+        }
+      }
+    }
+    if (!improved) break
+  }
+  // Second phase: move a whole couple/person to any position in its row (an adjacent
+  // swap alone cannot pull a node past an unrelated couple).
+  for (let pass = 0; pass < 6; pass++) {
+    let improved = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const ids of rows.values()) {
+      ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+      const units: Array<{ u: string; ids: string[]; ok: boolean }> = []
+      for (const id of ids) {
+        const u = unitOf(id)
+        const last = units[units.length - 1]
+        if (last && last.u === u) last.ids.push(id)
+        else units.push({ u, ids: [id], ok: true })
+      }
+      for (const unit of units) if (unit.ids.some(id => locked.has(id))) unit.ok = false
+      const slots = ids.map(id => px.get(id)!).filter(v => Number.isFinite(v)).sort((a, b) => a - b)
+      if (slots.length !== ids.length) continue
+      const apply = (order: Array<{ ids: string[] }>) => {
+        let k = 0
+        for (const unit of order) for (const id of unit.ids) px.set(id, slots[k++])
+      }
+      for (let i = 0; i < units.length; i++) {
+        if (!units[i].ok) continue
+        for (let j = 0; j < units.length; j++) {
+          if (i === j) continue
+          const moved = [...units]
+          const [u] = moved.splice(i, 1)
+          moved.splice(j, 0, u)
+          apply(moved)
+          const now = total()
+          if (now < best) {
+            best = now
+            improved = true
+            units.length = 0
+            units.push(...moved)
+            break
+          }
+          apply(units)   // restore
+        }
+      }
+    }
+    if (!improved) break
+  }
+}
+
 function relaxRows(
   g: Graph,
   gen: Map<string, number>,
@@ -1177,6 +1309,9 @@ function computeSingleLayout(
         if (sp && yOf.has(sp)) yOf.set(sp, (yOf.get(sp) ?? topY) + dy)
       })
     }
+    // Final pass: reorder couples/people inside each row to remove the diagonal crossing
+    // lines the centering sweeps introduce (evaluated on the drawn parent→child edges).
+    reduceCrossingSwaps(g, px, id => rowValue.get(id) ?? 0)
   }
 
   // Horizontal zigzag for vertical "spine" runs: timeline only. In 系図 the zigzag breaks
