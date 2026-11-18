@@ -1724,11 +1724,35 @@ function computeSingleLayout(
   const yOf = new Map<string, number>()
 
   if (mode === 'tidy') {
-    for (const p of g.persons) { const gg = gen.get(p.id) ?? 0; rowValue.set(p.id, gg); yOf.set(p.id, topY + gg * rowGap) }
+    // 段の間隔は、その段のいちばん大きなカードの半径で広げる。既定の大きさ（半径40）なら
+    // rowGap のまま（40+40+80 = 160）。大きなカードがある段だけ間隔が広がるので、
+    // 段をまたぐ線（親子・上司部下・師弟）が箱にぶつからず、直角のバスで引ける。
+    const rOf = (id: string) => options.nodeRadius?.[id] ?? 40
+    const maxR = new Map<number, number>()
+    const bump = (id: string, gg: number) => { maxR.set(gg, Math.max(maxR.get(gg) ?? 0, rOf(id))) }
+    for (const p of g.persons) bump(p.id, gen.get(p.id) ?? 0)
+    for (const uid of g.partnersOfUnion.keys()) {
+      bump(uid, Math.max(0, ...(g.partnersOfUnion.get(uid) || []).map(p => gen.get(p) ?? 0)))
+    }
+    const VGAP = Math.max(24, rowGap - 80)   // 半径40どうしで rowGap になる余白
+    const gens = [...maxR.keys()].sort((a, b) => a - b)
+    const rowY = new Map<number, number>()
+    if (gens.length) rowY.set(gens[0], topY)
+    let prev = gens.length ? gens[0] : 0
+    let cy = topY
+    for (const gg of gens) {
+      if (gg <= prev) continue                               // 先頭の段は topY のまま
+      for (let k = prev + 1; k < gg; k++) cy += rowGap       // 人のいない段は既定の間隔
+      cy += Math.max(rowGap, (maxR.get(prev) ?? 40) + (maxR.get(gg) ?? 40) + VGAP)
+      rowY.set(gg, cy)
+      prev = gg
+    }
+    const yForGen = (gg: number) => rowY.get(gg) ?? topY + gg * rowGap
+    for (const p of g.persons) { const gg = gen.get(p.id) ?? 0; rowValue.set(p.id, gg); yOf.set(p.id, yForGen(gg)) }
     for (const uid of g.partnersOfUnion.keys()) {
       const partners = g.partnersOfUnion.get(uid) || []
       const gg = Math.max(0, ...partners.map(p => gen.get(p) ?? 0))
-      rowValue.set(uid, gg); yOf.set(uid, topY + gg * rowGap)
+      rowValue.set(uid, gg); yOf.set(uid, yForGen(gg))
     }
   } else {
     const year = inferYears(g, links)
