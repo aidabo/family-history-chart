@@ -6,6 +6,7 @@ import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, hierarchyEnds, type LayoutMode } from '@/utils/familyLayout'
 import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
+import { PersonListPanel } from './PersonListPanel'
 
 // Title shown on a node: "title(period)" when a 在位/期間 is set (e.g. 皇帝(626-649)),
 // otherwise just the title, or "(period)" when only a period is set.
@@ -531,6 +532,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [filterOpen, setFilterOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(true)   // left-hand people list
   const [searchActive, setSearchActive] = useState(0)   // keyboard-highlighted suggestion index
   // A transient pulse ring shown at the viewport center after a search-select, so
   // the matched node is unmistakable. nonce also remounts the element to restart the anim.
@@ -823,6 +825,20 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     searchPulseTimer.current = setTimeout(() => setSearchPulse(null), 2600)
   }, [panToNode, dimensions])
   useEffect(() => () => { if (searchPulseTimer.current) clearTimeout(searchPulseTimer.current) }, [])
+
+  // People list (left panel): real people only, grouped by their row in the current layout.
+  const listPeople = useMemo(
+    () => persons.filter(p => p.type !== 'union' && p.type !== 'note' && !p.entity),
+    [persons])
+  const rowOf = useCallback((id: string) => {
+    const n = nodesRef.current.find(x => x.id === id)
+    return n && Number.isFinite(n.y) ? Math.round(n.y) : null
+  }, [])
+  const listLabelFor = useCallback((i: number, ps: PersonNode[]) => {
+    if (lastLayoutKind === 'tidy') return t('Generation GEN', '第GEN世代').replace('GEN', String(i + 1))
+    const first = ps.find(p => p.birth)?.birth
+    return first ? `${first}` : t('Group GEN', 'まとまりGEN').replace('GEN', String(i + 1))
+  }, [lastLayoutKind, t])
 
   // Close the filter popover on an outside click (the button only toggles it).
   // The popover is anchored to the canvas (not the button), so it needs its own
@@ -3101,12 +3117,17 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       )}
 
       {!cinemaPlaying && (
-      <div className="absolute top-14 left-14 z-10 flex items-center gap-1 bg-white/90 px-2 py-1 rounded shadow text-sm text-gray-700"
-        title={t('People count tip', '登場人物の総数（メモ・結婚ノードを除く）')}>
-        <UsersIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
-        <span className="font-semibold">{persons.filter(p => p.type !== 'union' && p.type !== 'note' && !p.entity).length}</span>
+      <button onClick={() => setListOpen(o => !o)} aria-expanded={listOpen}
+        className={`absolute top-14 left-14 z-10 flex items-center gap-1 px-2 py-1 rounded shadow text-sm ${listOpen ? 'bg-gray-800 text-white' : 'bg-white/90 text-gray-700 hover:bg-white'}`}
+        title={t('People list tip', '人物の一覧を開く／閉じる（総数：メモ・結婚ノードを除く）')}>
+        <UsersIcon className="w-4 h-4 opacity-70" aria-hidden="true" />
+        <span className="font-semibold">{listPeople.length}</span>
         <span>{t('people', '人')}</span>
-      </div>
+      </button>
+      )}
+      {!cinemaPlaying && listOpen && (
+        <PersonListPanel persons={listPeople} query={searchTerm} rowOf={rowOf}
+          onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor} />
       )}
 
       {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
