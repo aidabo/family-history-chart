@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildPersonListRows, personTimeOf, type PersonListOrder } from '../src/lib/components/canvas/PersonListPanel'
-import { parseYear, periodStart, periodEnd } from '../src/lib/utils/familyLayout'
+import { timelineYearOf } from '../src/lib/utils/familyLayout'
 
 const t = (en: string) => en
 const p = (id: string, name: string, birth?: string, death?: string, period?: string) =>
@@ -9,12 +9,8 @@ const names = (people: any[], order: PersonListOrder, query = '', timeOf?: (x: a
   buildPersonListRows(people, query, () => null, undefined, order, t, timeOf).rows
     .map(r => (r.kind === 'person' ? r.p.name : r.label))
 
-// 年表の軸と同じ基準（在位期間モード）で並べるときの関数。
-const periodTimeOf = (x: any) => {
-  const b = x.period ? periodStart(x.period) : x.birth
-  const d = x.period ? periodEnd(x.period) : x.death
-  return parseYear(b) ?? parseYear(d)
-}
+// 年表の軸と同じ基準（在位期間モード）で並べるときの関数 — canvas と同じもの。
+const periodTimeOf = (x: any) => timelineYearOf(x, 'period')
 
 describe('personTimeOf（人物の時間）', () => {
   it('生年があれば生年', () => {
@@ -54,11 +50,27 @@ describe('buildPersonListRows', () => {
     const withPeriods = [
       p('p1', '甲', '1500', '1580', '1550-1570'),   // 生年1500 だが在位は1550
       p('p2', '乙', '1520', '1600'),                 // period なし → 生年1520
-      p('p3', '丙', undefined, undefined, '1540-1560'),
+      p('p3', '丙', '1530', undefined, '1540-1560'), // 生年1530 だが在位は1540
     ]
-    // 生没年基準では 甲(1500) → 乙(1520) → 丙(1540)
+    // 生没年基準: 甲(1500) → 乙(1520) → 丙(1530)
     expect(names(withPeriods, 'time')).toEqual(['甲', '乙', '丙'])
-    // 在位期間基準では 乙(1520) → 丙(1540) → 甲(1550)
+    // 在位期間基準: 乙(1520) → 丙(1540) → 甲(1550)（甲と丙が入れ替わる）
     expect(names(withPeriods, 'time', '', periodTimeOf)).toEqual(['乙', '丙', '甲'])
+  })
+})
+
+describe('timelineYearOf（軸と同じ年）', () => {
+  const who = { birth: '1500', death: '1580', period: '1550-1570' }
+  it('生没年モードは生年→没年', () => {
+    expect(timelineYearOf(who, 'lifespan')).toBe(1500)
+    expect(timelineYearOf({ death: '前272' }, 'lifespan')).toBe(-272)
+  })
+  it('在位期間モードは period の開始→終了（period が無ければ生没年）', () => {
+    expect(timelineYearOf(who, 'period')).toBe(1550)
+    expect(timelineYearOf({ birth: '1500', death: '1580' }, 'period')).toBe(1500)
+    expect(timelineYearOf({ death: '前272' }, 'period')).toBe(-272)
+  })
+  it('年が無ければ null', () => {
+    expect(timelineYearOf({}, 'period')).toBeNull()
   })
 })
