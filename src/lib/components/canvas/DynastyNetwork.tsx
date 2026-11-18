@@ -1235,16 +1235,22 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Give neighbouring superiors different bus heights. Two people on the same row (e.g.
     // 如来 above its disciples and 玉皇大帝 above his generals) would otherwise draw their
     // horizontal bars on the SAME line, so nobody can tell which drop belongs to whom.
-    // A small deterministic ±8px offset per column keeps the bars apart (the manual fix
-    // did the same by hand).
+    // The bar height alternates 0 / +gap between neighbours in the row (sorted by x).
+    // With the grid on, the gap must be at least one grid step or snapping rounds it away.
     const BUS_LANE_GAP = 8
-    // Alternate the bar height between neighbouring superiors in the same row (sorted by
-    // x): 0, +8px, 0, +8px … so the closest neighbour never shares the same line.
+    const busLaneGap = showGrid ? Math.max(BUS_LANE_GAP, gridSize) : BUS_LANE_GAP
     const busLane = new Map<string, number>()
     if (orthoBus) {
       const byRow = new Map<number, Array<{ id: string; x: number }>>()
       for (const [id, group] of busGroups) {
         const up = busEnds(group[0])[0]
+        // Only groups that actually draw a downward bar need a lane; same-row peers in
+        // between must not consume a lane slot (they would hide the alternation).
+        const hasDown = group.some(l => {
+          const lo = busEnds(l)[1]
+          return lo.y - getNodeRadius(lo) > up.y + getNodeRadius(up) + 4
+        })
+        if (!hasDown) continue
         const k = Math.round(up.y)
         const a = byRow.get(k)
         if (a) a.push({ id, x: up.x }); else byRow.set(k, [{ id, x: up.x }])
@@ -2565,9 +2571,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         }
         if (minChildTop > sBottom + 4) {
           const mid = sBottom + (minChildTop - sBottom) * 0.5
-          const lane = (busLane.get(up.id) ?? 0) * BUS_LANE_GAP
-          // Keep the shifted bar inside the gap so it cannot touch either row.
-          const busY = snapToGrid(Math.min(Math.max(mid + lane, sBottom + 3), minChildTop - 3))
+          const lane = (busLane.get(up.id) ?? 0) * busLaneGap
+          // Snap first, then clamp, so the grid cannot round a shifted bar back onto its
+          // neighbour's line or push it into a row.
+          const busY = Math.min(Math.max(snapToGrid(mid + lane), sBottom + 3), minChildTop - 3)
           return `M ${sx} ${snapToGrid(sBottom)} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
         }
         // Same row (a horizontal relation): a plain horizontal line, never a diagonal.
