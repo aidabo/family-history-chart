@@ -3193,7 +3193,6 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             <option value="timeline">{t('Timeline', '年表(timeline)')}</option>
           </select>
         </div>
-
         {(layoutMode === 'timeline' || lastLayoutKind === 'timeline') && (
           <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title={t('Timeline axis tip', '年表の縦軸基準：生没年 / 在位期間(period)')}>
             <span className="whitespace-nowrap">{t('Timeline Axis', '年表')}</span>
