@@ -1508,6 +1508,41 @@ export function computeFamilyLayout(
   return { positions: { ...core.positions, ...entityPos }, mode: core.mode }
 }
 
+/** 年表の軸の「開始 / 終了」年（在位期間モードでは period の両端）。canvas とテストで
+ *  同じ関数を使い、一覧の並び・表示と軸が食い違わないようにする。 */
+export function timelineStart(
+  n: { birth?: string; period?: string },
+  basis: 'lifespan' | 'period',
+): string | undefined {
+  return basis === 'period' && n.period ? periodStart(n.period) : n.birth
+}
+export function timelineEnd(
+  n: { death?: string; period?: string },
+  basis: 'lifespan' | 'period',
+): string | undefined {
+  return basis === 'period' && n.period ? periodEnd(n.period) : n.death
+}
+/** 人物の「時間」: 開始が無ければ終了。どちらも無ければ null。
+ *
+ *  注意: 在位期間モードで `period` はあるが年の形として読めない場合、生没年へは戻らず
+ *  null になります（年表の軸 `timelineStart/End` も同じ値を使うため、一覧と軸がそろう）。 */
+export function timelineYearOf(
+  n: { birth?: string; death?: string; period?: string },
+  basis: 'lifespan' | 'period',
+): number | null {
+  return parseYear(timelineStart(n, basis)) ?? parseYear(timelineEnd(n, basis))
+}
+
+/** 人物リストの行に出す年。在位期間モードでは在位期間（"626-649"）、それ以外は生没年。 */
+export function timelineYearLabel(
+  n: { birth?: string; death?: string; period?: string },
+  basis: 'lifespan' | 'period',
+): string {
+  if (basis === 'period' && n.period) return n.period
+  const b = n.birth || '', d = n.death || ''
+  return b || d ? `${b || '?'}–${d || '?'}` : ''
+}
+
 /** 関連ノード（著作・学派・事件・地・概念）を、決まった人物の配置のまわりに置く。
  *
  *  - 3人以上につながるもの（仏教・天庭のような学派/組織/概念）は、図の一番上の帯に

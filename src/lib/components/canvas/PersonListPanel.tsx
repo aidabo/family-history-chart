@@ -21,6 +21,8 @@ export interface PersonListPanelProps {
   order?: PersonListOrder
   /** 並べるのに使う年（年表の基準: 生没年 or 在位期間）。既定は birth→death。 */
   timeOf?: (p: PersonNode) => number | null
+  /** 行に出す年（年表の基準に合わせる）。既定は「生年–没年」。 */
+  yearLabelOf?: (p: PersonNode) => string
 }
 
 export type PersonListOrder = 'generation' | 'name' | 'time'
@@ -97,7 +99,7 @@ export function buildPersonListRows(
   return { rows: out, tops, total: y }
 }
 
-export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelFor, order = 'generation', timeOf }: PersonListPanelProps) {
+export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelFor, order = 'generation', timeOf, yearLabelOf }: PersonListPanelProps) {
   const { t } = useDataContext()
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(360)
@@ -119,10 +121,12 @@ export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelF
     return out
   }, [rows, tops, scrollTop, viewport])
 
-  const years = (p: PersonNode) => {
-    const b = p.birth || '', d = p.death || ''
-    return b || d ? `${b || '?'}–${d || '?'}` : ''
-  }
+  const years = (p: PersonNode) => yearLabelOf
+    ? yearLabelOf(p)
+    : (() => {
+        const b = p.birth || '', d = p.death || ''
+        return b || d ? `${b || '?'}–${d || '?'}` : ''
+      })()
 
   return (
     <div className="absolute top-60 left-2 z-10 hidden w-56 flex-col rounded-lg border border-gray-200 bg-white/95 shadow md:flex"

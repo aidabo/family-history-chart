@@ -4,7 +4,7 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
-import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, hierarchyEnds, placeEntityNodes, type LayoutMode } from '@/utils/familyLayout'
+import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, hierarchyEnds, placeEntityNodes, timelineStart, timelineEnd, timelineYearOf, timelineYearLabel, type LayoutMode } from '@/utils/familyLayout'
 import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
 import { DYNASTY_CHANGE_COLOR, isDynastyChange, edgeWidth } from '@/utils/edgeStyle'
 import { PersonListPanel } from './PersonListPanel'
@@ -561,11 +561,16 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const searchPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The birth/death fed to the timeline layout & axis: swap in the period's start/end when
   // the basis is 'period' (so emperors line up by reign, not birth).
-  const tlBirth = (n: { birth?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodStart(n.period) : n.birth
-  const tlDeath = (n: { death?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodEnd(n.period) : n.death
+  const tlBirth = (n: { birth?: string; period?: string }) => timelineStart(n, timelineBasis)
+  const tlDeath = (n: { death?: string; period?: string }) => timelineEnd(n, timelineBasis)
   // People list ordering uses the SAME year basis as the timeline axis (生没年 / 在位期間).
   const listTimeOf = useCallback(
-    (p: { birth?: string; death?: string; period?: string }) => parseYear(tlBirth(p)) ?? parseYear(tlDeath(p)),
+    (p: { birth?: string; death?: string; period?: string }) => timelineYearOf(p, timelineBasis),
+    [timelineBasis],
+  )
+  // 一覧の年表示も軸に合わせる（決定は純関数 timelineYearLabel に置いてテストする）。
+  const listYearLabel = useCallback(
+    (p: PersonNode) => timelineYearLabel(p, timelineBasis),
     [timelineBasis],
   )
 
@@ -3187,7 +3192,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         <PersonListPanel persons={listPeople} query={searchTerm} rowOf={rowOf}
           onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor}
           order={lastLayoutKind === 'tidy' ? 'generation' : lastLayoutKind === 'timeline' ? 'time' : 'name'}
-          timeOf={listTimeOf} />
+          timeOf={listTimeOf}
+          yearLabelOf={lastLayoutKind === 'timeline' ? listYearLabel : undefined} />
       )}
 
       {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
