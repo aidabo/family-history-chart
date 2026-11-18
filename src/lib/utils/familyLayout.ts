@@ -1507,6 +1507,8 @@ export function placeEntityNodes(
   const col = options.colGap ?? 150
   const rowGap = options.rowGap ?? 160
   const fallbackTop = options.topY ?? 100
+  // 既定の 40 は描画側 getNodeRadius の既定（`nodeSize || 40` の円）と合わせてある。
+  // 片方だけ変えると重なり判定が食い違うので、変えるときは両方そろえること。
   const radius = (id: string) => options.nodeRadius?.[id] ?? 40
   const PAD = 8   // カード同士の余白
 
@@ -1554,14 +1556,18 @@ export function placeEntityNodes(
     small.push({ id: e.id, ax: midX, ay: personPos[topMember].y, r })
   }
 
-  // 上の帯: 一番上の人の行に「真上」のノードが来ても重ならない高さに置く。
+  // 上の帯: 一番上の行の人・「真上」のノードと重ならない高さに置く。
+  // 一番上の行の人の半径も入れる（大きな四角のカードがあると帯が下がりすぎて重なる）。
   band.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
   const bandX = separateX(band)
   const maxSmallR = small.length ? Math.max(...small.map(s => s.r)) : 0
   const maxBandR = band.length ? Math.max(...band.map(b => b.r)) : 0
+  const topRow = people.filter(p => p.y - chartTop < rowGap * 0.5)
+  const maxTopR = topRow.length ? Math.max(...topRow.map(p => p.r)) : 40
   const bandY = Math.min(
-    chartTop - rowGap * 1.35,
-    chartTop - rowGap * 0.5 - maxSmallR - maxBandR - PAD,
+    chartTop - rowGap * 1.35,                                  // 既定の高さ（今までと同じ見た目）
+    chartTop - maxTopR - maxBandR - PAD,                       // 一番上の行の人と重ならない
+    chartTop - rowGap * 0.5 - maxSmallR - maxBandR - PAD,      // 真上のノードと重ならない
   )
   band.forEach((it, i) => { out[it.id] = { x: bandX[i], y: bandY } })
 
@@ -1600,34 +1606,33 @@ export function placeEntityNodes(
     lane.items.forEach((it, i) => { out[it.id] = { x: xs[i], y: lane.y } })
   }
 
-  // 上の帯（最初から帯に行くもの + 段の間に置けなかったもの）をもう一度まとめて並べる。
-  if (deferred.length) {
-    const all = [...band, ...deferred].sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
-    const xs = separateX(all)
-    all.forEach((it, i) => { out[it.id] = { x: xs[i], y: bandY } })
-  }
-
   // 横の間隔をそろえたあと、人や先に置いたノードと近づいていないかもう一度見て、
-  // 必要なら横へ逃がす（そろえる計算で元の位置からずれるため）。
-  const settled: Array<{ x: number; y: number; r: number }> = [...band, ...deferred].map(it => ({ ...out[it.id], r: it.r }))
+  // 必要なら横へ逃がす（そろえる計算で元の位置からずれるため）。それでも空かない
+  // ものは段の間をあきらめて上の帯に回す。
+  const inBand = new Set(deferred.map(d => d.id))
+  const settled: Array<{ x: number; y: number; r: number }> = band.map(it => ({ ...out[it.id], r: it.r }))
   for (const it of small) {
-    if (deferred.some(d => d.id === it.id)) continue
+    if (inBand.has(it.id)) continue
     const cur = out[it.id]
     const hits = (x: number) =>
       settled.some(q => Math.hypot(q.x - x, q.y - cur.y) < it.r + q.r + PAD) ||
       people.some(p => Math.hypot(p.x - x, p.y - cur.y) < it.r + p.r + PAD)
-    let x = cur.x
-    if (hits(x)) {
-      for (let k = 1; k <= 8; k++) {
-        let moved = false
-        for (const cand of [cur.x + k * AVOID_X, cur.x - k * AVOID_X]) {
-          if (!hits(cand)) { x = cand; moved = true; break }
-        }
-        if (moved) break
+    let x: number | null = hits(cur.x) ? null : cur.x
+    for (let k = 1; k <= 8 && x == null; k++) {
+      for (const cand of [cur.x + k * AVOID_X, cur.x - k * AVOID_X]) {
+        if (!hits(cand)) { x = cand; break }
       }
     }
+    if (x == null) { deferred.push({ id: it.id, x: cur.x, r: it.r }); inBand.add(it.id); delete out[it.id]; continue }
     out[it.id] = { x, y: cur.y }
     settled.push({ x, y: cur.y, r: it.r })
+  }
+
+  // 上の帯（最初から帯に行くもの + 段の間に置けなかったもの）をまとめて並べ直す。
+  if (deferred.length) {
+    const all = [...band, ...deferred].sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
+    const xs = separateX(all)
+    all.forEach((it, i) => { out[it.id] = { x: xs[i], y: bandY } })
   }
   return out
 }
