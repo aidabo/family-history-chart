@@ -1558,18 +1558,19 @@ export function placeEntityNodes(
 
   // 上の帯: 一番上の行の人・「真上」のノードと重ならない高さに置く。
   // 一番上の行の人の半径も入れる（大きな四角のカードがあると帯が下がりすぎて重なる）。
+  // 後から帯に回るノード（deferred）もあるので、ここでは仮の高さで置き、最後に
+  // すべての帯ノードの半径で高さを決め直す。
   band.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
-  const bandX = separateX(band)
   const maxSmallR = small.length ? Math.max(...small.map(s => s.r)) : 0
-  const maxBandR = band.length ? Math.max(...band.map(b => b.r)) : 0
   const topRow = people.filter(p => p.y - chartTop < rowGap * 0.5)
   const maxTopR = topRow.length ? Math.max(...topRow.map(p => p.r)) : 40
-  const bandY = Math.min(
+  const bandHeight = (maxR: number) => Math.min(
     chartTop - rowGap * 1.35,                                  // 既定の高さ（今までと同じ見た目）
-    chartTop - maxTopR - maxBandR - PAD,                       // 一番上の行の人と重ならない
-    chartTop - rowGap * 0.5 - maxSmallR - maxBandR - PAD,      // 真上のノードと重ならない
+    chartTop - maxTopR - maxR - PAD,                           // 一番上の行の人と重ならない
+    chartTop - rowGap * 0.5 - maxSmallR - maxR - PAD,          // 真上のノードと重ならない
   )
-  band.forEach((it, i) => { out[it.id] = { x: bandX[i], y: bandY } })
+  const provisionalY = bandHeight(band.length ? Math.max(...band.map(b => b.r)) : 0)
+  separateX(band).forEach((x, i) => { out[band[i].id] = { x, y: provisionalY } })
 
   // 段と段の間: 真上から始め、重なるときは左右へずらす。
   const placed: Array<{ x: number; y: number; r: number }> = band.map(it => ({ ...out[it.id], r: it.r }))
@@ -1629,10 +1630,28 @@ export function placeEntityNodes(
   }
 
   // 上の帯（最初から帯に行くもの + 段の間に置けなかったもの）をまとめて並べ直す。
-  if (deferred.length) {
-    const all = [...band, ...deferred].sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
+  // 高さは「帯に入る全部」の最大半径で決める（後から来た大きなノードも入れる）。
+  if (band.length || deferred.length) {
+    const all = [...band, ...deferred]
+    const bandY = bandHeight(all.length ? Math.max(...all.map(b => b.r)) : 0)
+    all.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
     const xs = separateX(all)
     all.forEach((it, i) => { out[it.id] = { x: xs[i], y: bandY } })
+    // 保険: 帯のノードが人・段の間のノードと近すぎたら、足りないぶん帯を上げる。
+    for (let guard = 0; guard < 3; guard++) {
+      let lift = 0
+      for (const it of all) {
+        const b = out[it.id]
+        for (const o of people) lift = Math.max(lift, it.r + o.r + PAD - Math.hypot(o.x - b.x, o.y - b.y))
+        for (const o of small) {
+          if (inBand.has(o.id)) continue
+          const q = out[o.id]
+          if (q) lift = Math.max(lift, it.r + o.r + PAD - Math.hypot(q.x - b.x, q.y - b.y))
+        }
+      }
+      if (lift <= 0) break
+      for (const it of all) out[it.id].y -= lift
+    }
   }
   return out
 }
