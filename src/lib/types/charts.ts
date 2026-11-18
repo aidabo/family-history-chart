@@ -167,7 +167,8 @@ export interface ViewSettings {
   spacing?: number     // node-position spacing factor (the 間隔 slider)
   showGrid?: boolean
   gridSize?: number
-  edgeStyle?: 'straight' | 'ortho'  // parent-child wiring: straight line / orthogonal bus (系図 only)
+  /** @deprecated 無視されます（系図は常に直交バス）。旧データとの互換のためだけに残しています。 */
+  edgeStyle?: 'straight' | 'ortho'
   timelineBasis?: 'lifespan' | 'period'  // 年表(timeline)の縦軸基準：生没年(既定) / 在位期間(period)
   timelineCols?: number  // 年表: 一直線の系譜を左右に折り返す列数（幅の制御・既定6）
   hiddenRelations?: string[]  // 一時的に非表示にした関係キー（core は type、custom は `custom:{label}`）。複雑な図を簡略化
