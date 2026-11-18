@@ -210,6 +210,12 @@ const ENTITY_COLOR: Record<string, string> = {
 const ENTITY_EDGE_COLOR: Record<string, string> = {
   '著作': ENTITY_COLOR.work, '学派': ENTITY_COLOR.org, '事件': ENTITY_COLOR.event, '地': ENTITY_COLOR.place, '概念': ENTITY_COLOR.concept,
 }
+// 朝代更换の線。CSV 取り込みは label '朝代更换' にそろえて保存するが、JSON を直接書いた
+// 場合は別名（朝代更替／换代）もありうるので、表示側でも同じ扱いにする。
+const DYNASTY_CHANGE_LABELS = new Set(['朝代更换', '朝代更替', '换代'])
+const DYNASTY_CHANGE_COLOR = '#ea580c'   // orange-600（継承の緑と分ける）
+const isDynastyChange = (l: { type?: string; label?: string }) =>
+  l.type === 'custom' && !!l.label && DYNASTY_CHANGE_LABELS.has(l.label)
 
 function nodeFill(d: SimNode): string {
   if (d.bgColor) return d.bgColor
@@ -1383,12 +1389,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       return value
     }
 
-    // 朝代更换（custom + label）は「王朝が変わった」ことを示す線なので、継承の緑と分かる
-    // オレンジで描く。CSV の別名（朝代更替／换代）も同じ色にする。
-    const DYNASTY_CHANGE = new Set(['朝代更换', '朝代更替', '换代'])
+    // 朝代更换は「王朝が変わった」ことを示す線。継承の緑と分けるオレンジで、少し太く描く
+    // （事件のオレンジと同じ色だが、太さで見分けられる）。
     const edgeColor = (d: SimLink): string => d.color || (
       (d.label && ENTITY_EDGE_COLOR[d.label]) ? ENTITY_EDGE_COLOR[d.label] :   // person → entity edge
-      (d.type === 'custom' && d.label && DYNASTY_CHANGE.has(d.label)) ? '#ea580c' :   // 朝代更换
+      isDynastyChange(d) ? DYNASTY_CHANGE_COLOR :
       d.type === 'marriage'     ? '#f97316' :
       d.type === 'remarriage'   ? '#d946ef' :
       d.type === 'partner'      ? '#f97316' :
@@ -1414,7 +1419,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .data(links).enter().append('path')
       .attr('fill', 'none')
       .attr('stroke', edgeColor)
-      .attr('stroke-width', d => d.width || (d.type === 'sibling' ? 1.5 : 2))
+      .attr('stroke-width', d => d.width || (isDynastyChange(d) ? 3 : d.type === 'sibling' ? 1.5 : 2))
       .attr('stroke-dasharray', d =>
         d.type === 'marriage'   ? '5,5' :
         d.type === 'remarriage' ? '8,3,2,3' :
