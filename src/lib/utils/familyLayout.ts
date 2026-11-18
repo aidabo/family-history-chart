@@ -46,6 +46,8 @@ export interface LayoutOptions {
   colGap?: number    // horizontal distance between adjacent people
   rowGap?: number    // vertical distance between generations
   timelineCols?: number  // timeline: max columns a chain-like line snakes across (width control)
+  /** ノード id → 描画時の半径（四角・装飾形は円より大きい）。関連ノードの重なり判定に使う。 */
+  nodeRadius?: Record<string, number>
 }
 
 // A component is "chain-like" when almost nothing branches — a linear succession/temporal
@@ -1481,22 +1483,32 @@ export function computeFamilyLayout(
  *  - 3人以上につながるもの（仏教・天庭のような学派/組織/概念）は、図の一番上の帯に
  *    横一列（x はつながる人の中央付近、重ならないように間隔を空ける）。
  *  - 1〜2人につながるもの（事件・場所など）は、その人の真上＝段と段の間に置く。
- *    線は縦の短い直線になり、人物の列は動かない。
+ *    段と段の間はカード 1 枚分の高さしかないので、重なるときは左右へずらす
+ *    （線は直角のまま）。
+ *  - 段の間に置ける場所が無い（大きな四角のカードで隙間が埋まっている等）ときは、
+ *    上の帯に回す（人と重ねないことを優先）。
  *  - どこにもつながっていないものは、帯の右端にまとめる。
  *
+ * 重なり判定は `nodeRadius`（描画時の実際の半径。四角・装飾形は円より大きい）で行う。
  * 人物の位置 (personPos) は動かさない。force レイアウトからも呼べるよう独立してある。
  */
 export function placeEntityNodes(
   entities: LayoutNode[],
   links: LayoutLink[],
   personPos: Record<string, { x: number; y: number }>,
-  options: { colGap?: number; rowGap?: number; topY?: number } = {},
+  options: {
+    colGap?: number; rowGap?: number; topY?: number; centerX?: number
+    /** ノード id → 描画時の半径。無い id は 40（既定の円）として扱う。 */
+    nodeRadius?: Record<string, number>
+  } = {},
 ): Record<string, { x: number; y: number }> {
   const out: Record<string, { x: number; y: number }> = {}
   if (!entities.length) return out
   const col = options.colGap ?? 150
   const rowGap = options.rowGap ?? 160
   const fallbackTop = options.topY ?? 100
+  const radius = (id: string) => options.nodeRadius?.[id] ?? 40
+  const PAD = 8   // カード同士の余白
 
   // Members of each entity (only people that actually have a position).
   const ids = new Set(entities.map(e => e.id))
@@ -1511,76 +1523,111 @@ export function placeEntityNodes(
     else if (!a.includes(other)) a.push(other)
   }
 
-  const personXs = Object.values(personPos).map(p => p.x)
-  const personYs = Object.values(personPos).map(p => p.y)
+  const people = Object.entries(personPos).map(([id, p]) => ({ id, x: p.x, y: p.y, r: radius(id) }))
+  const personXs = people.map(p => p.x)
+  const personYs = people.map(p => p.y)
   const chartTop = personYs.length ? Math.min(...personYs) : fallbackTop
-  const chartRight = personXs.length ? Math.max(...personXs) + col : fallbackTop
+  const chartRight = personXs.length ? Math.max(...personXs) + col : (options.centerX ?? 600)
 
-  // 帯の最小間隔（ノード半径 40 + 余白）。
-  const BAND_GAP = Math.max(96, Math.min(Math.round(col * 0.8), 150))
-  const ABOVE_ROW = rowGap * 0.5   // 段と段の間
-  const NODE_CLEAR = 80            // 半径 40 ×2：これより近いと重なる
-  const AVOID = NODE_CLEAR + 8     // これより近いと重なって見える
-  const AVOID_X = Math.round(col * 0.32)   // 真上に置けないときに横へずらす幅
-  // 目標の x はなるべく保ち、重なるときだけ左右へずらす（左右から挟んで詰める）。
-  const separateX = (items: Array<{ id: string; x: number }>, gap: number) => {
+  // 真上に置けないときに横へずらす幅（グリッドに乗る程度）。
+  const AVOID_X = Math.max(24, Math.round(col * 0.32))
+  // x の順に並べ、左右から挟んで重ならないようにする（半径ぶんの間隔を空ける）。
+  const separateX = (items: Array<{ id: string; x: number; r: number }>) => {
     const xs = items.map(i => i.x)
-    for (let i = 1; i < xs.length; i++) xs[i] = Math.max(xs[i], xs[i - 1] + gap)
-    for (let i = xs.length - 2; i >= 0; i--) xs[i] = Math.min(xs[i], xs[i + 1] - gap)
+    const gap = (a: { r: number }, b: { r: number }) => a.r + b.r + PAD
+    for (let i = 1; i < xs.length; i++) xs[i] = Math.max(xs[i], xs[i - 1] + gap(items[i - 1], items[i]))
+    for (let i = xs.length - 2; i >= 0; i--) xs[i] = Math.min(xs[i], xs[i + 1] - gap(items[i], items[i + 1]))
     return xs
   }
-  const band: Array<{ id: string; x: number }> = []
-  const small: Array<{ id: string; ax: number; ay: number }> = []
+
+  const band: Array<{ id: string; x: number; r: number }> = []
+  const small: Array<{ id: string; ax: number; ay: number; r: number }> = []
   for (const e of entities) {
+    const r = radius(e.id)
     const mem = members.get(e.id) ?? []
-    if (mem.length === 0) { band.push({ id: e.id, x: chartRight }); continue }
+    if (mem.length === 0) { band.push({ id: e.id, x: chartRight, r }); continue }
     const xs = mem.map(id => personPos[id].x)
     const midX = (Math.min(...xs) + Math.max(...xs)) / 2
-    if (mem.length >= 3) { band.push({ id: e.id, x: midX }); continue }
-    // 1〜2人: 関係する人の真上（2人なら2人の中央）。段と段の間はちょうどカードの高さ
-    // しかないので、重なるときは左右へずらして直角の線で結ぶ。
+    if (mem.length >= 3) { band.push({ id: e.id, x: midX, r }); continue }
+    // 1〜2人: 関係する人の真上（2人なら2人の中央）。
     const topMember = mem.reduce((a, b) => (personPos[a].y <= personPos[b].y ? a : b))
-    small.push({ id: e.id, ax: midX, ay: personPos[topMember].y })
+    small.push({ id: e.id, ax: midX, ay: personPos[topMember].y, r })
   }
 
-  // 上の帯: x の順に並べ、左右から挟んで重ならないようにする（目標の x を保つ）。
+  // 上の帯: 一番上の人の行に「真上」のノードが来ても重ならない高さに置く。
   band.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
-  const bandX = separateX(band, BAND_GAP)
-  // 一番上の人の行に「真上」のノード (rowGap/2 上) が来ても重ならない高さに置く。
-  const bandY = chartTop - rowGap * 1.35
+  const bandX = separateX(band)
+  const maxSmallR = small.length ? Math.max(...small.map(s => s.r)) : 0
+  const maxBandR = band.length ? Math.max(...band.map(b => b.r)) : 0
+  const bandY = Math.min(
+    chartTop - rowGap * 1.35,
+    chartTop - rowGap * 0.5 - maxSmallR - maxBandR - PAD,
+  )
   band.forEach((it, i) => { out[it.id] = { x: bandX[i], y: bandY } })
 
-  // 段と段の間: 真上から始め、重なるときは左右へずらす。同じ高さに並んだものは
-  // 最後に横の間隔をそろえる（線は直角のまま）。
-  const placed: Array<{ x: number; y: number }> = band.map(it => out[it.id])
-  const clear = (x: number, y: number) => {
-    for (const p of Object.values(personPos)) if (Math.hypot(p.x - x, p.y - y) < AVOID) return false
-    for (const p of placed) if (Math.hypot(p.x - x, p.y - y) < AVOID) return false
+  // 段と段の間: 真上から始め、重なるときは左右へずらす。
+  const placed: Array<{ x: number; y: number; r: number }> = band.map(it => ({ ...out[it.id], r: it.r }))
+  const clear = (x: number, y: number, r: number) => {
+    for (const p of people) if (Math.hypot(p.x - x, p.y - y) < r + p.r + PAD) return false
+    for (const q of placed) if (Math.hypot(q.x - x, q.y - y) < r + q.r + PAD) return false
     return true
   }
-  const lanes: Array<{ y: number; items: Array<{ id: string; x: number }> }> = []
+  const lanes: Array<{ y: number; items: Array<{ id: string; x: number; r: number }> }> = []
+  // 段の間にも置けないもの（大きなカードで隙間が無い図）は、上の帯に回す。
+  const deferred: Array<{ id: string; x: number; r: number }> = []
   small.sort((a, b) => a.ay - b.ay || a.ax - b.ax || (a.id < b.id ? -1 : 1))
   for (const it of small) {
-    const y = it.ay - ABOVE_ROW
+    const y = it.ay - rowGap * 0.5
     let x = it.ax
-    if (!clear(x, y)) {
+    if (!clear(x, y, it.r)) {
       let found: number | null = null
-      for (let k = 1; k <= 5 && found == null; k++) {
+      for (let k = 1; k <= 6 && found == null; k++) {
         for (const cand of [it.ax + k * AVOID_X, it.ax - k * AVOID_X]) {
-          if (clear(cand, y)) { found = cand; break }
+          if (clear(cand, y, it.r)) { found = cand; break }
         }
       }
-      if (found != null) x = found
+      if (found == null) { deferred.push({ id: it.id, x: it.ax, r: it.r }); continue }
+      x = found
     }
-    placed.push({ x, y })
+    placed.push({ x, y, r: it.r })
     const lane = lanes.find(l => Math.abs(l.y - y) <= 40)
-    if (lane) lane.items.push({ id: it.id, x })
-    else lanes.push({ y, items: [{ id: it.id, x }] })
+    if (lane) lane.items.push({ id: it.id, x, r: it.r })
+    else lanes.push({ y, items: [{ id: it.id, x, r: it.r }] })
   }
   for (const lane of lanes) {
     lane.items.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
-    const xs = separateX(lane.items, AVOID)
+    const xs = separateX(lane.items)
     lane.items.forEach((it, i) => { out[it.id] = { x: xs[i], y: lane.y } })
+  }
+
+  // 上の帯（最初から帯に行くもの + 段の間に置けなかったもの）をもう一度まとめて並べる。
+  if (deferred.length) {
+    const all = [...band, ...deferred].sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
+    const xs = separateX(all)
+    all.forEach((it, i) => { out[it.id] = { x: xs[i], y: bandY } })
+  }
+
+  // 横の間隔をそろえたあと、人や先に置いたノードと近づいていないかもう一度見て、
+  // 必要なら横へ逃がす（そろえる計算で元の位置からずれるため）。
+  const settled: Array<{ x: number; y: number; r: number }> = [...band, ...deferred].map(it => ({ ...out[it.id], r: it.r }))
+  for (const it of small) {
+    if (deferred.some(d => d.id === it.id)) continue
+    const cur = out[it.id]
+    const hits = (x: number) =>
+      settled.some(q => Math.hypot(q.x - x, q.y - cur.y) < it.r + q.r + PAD) ||
+      people.some(p => Math.hypot(p.x - x, p.y - cur.y) < it.r + p.r + PAD)
+    let x = cur.x
+    if (hits(x)) {
+      for (let k = 1; k <= 8; k++) {
+        let moved = false
+        for (const cand of [cur.x + k * AVOID_X, cur.x - k * AVOID_X]) {
+          if (!hits(cand)) { x = cand; moved = true; break }
+        }
+        if (moved) break
+      }
+    }
+    out[it.id] = { x, y: cur.y }
+    settled.push({ x, y: cur.y, r: it.r })
   }
   return out
 }

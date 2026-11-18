@@ -336,6 +336,7 @@ function forceLayoutPositions(nodes: SimNode[], links: SimLink[]): Record<string
       entities.map(n => ({ id: n.id, entity: n.entity })),
       links.map(l => ({ source: l.source.id, target: l.target.id, type: l.type, label: l.label })),
       positions,
+      { nodeRadius: Object.fromEntries(nodes.map(n => [n.id, getNodeRadius(n)])) },
     )
     Object.assign(positions, placed)
   }
@@ -890,7 +891,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     if (resolved === 'force') {
       positions = forceLayoutPositions(nodesRef.current, linksRef.current)
     } else {
-      positions = computeFamilyLayout(nodes, links, { mode: resolved, timelineCols }).positions
+      const nodeRadius = Object.fromEntries(nodesRef.current.map(n => [n.id, getNodeRadius(n)]))
+      positions = computeFamilyLayout(nodes, links, { mode: resolved, timelineCols, nodeRadius }).positions
       // Timeline: keep the year axis (y) but resolve any overlaps via collision.
       if (resolved === 'timeline') positions = relaxTimelinePositions(nodesRef.current, positions)
     }
@@ -2684,15 +2686,18 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           const y = snapToGrid(up.y)
           return `M ${snapToGrid(sx + dir * rUp)} ${y} L ${snapToGrid(cx - dir * rLo)} ${y}`
         }
-        // No vertical room between the boxes (the row gap is exactly one card tall, or a
-        // large card fills it): go across from the upper node's side, then straight down —
-        // right angles instead of falling through to a diagonal.
-        if (Math.abs(cx - sx) < 4) {
-          return `M ${snapToGrid(sx)} ${snapToGrid(sBottom)} L ${snapToGrid(cx)} ${snapToGrid(cTop)}`
+        // A related entity with no vertical room (the row gap is exactly one card tall, or
+        // a large card fills it): go across from the entity's side, then straight down —
+        // right angles instead of falling through to a diagonal. Person↔person lines keep
+        // their existing shape here.
+        if (isEntityLink(d)) {
+          if (Math.abs(cx - sx) < 4) {
+            return `M ${snapToGrid(sx)} ${snapToGrid(sBottom)} L ${snapToGrid(cx)} ${snapToGrid(cTop)}`
+          }
+          const y = snapToGrid(up.y)
+          const side = cx > sx ? 1 : -1
+          return `M ${snapToGrid(sx + side * rUp)} ${y} L ${snapToGrid(cx)} ${y} L ${snapToGrid(cx)} ${snapToGrid(cTop)}`
         }
-        const y = snapToGrid(up.y)
-        const side = cx > sx ? 1 : -1
-        return `M ${snapToGrid(sx + side * rUp)} ${y} L ${snapToGrid(cx)} ${y} L ${snapToGrid(cx)} ${snapToGrid(cTop)}`
       }
       const dx = d.target.x - d.source.x
       const dy = d.target.y - d.source.y
