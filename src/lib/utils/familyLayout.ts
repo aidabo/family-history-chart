@@ -45,7 +45,7 @@ export interface LayoutOptions {
   topY?: number      // y of the first (oldest) generation
   colGap?: number    // horizontal distance between adjacent people
   rowGap?: number    // vertical distance between generations
-  timelineCols?: number  // timeline: max columns a chain-like line snakes across (width control)
+  timelineCols?: number  // timeline: max columns a chain may use when cards would touch (width control)
   /** ノード id → 描画時の半径（四角・装飾形は円より大きい）。関連ノードの重なり判定に使う。 */
   nodeRadius?: Record<string, number>
 }
@@ -1382,14 +1382,23 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
       // Total width = the MAX number of concurrent lineages, not the total node count.
       const laneStride = (C - 1) * col + laneGap
       const laneEnd: number[] = []
+      // 列ごとのカード（y と半径）と、最後に使った列は**レーン単位**で覚える。レーンは
+      // 前の系統が終わったあと再利用されるので、系統ごとに作り直すと、境目の同じ年で
+      // 前の系統の最後のカードと重なる。
+      const laneCols: Array<Array<Array<{ y: number; r: number }>>> = []
+      const lanePrevCol: number[] = []
       for (const g of groups) {
         let lane = laneEnd.findIndex(end => end <= g.minY)
-        if (lane === -1) { lane = laneEnd.length; laneEnd.push(-Infinity) }
+        if (lane === -1) {
+          lane = laneEnd.length
+          laneEnd.push(-Infinity)
+          laneCols.push(Array.from({ length: C }, () => []))
+          lanePrevCol.push(0)
+        }
         laneEnd[lane] = g.maxY
         const baseX = laneX + lane * laneStride
-        // 同じ列に置いたカード（y と半径）を覚えておき、重なるなら隣の列へ逃がす。
-        const cols: Array<Array<{ y: number; r: number }>> = Array.from({ length: C }, () => [])
-        let prevCol = 0
+        const cols = laneCols[lane]
+        let prevCol = lanePrevCol[lane]
         g.order.forEach(id => {
           const y = yForYear(year.get(id)!)
           const r = rOf(id)
@@ -1407,6 +1416,7 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
           prevCol = c
         })
         for (const id of g.undated) if (out[id] == null) out[id] = { x: baseX, y: NaN }
+        lanePrevCol[lane] = prevCol
       }
       for (const n of sub) if (out[n.id] == null) out[n.id] = { x: laneX, y: NaN }
       laneX += Math.max(1, laneEnd.length) * laneStride

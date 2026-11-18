@@ -150,3 +150,34 @@ describe('computeFamilyLayout (timeline: 縦の列)', () => {
     }
   })
 })
+
+describe('computeFamilyLayout (timeline: レーンの再利用)', () => {
+  const lineage = (prefix: string, start: number, n: number) => {
+    const nodes = Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}`, name: `${prefix}${i}`, birth: String(start + i) }))
+    const links = Array.from({ length: n - 1 }, (_, i) => ({ source: `${prefix}${i}`, target: `${prefix}${i + 1}`, type: 'succession' }))
+    return { nodes, links }
+  }
+
+  it('同じレーンを再利用する2系統が、境目の同じ年でも重ならない', () => {
+    const A = lineage('a', 1500, 8)   // 1500..1507
+    const B = lineage('b', 1507, 8)   // 1507..1514（境目は同じ年）
+    const nodes = [...A.nodes, ...B.nodes]
+    const links = [...A.links, ...B.links, { source: 'a7', target: 'b0', type: 'custom', label: '朝代更换' }]
+    const p = computeFamilyLayout(nodes, links, { mode: 'timeline' }).positions
+    for (let i = 0; i < nodes.length; i++) {
+      for (let k = i + 1; k < nodes.length; k++) {
+        const a = p[nodes[i].id], b = p[nodes[k].id]
+        expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(78)
+      }
+    }
+  })
+
+  it('列が埋まったら（timelineCols=2 で密集）落ちずに置く', () => {
+    const { nodes, links } = lineage('c', 1500, 10)   // 1年差で詰まった10人
+    const p = computeFamilyLayout(nodes, links, { mode: 'timeline', timelineCols: 2 }).positions
+    for (const n of nodes) {
+      expect(Number.isFinite(p[n.id].x)).toBe(true)
+      expect(Number.isFinite(p[n.id].y)).toBe(true)
+    }
+  })
+})
