@@ -521,8 +521,6 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [spacing, setSpacing] = useState(1)
   const spacingRef = useRef(1)   // last-applied spacing factor
   const [lastLayoutKind, setLastLayoutKind] = useState<'tidy' | 'timeline' | 'force' | null>(null)
-  // Parent-child wiring style. 'ortho' draws a shared horizontal "bus" (bracket) per parent
-  // so siblings hang from one bar; only takes effect in 系図(tidy). Default straight (unchanged).
   // 年表(timeline)の縦軸基準：'lifespan'=生没年（既定） / 'period'=在位期間(person.period)。
   const [timelineBasis, setTimelineBasis] = useState<'lifespan' | 'period'>('lifespan')
   // 年表: 一直線の系譜（皇帝の継承など）を左右に折り返す列数＝表示幅の制御（既定4）。

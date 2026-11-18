@@ -72,7 +72,7 @@ Mirror `app/pages/`:
 
 - **`viewSettings` を必ず往復させる**（重要）。ホストの行マッパー `socialChartsApi.ts` の `rowToPageProps` は
   `chart_props` を項目ごとに再構築するため、**保存済みの `chartProps.viewSettings` を復元対象に含め忘れると、
-  再Open時にレイアウト設定（`layoutMode` 系図/年表・`spacing` 間隔・`showGrid`/`gridSize`・`edgeStyle` 配線・
+  再Open時にレイアウト設定（`layoutMode` 系図/年表・`spacing` 間隔・`showGrid`/`gridSize`・
   `lastLayoutKind`）が失われて既定値（force）に戻る**。保存側（`pagePropsToRow` → `JSON.stringify(chartProps)`）は
   全体を書き出すので落ちないが、**読込側でのみ欠落**して発覚しにくい（スタンドアロンの json-server は
   chartProps をそのまま返すため再現しない）。`viewport`/`background`/`dpi` と同様に `viewSettings` も明示的に通すこと。
