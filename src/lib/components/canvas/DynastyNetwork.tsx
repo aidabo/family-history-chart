@@ -4,7 +4,7 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
-import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, hierarchyEnds, type LayoutMode } from '@/utils/familyLayout'
+import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, hierarchyEnds, placeEntityNodes, type LayoutMode } from '@/utils/familyLayout'
 import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
 import { PersonListPanel } from './PersonListPanel'
 
@@ -289,8 +289,13 @@ function getNodeRadius(d: SimNode): number {
 // connected ones to the edge; couples/parent-child sit close via short, strong links.
 // Runs synchronously on throw-away copies so the live simulation is untouched.
 function forceLayoutPositions(nodes: SimNode[], links: SimLink[]): Record<string, { x: number; y: number }> {
-  const radiusById = new Map(nodes.map(n => [n.id, getNodeRadius(n)]))
-  const work = nodes.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y }))
+  // Related entities (著作/学派/事件/地/概念) stay out of the simulation: they are not
+  // people, and their many edges would drag the people around. They are placed around the
+  // settled people afterwards, exactly like the tidy layout does.
+  const people = nodes.filter(n => !n.entity)
+  const entities = nodes.filter(n => !!n.entity)
+  const radiusById = new Map(people.map(n => [n.id, getNodeRadius(n)]))
+  const work = people.map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y }))
   const byId = new Map(work.map(n => [n.id, n]))
   const wlinks = links
     .map(l => ({ source: l.source.id, target: l.target.id, type: l.type }))
@@ -326,6 +331,15 @@ function forceLayoutPositions(nodes: SimNode[], links: SimLink[]): Record<string
 
   const positions: Record<string, { x: number; y: number }> = {}
   for (const n of work) positions[n.id] = { x: n.x, y: n.y }
+  if (entities.length) {
+    const placed = placeEntityNodes(
+      entities.map(n => ({ id: n.id, entity: n.entity })),
+      links.map(l => ({ source: l.source.id, target: l.target.id, type: l.type, label: l.label })),
+      positions,
+      { nodeRadius: Object.fromEntries(nodes.map(n => [n.id, getNodeRadius(n)])) },
+    )
+    Object.assign(positions, placed)
+  }
   return positions
 }
 
@@ -870,14 +884,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const runAutoLayout = useCallback((mode: LayoutMode) => {
     if (!simulationRef.current) return
     // birth/death drive the timeline axis; swap in the period start/end when the basis is 'period'.
-    const nodes = nodesRef.current.map(n => ({ id: n.id, type: n.type, gender: n.gender, birth: tlBirth(n), death: tlDeath(n), name: n.name }))
+    const nodes = nodesRef.current.map(n => ({ id: n.id, type: n.type, gender: n.gender, birth: tlBirth(n), death: tlDeath(n), name: n.name, entity: n.entity }))
     const links = linksRef.current.map(l => ({ source: l.source.id, target: l.target.id, type: l.type, label: l.label }))
     const resolved = mode === 'auto' ? pickAutoMode(nodes, links) : mode
     let positions: Record<string, { x: number; y: number }>
     if (resolved === 'force') {
       positions = forceLayoutPositions(nodesRef.current, linksRef.current)
     } else {
-      positions = computeFamilyLayout(nodes, links, { mode: resolved, timelineCols }).positions
+      const nodeRadius = Object.fromEntries(nodesRef.current.map(n => [n.id, getNodeRadius(n)]))
+      positions = computeFamilyLayout(nodes, links, { mode: resolved, timelineCols, nodeRadius }).positions
       // Timeline: keep the year axis (y) but resolve any overlaps via collision.
       if (resolved === 'timeline') positions = relaxTimelinePositions(nodesRef.current, positions)
     }
@@ -1261,14 +1276,17 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       if (h) return h[0] === l.source.id ? [l.source, l.target] : [l.target, l.source]
       return l.source.y <= l.target.y ? [l.source, l.target] : [l.target, l.source]
     }
+    // Related-entity edges (person → 著作/学派/事件/地/概念) are always drawn orthogonally,
+    // in every mode: the entity sits above its people (band / row gap), so the line is a
+    // straight vertical or a right-angle drop, never a diagonal across the chart.
+    const isEntityLink = (l: SimLink) => !!(l.source.entity || l.target.entity)
     const busGroups = new Map<string, SimLink[]>()
-    if (orthoBus) {
-      for (const l of links) {
-        if (BUS_EXCLUDED.has(l.type ?? '')) continue
-        const k = busEnds(l)[0].id
-        if (!busGroups.has(k)) busGroups.set(k, [])
-        busGroups.get(k)!.push(l)
-      }
+    for (const l of links) {
+      if (BUS_EXCLUDED.has(l.type ?? '')) continue
+      if (!orthoBus && !isEntityLink(l)) continue
+      const k = busEnds(l)[0].id
+      if (!busGroups.has(k)) busGroups.set(k, [])
+      busGroups.get(k)!.push(l)
     }
     // Give neighbouring superiors different bus heights. Two people on the same row (e.g.
     // 如来 above its disciples and 玉皇大帝 above his generals) would otherwise draw their
@@ -1278,7 +1296,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     const BUS_LANE_GAP = 8
     const busLaneGap = showGrid ? Math.max(BUS_LANE_GAP, gridSize) : BUS_LANE_GAP
     const busLane = new Map<string, number>()
-    if (orthoBus) {
+    if (busGroups.size) {
       const byRow = new Map<number, Array<{ id: string; x: number }>>()
       for (const [id, group] of busGroups) {
         const up = busEnds(group[0])[0]
@@ -2648,7 +2666,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       // the lower node. All links from the same upper node share busY, so their
       // horizontals form one continuous bar. Each path is still its own element, so
       // clicking a link selects that specific relationship.
-      if (orthoBus && !BUS_EXCLUDED.has(d.type ?? '')) {
+      if (!BUS_EXCLUDED.has(d.type ?? '') && (orthoBus || isEntityLink(d))) {
         const [up, lo] = busEnds(d)
         const rUp = getNodeRadius(up)
         const rLo = getNodeRadius(lo)
@@ -2667,6 +2685,18 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           const dir = cx > sx ? 1 : -1
           const y = snapToGrid(up.y)
           return `M ${snapToGrid(sx + dir * rUp)} ${y} L ${snapToGrid(cx - dir * rLo)} ${y}`
+        }
+        // A related entity with no vertical room (the row gap is exactly one card tall, or
+        // a large card fills it): go across from the entity's side, then straight down —
+        // right angles instead of falling through to a diagonal. Person↔person lines keep
+        // their existing shape here.
+        if (isEntityLink(d)) {
+          if (Math.abs(cx - sx) < 4) {
+            return `M ${snapToGrid(sx)} ${snapToGrid(sBottom)} L ${snapToGrid(cx)} ${snapToGrid(cTop)}`
+          }
+          const y = snapToGrid(up.y)
+          const side = cx > sx ? 1 : -1
+          return `M ${snapToGrid(sx + side * rUp)} ${y} L ${snapToGrid(cx)} ${y} L ${snapToGrid(cx)} ${snapToGrid(cTop)}`
         }
       }
       const dx = d.target.x - d.source.x

@@ -25,6 +25,9 @@ export interface LayoutNode {
   birth?: string
   death?: string
   name?: string
+  /** Set on non-human related entities (work/org/event/place/concept). They are laid out
+   *  around the people, never as people (see placeEntityNodes). */
+  entity?: string
 }
 
 export interface LayoutLink {
@@ -43,6 +46,8 @@ export interface LayoutOptions {
   colGap?: number    // horizontal distance between adjacent people
   rowGap?: number    // vertical distance between generations
   timelineCols?: number  // timeline: max columns a chain-like line snakes across (width control)
+  /** ノード id → 描画時の半径（四角・装飾形は円より大きい）。関連ノードの重なり判定に使う。 */
+  nodeRadius?: Record<string, number>
 }
 
 // A component is "chain-like" when almost nothing branches — a linear succession/temporal
@@ -1455,12 +1460,208 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
   return { positions: out, mode: 'timeline' }
 }
 
-// Public entry — unified pipeline. Step 1: split into independent components (separate
-// imports / unrelated families) so they never interleave. Step 2: within each component,
-// analyse the relationship graph into lineage clusters and lay each out per the chosen
-// view (系図 tidy / timeline). Step 3: pack lineage blocks within a component (tight),
-// then pack whole components apart (wide gap) so unrelated families are clearly separated.
+// Public entry — unified pipeline. People are laid out first (see computeFamilyLayoutCore);
+// non-human related entities (著作/学派/事件/地/概念) are placed afterwards so they never
+// take a person's column or generation row (see placeEntityNodes).
 export function computeFamilyLayout(
+  nodes: LayoutNode[],
+  links: LayoutLink[],
+  options: LayoutOptions = {},
+): LayoutResult {
+  const entities = nodes.filter(n => n.entity)
+  if (!entities.length) return computeFamilyLayoutCore(nodes, links, options)
+  const entIds = new Set(entities.map(n => n.id))
+  const personNodes = nodes.filter(n => !n.entity)
+  const personLinks = links.filter(l => !entIds.has(l.source) && !entIds.has(l.target))
+  const core = computeFamilyLayoutCore(personNodes, personLinks, options)
+  const entityPos = placeEntityNodes(entities, links, core.positions, options)
+  return { positions: { ...core.positions, ...entityPos }, mode: core.mode }
+}
+
+/** 関連ノード（著作・学派・事件・地・概念）を、決まった人物の配置のまわりに置く。
+ *
+ *  - 3人以上につながるもの（仏教・天庭のような学派/組織/概念）は、図の一番上の帯に
+ *    横一列（x はつながる人の中央付近、重ならないように間隔を空ける）。
+ *  - 1〜2人につながるもの（事件・場所など）は、その人の真上＝段と段の間に置く。
+ *    段と段の間はカード 1 枚分の高さしかないので、重なるときは左右へずらす
+ *    （線は直角のまま）。
+ *  - 段の間に置ける場所が無い（大きな四角のカードで隙間が埋まっている等）ときは、
+ *    上の帯に回す（人と重ねないことを優先）。
+ *  - どこにもつながっていないものは、帯の右端にまとめる。
+ *
+ * 重なり判定は `nodeRadius`（描画時の実際の半径。四角・装飾形は円より大きい）で行う。
+ * 人物の位置 (personPos) は動かさない。force レイアウトからも呼べるよう独立してある。
+ */
+export function placeEntityNodes(
+  entities: LayoutNode[],
+  links: LayoutLink[],
+  personPos: Record<string, { x: number; y: number }>,
+  options: {
+    colGap?: number; rowGap?: number; topY?: number; centerX?: number
+    /** ノード id → 描画時の半径。無い id は 40（既定の円）として扱う。 */
+    nodeRadius?: Record<string, number>
+  } = {},
+): Record<string, { x: number; y: number }> {
+  const out: Record<string, { x: number; y: number }> = {}
+  if (!entities.length) return out
+  const col = options.colGap ?? 150
+  const rowGap = options.rowGap ?? 160
+  const fallbackTop = options.topY ?? 100
+  // 既定の 40 は描画側 getNodeRadius の既定（`nodeSize || 40` の円）と合わせてある。
+  // 片方だけ変えると重なり判定が食い違うので、変えるときは両方そろえること。
+  const radius = (id: string) => options.nodeRadius?.[id] ?? 40
+  const PAD = 8   // カード同士の余白
+
+  // Members of each entity (only people that actually have a position).
+  const ids = new Set(entities.map(e => e.id))
+  const members = new Map<string, string[]>()
+  for (const l of links) {
+    const e = ids.has(l.source) ? l.source : ids.has(l.target) ? l.target : null
+    if (!e) continue
+    const other = e === l.source ? l.target : l.source
+    if (!personPos[other]) continue
+    const a = members.get(e)
+    if (!a) members.set(e, [other])
+    else if (!a.includes(other)) a.push(other)
+  }
+
+  const people = Object.entries(personPos).map(([id, p]) => ({ id, x: p.x, y: p.y, r: radius(id) }))
+  const personXs = people.map(p => p.x)
+  const personYs = people.map(p => p.y)
+  const chartTop = personYs.length ? Math.min(...personYs) : fallbackTop
+  const chartRight = personXs.length ? Math.max(...personXs) + col : (options.centerX ?? 600)
+
+  // 真上に置けないときに横へずらす幅（グリッドに乗る程度）。
+  const AVOID_X = Math.max(24, Math.round(col * 0.32))
+  // x の順に並べ、左右から挟んで重ならないようにする（半径ぶんの間隔を空ける）。
+  const separateX = (items: Array<{ id: string; x: number; r: number }>) => {
+    const xs = items.map(i => i.x)
+    const gap = (a: { r: number }, b: { r: number }) => a.r + b.r + PAD
+    for (let i = 1; i < xs.length; i++) xs[i] = Math.max(xs[i], xs[i - 1] + gap(items[i - 1], items[i]))
+    for (let i = xs.length - 2; i >= 0; i--) xs[i] = Math.min(xs[i], xs[i + 1] - gap(items[i], items[i + 1]))
+    return xs
+  }
+
+  const band: Array<{ id: string; x: number; r: number }> = []
+  const small: Array<{ id: string; ax: number; ay: number; r: number }> = []
+  for (const e of entities) {
+    const r = radius(e.id)
+    const mem = members.get(e.id) ?? []
+    if (mem.length === 0) { band.push({ id: e.id, x: chartRight, r }); continue }
+    const xs = mem.map(id => personPos[id].x)
+    const midX = (Math.min(...xs) + Math.max(...xs)) / 2
+    if (mem.length >= 3) { band.push({ id: e.id, x: midX, r }); continue }
+    // 1〜2人: 関係する人の真上（2人なら2人の中央）。
+    const topMember = mem.reduce((a, b) => (personPos[a].y <= personPos[b].y ? a : b))
+    small.push({ id: e.id, ax: midX, ay: personPos[topMember].y, r })
+  }
+
+  // 上の帯: 一番上の行の人・「真上」のノードと重ならない高さに置く。
+  // 一番上の行の人の半径も入れる（大きな四角のカードがあると帯が下がりすぎて重なる）。
+  // 後から帯に回るノード（deferred）もあるので、ここでは仮の高さで置き、最後に
+  // すべての帯ノードの半径で高さを決め直す。
+  band.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
+  const maxSmallR = small.length ? Math.max(...small.map(s => s.r)) : 0
+  const topRow = people.filter(p => p.y - chartTop < rowGap * 0.5)
+  const maxTopR = topRow.length ? Math.max(...topRow.map(p => p.r)) : 40
+  const bandHeight = (maxR: number) => Math.min(
+    chartTop - rowGap * 1.35,                                  // 既定の高さ（今までと同じ見た目）
+    chartTop - maxTopR - maxR - PAD,                           // 一番上の行の人と重ならない
+    chartTop - rowGap * 0.5 - maxSmallR - maxR - PAD,          // 真上のノードと重ならない
+  )
+  const provisionalY = bandHeight(band.length ? Math.max(...band.map(b => b.r)) : 0)
+  separateX(band).forEach((x, i) => { out[band[i].id] = { x, y: provisionalY } })
+
+  // 段と段の間: 真上から始め、重なるときは左右へずらす。
+  const placed: Array<{ x: number; y: number; r: number }> = band.map(it => ({ ...out[it.id], r: it.r }))
+  const clear = (x: number, y: number, r: number) => {
+    for (const p of people) if (Math.hypot(p.x - x, p.y - y) < r + p.r + PAD) return false
+    for (const q of placed) if (Math.hypot(q.x - x, q.y - y) < r + q.r + PAD) return false
+    return true
+  }
+  const lanes: Array<{ y: number; items: Array<{ id: string; x: number; r: number }> }> = []
+  // 段の間にも置けないもの（大きなカードで隙間が無い図）は、上の帯に回す。
+  const deferred: Array<{ id: string; x: number; r: number }> = []
+  small.sort((a, b) => a.ay - b.ay || a.ax - b.ax || (a.id < b.id ? -1 : 1))
+  for (const it of small) {
+    const y = it.ay - rowGap * 0.5
+    let x = it.ax
+    if (!clear(x, y, it.r)) {
+      let found: number | null = null
+      for (let k = 1; k <= 6 && found == null; k++) {
+        for (const cand of [it.ax + k * AVOID_X, it.ax - k * AVOID_X]) {
+          if (clear(cand, y, it.r)) { found = cand; break }
+        }
+      }
+      if (found == null) { deferred.push({ id: it.id, x: it.ax, r: it.r }); continue }
+      x = found
+    }
+    placed.push({ x, y, r: it.r })
+    const lane = lanes.find(l => Math.abs(l.y - y) <= 40)
+    if (lane) lane.items.push({ id: it.id, x, r: it.r })
+    else lanes.push({ y, items: [{ id: it.id, x, r: it.r }] })
+  }
+  for (const lane of lanes) {
+    lane.items.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
+    const xs = separateX(lane.items)
+    lane.items.forEach((it, i) => { out[it.id] = { x: xs[i], y: lane.y } })
+  }
+
+  // 横の間隔をそろえたあと、人や先に置いたノードと近づいていないかもう一度見て、
+  // 必要なら横へ逃がす（そろえる計算で元の位置からずれるため）。それでも空かない
+  // ものは段の間をあきらめて上の帯に回す。
+  const inBand = new Set(deferred.map(d => d.id))
+  const settled: Array<{ x: number; y: number; r: number }> = band.map(it => ({ ...out[it.id], r: it.r }))
+  for (const it of small) {
+    if (inBand.has(it.id)) continue
+    const cur = out[it.id]
+    const hits = (x: number) =>
+      settled.some(q => Math.hypot(q.x - x, q.y - cur.y) < it.r + q.r + PAD) ||
+      people.some(p => Math.hypot(p.x - x, p.y - cur.y) < it.r + p.r + PAD)
+    let x: number | null = hits(cur.x) ? null : cur.x
+    for (let k = 1; k <= 8 && x == null; k++) {
+      for (const cand of [cur.x + k * AVOID_X, cur.x - k * AVOID_X]) {
+        if (!hits(cand)) { x = cand; break }
+      }
+    }
+    if (x == null) { deferred.push({ id: it.id, x: cur.x, r: it.r }); inBand.add(it.id); delete out[it.id]; continue }
+    out[it.id] = { x, y: cur.y }
+    settled.push({ x, y: cur.y, r: it.r })
+  }
+
+  // 上の帯（最初から帯に行くもの + 段の間に置けなかったもの）をまとめて並べ直す。
+  // 高さは「帯に入る全部」の最大半径で決める（後から来た大きなノードも入れる）。
+  if (band.length || deferred.length) {
+    const all = [...band, ...deferred]
+    const bandY = bandHeight(all.length ? Math.max(...all.map(b => b.r)) : 0)
+    all.sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : 1))
+    const xs = separateX(all)
+    all.forEach((it, i) => { out[it.id] = { x: xs[i], y: bandY } })
+    // 保険: 帯のノードが人・段の間のノードと近すぎたら、足りないぶん帯を上げる。
+    for (let guard = 0; guard < 3; guard++) {
+      let lift = 0
+      for (const it of all) {
+        const b = out[it.id]
+        for (const o of people) lift = Math.max(lift, it.r + o.r + PAD - Math.hypot(o.x - b.x, o.y - b.y))
+        for (const o of small) {
+          if (inBand.has(o.id)) continue
+          const q = out[o.id]
+          if (q) lift = Math.max(lift, it.r + o.r + PAD - Math.hypot(q.x - b.x, q.y - b.y))
+        }
+      }
+      if (lift <= 0) break
+      for (const it of all) out[it.id].y -= lift
+    }
+  }
+  return out
+}
+
+// The person pipeline: Step 1: split into independent components (separate imports /
+// unrelated families) so they never interleave. Step 2: within each component, analyse the
+// relationship graph into lineage clusters and lay each out per the chosen view (系図 tidy
+// / timeline). Step 3: pack lineage blocks within a component (tight), then pack whole
+// components apart (wide gap) so unrelated families are clearly separated.
+function computeFamilyLayoutCore(
   nodes: LayoutNode[],
   links: LayoutLink[],
   options: LayoutOptions = {},
