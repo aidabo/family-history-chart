@@ -6,6 +6,7 @@ import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
 import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, hierarchyEnds, placeEntityNodes, type LayoutMode } from '@/utils/familyLayout'
 import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
+import { DYNASTY_CHANGE_COLOR, isDynastyChange, edgeWidth } from '@/utils/edgeStyle'
 import { PersonListPanel } from './PersonListPanel'
 
 // Title shown on a node: "title(period)" when a 在位/期間 is set (e.g. 皇帝(626-649)),
@@ -210,12 +211,6 @@ const ENTITY_COLOR: Record<string, string> = {
 const ENTITY_EDGE_COLOR: Record<string, string> = {
   '著作': ENTITY_COLOR.work, '学派': ENTITY_COLOR.org, '事件': ENTITY_COLOR.event, '地': ENTITY_COLOR.place, '概念': ENTITY_COLOR.concept,
 }
-// 朝代更换の線。CSV 取り込みは label '朝代更换' にそろえて保存するが、JSON を直接書いた
-// 場合は別名（朝代更替／换代）もありうるので、表示側でも同じ扱いにする。
-const DYNASTY_CHANGE_LABELS = new Set(['朝代更换', '朝代更替', '换代'])
-const DYNASTY_CHANGE_COLOR = '#ea580c'   // orange-600（継承の緑と分ける）
-const isDynastyChange = (l: { type?: string; label?: string }) =>
-  l.type === 'custom' && !!l.label && DYNASTY_CHANGE_LABELS.has(l.label)
 
 function nodeFill(d: SimNode): string {
   if (d.bgColor) return d.bgColor
@@ -1419,7 +1414,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .data(links).enter().append('path')
       .attr('fill', 'none')
       .attr('stroke', edgeColor)
-      .attr('stroke-width', d => d.width || (isDynastyChange(d) ? 3 : d.type === 'sibling' ? 1.5 : 2))
+      .attr('stroke-width', edgeWidth)
       .attr('stroke-dasharray', d =>
         d.type === 'marriage'   ? '5,5' :
         d.type === 'remarriage' ? '8,3,2,3' :
@@ -1439,7 +1434,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       })
       .style('cursor', 'pointer')
       .on('mouseover', function() { d3.select(this).attr('stroke-width', 4) })
-      .on('mouseout', function(_, d) { d3.select(this).attr('stroke-width', d.width || (d.type === 'sibling' ? 1.5 : 2)) })
+      .on('mouseout', function(_, d) { d3.select(this).attr('stroke-width', edgeWidth(d as SimLink)) })
       .on('mousedown pointerdown', function(event) { event.stopPropagation() })
       .on('click', function(event, d) {
         event.stopPropagation()

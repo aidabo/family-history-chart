@@ -5,6 +5,7 @@
 // importer consumes (union nodes included), so both paths share the merge logic.
 
 import type { PersonNode, Relationship, EntityKind } from '@/types/charts'
+import { DYNASTY_CHANGE_LABELS } from './edgeStyle'
 
 type Row = Record<string, string>
 
@@ -37,7 +38,8 @@ const HEADER_ALIASES: Record<string, string> = {
   '期間': 'period', '在位': 'period', '在位期間': 'period', 'period': 'period', 'reign': 'period',
   '主君': 'lord', '君主': 'lord', '仕える': 'lord', 'lord': 'lord', 'liege': 'lord', 'master': 'lord',
   '継承': 'succession', '繼承': 'succession', '继承': 'succession', 'succession': 'succession',
-  '朝代更换': 'dynastyChange', '朝代更替': 'dynastyChange', '换代': 'dynastyChange', 'custom': 'dynastyChange',
+  // CSV の別名は表示側（edgeStyle）と同じ一覧を使う（片方だけ増やして食い違わないように）。
+  ...Object.fromEntries([...DYNASTY_CHANGE_LABELS].map(l => [l, 'dynastyChange'])), 'custom': 'dynastyChange',
   '師': 'teacher', '师': 'teacher', 'teacher': 'teacher',
   '著作': 'works', '作品': 'works', 'works': 'works',
   '学派': 'org', '流派': 'org', '組織': 'org', '所属': 'org', 'school': 'org', 'org': 'org',
