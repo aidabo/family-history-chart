@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { UsersIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import type { PersonNode } from '@/types/charts'
+import { parseYear } from '@/utils/familyLayout'
 import { useDataContext } from '@/context/DataContext'
 
 // Left-hand list of the people in the chart. Grouped by the generation row of the current
@@ -16,7 +17,8 @@ export interface PersonListPanelProps {
   onPick: (p: PersonNode) => void
   onClose: () => void
   labelFor?: (index: number, ps: PersonNode[]) => string   // group heading (世代/年)
-  grouped?: boolean                                        // false = flat name-sorted list
+  grouped?: boolean                                        // false = flat list
+  sortByTime?: boolean                                     // flat list ordered by year (年表)
 }
 
 const ITEM_H = 30
@@ -27,8 +29,15 @@ export type PersonListRow =
   | { kind: 'person'; p: PersonNode }
 
 
+// 人物の「時間」: 開始（生年）が無ければ終了（没年）を使う。どちらも無ければ null。
+// 年表の並びはこの値で決める（年の無い人は最後に名前順）。
+export function personTimeOf(p: PersonNode): number | null {
+  return parseYear(p.birth) ?? parseYear(p.death)
+}
+
 // Pure row builder (exported so it can be unit-tested): filter by query, group by the
-// layout row when `grouped`, otherwise a flat name-sorted list; returns pixel offsets.
+// layout row when `grouped`, otherwise a flat list — by name, or by year when
+// `sortByTime` (年表): birth year, else death year, undated last.
 export function buildPersonListRows(
   persons: PersonNode[],
   query: string,
@@ -36,14 +45,27 @@ export function buildPersonListRows(
   labelFor: ((index: number, ps: PersonNode[]) => string) | undefined,
   grouped: boolean,
   t: (en: string, ja: string) => string,
+  sortByTime = false,
 ): { rows: PersonListRow[]; tops: number[]; total: number } {
   const q = query.trim().toLowerCase()
   const list = persons.filter(p =>
     !q || (p.name || '').toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q))
   const out: PersonListRow[] = []
   if (!grouped) {
-    list.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-      .forEach(p => out.push({ kind: 'person', p }))
+    const byName = (a: PersonNode, b: PersonNode) => (a.name || '').localeCompare(b.name || '')
+    const ordered = list.slice()
+    if (sortByTime) {
+      ordered.sort((a, b) => {
+        const ta = personTimeOf(a), tb = personTimeOf(b)
+        if (ta == null && tb == null) return byName(a, b)
+        if (ta == null) return 1          // 年が無い人は最後
+        if (tb == null) return -1
+        return ta - tb || byName(a, b)
+      })
+    } else {
+      ordered.sort(byName)
+    }
+    ordered.forEach(p => out.push({ kind: 'person', p }))
   } else {
     const groups = new Map<number, PersonNode[]>()
     const loose: PersonNode[] = []
@@ -70,15 +92,15 @@ export function buildPersonListRows(
   return { rows: out, tops, total: y }
 }
 
-export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelFor, grouped = true }: PersonListPanelProps) {
+export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelFor, grouped = true, sortByTime = false }: PersonListPanelProps) {
   const { t } = useDataContext()
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(360)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const { rows, tops, total } = useMemo(
-    () => buildPersonListRows(persons, query, rowOf, labelFor, grouped, t),
-    [persons, query, rowOf, labelFor, grouped, t])
+    () => buildPersonListRows(persons, query, rowOf, labelFor, grouped, t, sortByTime),
+    [persons, query, rowOf, labelFor, grouped, sortByTime, t])
 
   // Render only the slice around the scroll position (plus an overscan).
   const visible = useMemo(() => {

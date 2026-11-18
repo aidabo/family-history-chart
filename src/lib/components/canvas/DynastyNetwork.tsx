@@ -3181,7 +3181,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       {!cinemaPlaying && listOpen && (
         <PersonListPanel persons={listPeople} query={searchTerm} rowOf={rowOf}
           onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor}
-          grouped={lastLayoutKind === 'tidy'} />
+          grouped={lastLayoutKind === 'tidy'} sortByTime={lastLayoutKind === 'timeline'} />
       )}
 
       {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
