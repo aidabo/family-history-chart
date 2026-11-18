@@ -148,6 +148,19 @@ AI にレイアウト込みで図を生成させる用途（位置つき JSON �
 
 その他の関係（`ally` `rival` `enemy` `friend` `comrade` `sibling` `custom` など）は上下を作らず、交差を避ける対象にもなりません。
 
+### カスタム（`type: "custom"`）で上下を表すとき
+
+ラベルが**上の立場の名前**なら `source` が上、**下の立場の名前**なら `target` が上です。
+
+| ラベル（例） | 上の人 |
+|---|---|
+| `師` `上司` `上長` `主` `神将` `部将` `天王` `統率` `leader` `boss` `chief` `superior` | source |
+| `弟子` `部下` `臣` `家臣` `配下` `member` `subordinate` | **target** |
+
+例: `{"type":"custom","label":"師","source":"師のid","target":"弟子のid"}`、
+`{"type":"custom","label":"弟子","source":"弟子のid","target":"師のid"}`。
+この語彙以外のラベルは上下として扱われません（係争・交友などの水平関係のまま）。
+
 ### 関係の表し方（重要）
 - **血縁（親→子）**：`parent-child`（source=親 or union、target=子）。
 - **結婚**：`union` ノードを1つ作り、両者から `partner`（person→union）。子はその union から `parent-child`（union→child）。
