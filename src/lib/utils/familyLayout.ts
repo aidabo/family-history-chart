@@ -657,6 +657,78 @@ function sweepRowGaps(g: Graph, px: Map<string, number>, rowOf: (id: string) => 
   }
 }
 
+// Keep each married couple on contiguous columns (tidy). The centering passes can leave
+// the two partners many columns apart, so the long marriage line makes it clear that
+// someone is married but not to whom. Slide the stray part of the couple next to its
+// union and re-space the row. At most two extra crossing lines are tolerated for the
+// whole chart, judged against the positions before this phase; people with several
+// marriages keep their staggered unions in place.
+function compactCoupleColumns(g: Graph, px: Map<string, number>, rowOf: (id: string) => number, col: number) {
+  const rowKey = (id: string) => Math.round(rowOf(id) * 1000)
+  const unitOf = (id: string): string => {
+    const u = g.unionsOfPerson.get(id)
+    if (!u || u.length !== 1) return id
+    return rowKey(u[0]) === rowKey(id) ? u[0] : id
+  }
+  const crossings = () => countDrawnCrossings(g, px, rowOf)
+  if (!Number.isFinite(crossings())) return   // too many drawn edges to judge a move safely
+  let extra = 0
+  const EXTRA_MAX = 2
+  for (let pass = 0; pass < 3; pass++) {
+    let movedAny = false
+    const rows = new Map<number, string[]>()
+    for (const id of px.keys()) {
+      const r = rowKey(id)
+      const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
+    }
+    for (const ids of rows.values()) {
+      const rowId = rowKey(ids[0])
+      for (let guard = 0; guard < 24; guard++) {
+        ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
+        const units: Array<{ u: string; ids: string[] }> = []
+        for (const id of ids) {
+          const u = unitOf(id)
+          const last = units[units.length - 1]
+          if (last && last.u === u) last.ids.push(id)
+          else units.push({ u, ids: [id] })
+        }
+        let changed = false
+        for (const [uid, partners] of g.partnersOfUnion) {
+          if (partners.length !== 2) continue
+          if (!partners.every(p => px.has(p)) || !px.has(uid)) continue
+          if (rowKey(partners[0]) !== rowId || rowKey(partners[1]) !== rowId) continue
+          const groups = units.map((unit, i) => ({ unit, i })).filter(x => x.unit.u === uid)
+          if (groups.length < 2) continue
+          if (groups.some(x => x.unit.ids.some(id => (g.unionsOfPerson.get(id)?.length ?? 0) > 1))) continue
+          const anchorIdx = groups.findIndex(x => x.unit.ids.includes(uid))
+          const at = anchorIdx >= 0 ? groups[anchorIdx].i : groups[0].i
+          const insertAt = at - groups.filter(x => x.i < at).length   // index in `rest`
+          const block = groups.map(x => x.unit)
+          const rest = units.filter(unit => !block.includes(unit))
+          const slots = ids.map(id => px.get(id)!).sort((a, b) => a - b)
+          const before = new Map(ids.map(id => [id, px.get(id)!]))
+          const bestBefore = crossings()
+          const order = [...rest]
+          order.splice(Math.min(rest.length, Math.max(0, insertAt)), 0, ...block)
+          let k = 0
+          for (const unit of order) for (const id of unit.ids) px.set(id, slots[k++])
+          sweepRowGaps(g, px, rowOf, col)
+          const delta = crossings() - bestBefore
+          if (delta <= 0 || extra + delta <= EXTRA_MAX) {
+            if (delta > 0) extra += delta
+            changed = true
+            movedAny = true
+            break
+          }
+          for (const [id, v] of before) px.set(id, v)
+        }
+        if (!changed) break
+      }
+    }
+    if (!movedAny) break
+  }
+}
+
 // Crossing reduction (tidy): after the centering/overlap sweeps, exchange the x of
 // adjacent COUPLES/people inside a row whenever that removes diagonal crossing lines.
 // A couple (its union + partners on the same row) moves as one unit, and only x values
@@ -1531,57 +1603,8 @@ function computeSingleLayout(
     }
     for (const [id, v] of bestPx) px.set(id, v)
     sweepRowGaps(g, px, rowOf, col)   // guarantee no overlap after the reordering passes
-    // Fifth phase: keep a marriage couple contiguous in its row. The centering passes can
-    // leave the two partners many columns apart, so the long marriage line makes it clear
-    // that someone is married but not to whom. Slide the stray part of the couple next to
-    // the union and re-space the row (one extra crossing line is tolerated for this).
-    const unitKey = (id: string): string => {
-      const u = g.unionsOfPerson.get(id)
-      if (!u || u.length !== 1) return id
-      return Math.round(rowOf(u[0]) * 1000) === Math.round(rowOf(id) * 1000) ? u[0] : id
-    }
-    for (let pass = 0; pass < 4; pass++) {
-      let moved = false
-      const rows = new Map<number, string[]>()
-      for (const id of px.keys()) {
-        const r = Math.round(rowOf(id) * 1000)
-        const a = rows.get(r); if (a) a.push(id); else rows.set(r, [id])
-      }
-      for (const ids of rows.values()) {
-        ids.sort((a, b) => (px.get(a) ?? 0) - (px.get(b) ?? 0))
-        const units: Array<{ u: string; ids: string[] }> = []
-        for (const id of ids) {
-          const u = unitKey(id)
-          const last = units[units.length - 1]
-          if (last && last.u === u) last.ids.push(id)
-          else units.push({ u, ids: [id] })
-        }
-        for (const [uid, partners] of g.partnersOfUnion) {
-          if (partners.length !== 2) continue
-          const groups = units.map((unit, i) => ({ unit, i })).filter(x => x.unit.u === uid)
-          if (groups.length < 2) continue
-          // People with several marriages keep their staggered unions in place.
-          if (groups.some(x => x.unit.ids.some(id => (g.unionsOfPerson.get(id)?.length ?? 0) > 1))) continue
-          const anchorIdx = groups.findIndex(x => x.unit.ids.includes(uid))
-          const at = anchorIdx >= 0 ? groups[anchorIdx].i : groups[0].i
-          const block = groups.map(x => x.unit)
-          const rest = units.filter(unit => !block.includes(unit))
-          const slots = ids.map(id => px.get(id)!).sort((a, b) => a - b)
-          const order = [...rest]
-          order.splice(Math.min(rest.length, at), 0, ...block)
-          const before = new Map(ids.map(id => [id, px.get(id)!]))
-          const bestBefore = countDrawnCrossings(g, px, rowOf)
-          let k = 0
-          for (const unit of order) for (const id of unit.ids) px.set(id, slots[k++])
-          sweepRowGaps(g, px, rowOf, col)
-          const now = countDrawnCrossings(g, px, rowOf)
-          if (now <= bestBefore + 1) { moved = true; break }
-          for (const [id, v] of before) px.set(id, v)
-        }
-        if (moved) break
-      }
-      if (!moved) break
-    }
+    // Fifth phase: keep each married couple on contiguous columns.
+    compactCoupleColumns(g, px, rowOf, col)
     // Multiple marriages: stagger each spouse + their union vertically ONLY when the two
     // child groups would overlap horizontally; otherwise the spouses stay level (the user
     // prefers a straight horizontal marriage over a decorative offset). Judged on the
