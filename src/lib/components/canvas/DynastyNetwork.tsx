@@ -1266,7 +1266,6 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // row gap — nearest height first, in steps that keep the lane parity — and use the
     // first clear line. Returns null when the group has no downward links.
     const busYCache = new Map<string, number | null>()
-    const snapCoord = (v: number) => (showGrid ? Math.round(v / gridSize) * gridSize : v)
     const busYFor = (up: SimNode): number | null => {
       const cached = busYCache.get(up.id)
       if (cached !== undefined) return cached
@@ -1277,13 +1276,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const sBottom = up.y + rUp
         let minChildTop = Infinity
         const ids = new Set<string>([up.id])
-        const xs: number[] = [snapCoord(up.x)]
+        const xs: number[] = [snapToGrid(up.x)]
         for (const l of group) {
           const lo = busEnds(l)[1]
-          ids.add(lo.id)
-          xs.push(snapCoord(lo.x))
           const top = lo.y - getNodeRadius(lo)
-          if (top > sBottom + 4) minChildTop = Math.min(minChildTop, top)
+          if (top > sBottom + 4) {
+            ids.add(lo.id)
+            xs.push(snapToGrid(lo.x))
+            minChildTop = Math.min(minChildTop, top)
+          }
         }
         const yMin = sBottom + 3, yMax = minChildTop - 3
         if (Number.isFinite(minChildTop) && yMax > yMin) {
@@ -1291,15 +1292,15 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           const lane = (busLane.get(up.id) ?? 0) * busLaneGap
           // Snap first, then clamp, so the grid cannot round the bar back onto its
           // neighbour's line or push it into a row.
-          let y = Math.min(Math.max(snapCoord(mid + lane), yMin), yMax)
+          let y = Math.min(Math.max(snapToGrid(mid + lane), yMin), yMax)
           const x1 = Math.min(...xs), x2 = Math.max(...xs)
           // Cards are drawn at snapped coordinates; test the same positions.
           const hits = (yy: number): boolean => nodesRef.current.some(n => {
             if (ids.has(n.id)) return false
             const r = getNodeRadius(n) + 4
-            const nx = snapCoord(n.x)
+            const nx = snapToGrid(n.x)
             if (nx + r < x1 || nx - r > x2) return false
-            return Math.abs(snapCoord(n.y) - yy) < r
+            return Math.abs(snapToGrid(n.y) - yy) < r
           })
           if (hits(y)) {
             const search = (step: number): number | null => {
@@ -2625,7 +2626,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const cx = snapToGrid(lo.x)
         const cTop = lo.y - rLo
         const busY = busYFor(up)
-        if (busY != null) {
+        // Only links that go DOWN ride the bar. A same-row sibling/friend link must stay a
+        // plain horizontal line, not a U-shape up to the parent's bar and back.
+        if (busY != null && cTop > sBottom + 4) {
           return `M ${sx} ${snapToGrid(sBottom)} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
         }
         // Same row (a horizontal relation): a plain horizontal line, never a diagonal.
