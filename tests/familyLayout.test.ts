@@ -118,3 +118,35 @@ describe('computeFamilyLayout (tidy)', () => {
     expect(p.a.y - p.p.y).toBeGreaterThanOrEqual(2 * R + 80 + VST / 2 - 0.01)
   })
 })
+
+describe('computeFamilyLayout (timeline: 縦の列)', () => {
+  // 8人以上の一直線（継承）で、年の間隔が十分なら同じ列に縦に並ぶ。
+  const chainOf = (gaps: number[]) => {
+    const years = [1500]
+    gaps.forEach(g => years.push(years[years.length - 1] + g))
+    const nodes = years.map((y, i) => ({ id: `p${i}`, name: `P${i}`, birth: String(y) }))
+    const links = years.slice(1).map((_, i) => ({ source: `p${i}`, target: `p${i + 1}`, type: 'succession' }))
+    return { nodes, links }
+  }
+
+  it('年の間隔が十分なら、継承は同じ x の縦直線', () => {
+    const { nodes, links } = chainOf(Array(7).fill(30))
+    const p = computeFamilyLayout(nodes, links, { mode: 'timeline' }).positions
+    const xs = nodes.map(n => p[n.id].x)
+    expect(new Set(xs.map(x => Math.round(x))).size).toBe(1)
+    // y は年とともに下がる
+    for (let i = 1; i < nodes.length; i++) expect(p[nodes[i].id].y).toBeGreaterThan(p[nodes[i - 1].id].y)
+  })
+
+  it('年が詰まっている所だけ、列をずらして重なりを避ける', () => {
+    const { nodes, links } = chainOf(Array(7).fill(1))
+    const p = computeFamilyLayout(nodes, links, { mode: 'timeline' }).positions
+    const xs = nodes.map(n => Math.round(p[n.id].x))
+    expect(new Set(xs).size).toBeGreaterThan(1)
+    // カードは重ならない（半径40）
+    for (let i = 0; i < nodes.length; i++) for (let k = i + 1; k < nodes.length; k++) {
+      const a = p[nodes[i].id], b = p[nodes[k].id]
+      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(78)
+    }
+  })
+})
