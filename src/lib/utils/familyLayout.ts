@@ -170,19 +170,38 @@ const isUnion = (n: LayoutNode) => n.type === 'union'
 const isVerticalEdge = (t?: string) =>
   t === 'parent-child' || t === 'disciple' || t === 'master' || t === 'mentor' ||
   t === 'succession' || t === 'liege' || t === 'superior' || t === 'leader'
-// The (upper, lower) person ids for a hierarchy link, following the stored direction above.
-const upperEndOf = (type: string, source: string, target: string): [string, string] =>
-  type === 'disciple' || type === 'mentor' ? [target, source] : [source, target]
-
-// Free-form (type:'custom') relations whose label reads as a chain of command. They are
-// treated like the typed hierarchy edges below so an org/sect chart lines up top→down
-// even when the edges came from an import that used custom labels.
-const HIERARCHY_LABELS = new Set([
-  '師', '弟子', '神将', '部将', '天王', '上司', '部下', '上長', '主', '臣', '家臣', '配下', '統率',
-  'leader', 'member', 'boss', 'chief', 'superior', 'subordinate',
+// Free-form (type:'custom') relations whose label names a rank. The label names ONE of the
+// two roles, so its side is the upper end: a label naming the higher role (師/上司/leader…)
+// puts the SOURCE on top; one naming the lower role (弟子/部下/member…) puts the TARGET on
+// top. The convention is documented in docs/chart-json-format.md.
+const HIERARCHY_LABEL_SOURCE_UP = new Set([
+  '師', '神将', '部将', '天王', '上司', '上長', '主', '統率', 'leader', 'boss', 'chief', 'superior',
 ])
+const HIERARCHY_LABEL_TARGET_UP = new Set([
+  '弟子', '部下', '臣', '家臣', '配下', 'member', 'subordinate',
+])
+const customLabelDirection = (label?: string): 'source' | 'target' | null => {
+  const l = (label || '').trim()
+  if (HIERARCHY_LABEL_SOURCE_UP.has(l)) return 'source'
+  if (HIERARCHY_LABEL_TARGET_UP.has(l)) return 'target'
+  return null
+}
+// The (upper, lower) person ids for a hierarchy link, following the stored direction above.
+const upperEndOf = (type: string, source: string, target: string, label?: string): [string, string] => {
+  if (type === 'disciple' || type === 'mentor') return [target, source]
+  if (type === 'custom') return customLabelDirection(label) === 'target' ? [target, source] : [source, target]
+  return [source, target]
+}
 const isHierarchyLink = (l: LayoutLink): boolean =>
-  isVerticalEdge(l.type) || (l.type === 'custom' && HIERARCHY_LABELS.has((l.label || '').trim()))
+  isVerticalEdge(l.type) || (l.type === 'custom' && customLabelDirection(l.label) !== null)
+
+// Shared with the canvas so drawing and layout never disagree about which end is on top.
+// Returns null when the link is not a hierarchy relation.
+export function hierarchyEnds(link: { type?: string; label?: string; source: string; target: string }): [string, string] | null {
+  if (isVerticalEdge(link.type)) return upperEndOf(link.type!, link.source, link.target)
+  if (link.type === 'custom' && customLabelDirection(link.label)) return upperEndOf('custom', link.source, link.target, link.label)
+  return null
+}
 
 interface Graph {
   nodeMap: Map<string, LayoutNode>
@@ -247,7 +266,7 @@ function buildGraph(nodes: LayoutNode[], links: LayoutLink[]): Graph {
     if (!isHierarchyLink(l) || l.type === 'parent-child') continue
     const s = nodeMap.get(l.source), t = nodeMap.get(l.target)
     if (s && t && !isUnion(s) && !isUnion(t) && s.id !== t.id) {
-      const [up, down] = upperEndOf(l.type, s.id, t.id)
+      const [up, down] = upperEndOf(l.type, s.id, t.id, l.label)
       addEff(up, down)
       hierarchyEdges.push([up, down])
     }

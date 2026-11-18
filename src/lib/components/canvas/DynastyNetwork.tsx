@@ -4,7 +4,7 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
-import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, type LayoutMode } from '@/utils/familyLayout'
+import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, periodStart, periodEnd, hierarchyEnds, type LayoutMode } from '@/utils/familyLayout'
 import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
 
 // Title shown on a node: "title(period)" when a 在位/期間 is set (e.g. 皇帝(626-649)),
@@ -1216,12 +1216,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Each link stays its own <path> (per-edge click / EdgeCard preserved).
     const orthoBus = edgeStyle === 'ortho' && lastLayoutKind === 'tidy'
     const BUS_EXCLUDED = new Set(['partner', 'marriage', 'remarriage'])
-    const UPPER_IS_TARGET = new Set(['disciple', 'mentor'])   // stored disciple → master
-    const FREE_FORM = new Set(['custom', 'ally', 'rival', 'enemy', 'friend', 'comrade', 'sibling'])
+    // Direction comes from the layout module (one source of truth). Peers without a rank
+    // (friend/ally/rival/enemy/sibling) use the node higher on screen as the upper end.
     const busEnds = (l: SimLink): [SimNode, SimNode] => {
-      if (UPPER_IS_TARGET.has(l.type ?? '')) return [l.target, l.source]
-      if (FREE_FORM.has(l.type ?? '')) return l.source.y <= l.target.y ? [l.source, l.target] : [l.target, l.source]
-      return [l.source, l.target]
+      const h = hierarchyEnds({ type: l.type, label: l.label, source: l.source.id, target: l.target.id })
+      if (h) return h[0] === l.source.id ? [l.source, l.target] : [l.target, l.source]
+      return l.source.y <= l.target.y ? [l.source, l.target] : [l.target, l.source]
     }
     const busGroups = new Map<string, SimLink[]>()
     if (orthoBus) {
@@ -2533,10 +2533,13 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         const cTop = lo.y - rLo
         const group = busGroups.get(up.id)
         // Topmost lower node in the group decides the bus line (consistent for siblings).
+        // Only links that actually go DOWN count — a same-row sibling/friend link must not
+        // pull the bus Y above this node and turn its own child links back into diagonals.
         let minChildTop = cTop
         if (group) for (const m of group) {
           const mlo = busEnds(m)[1]
-          minChildTop = Math.min(minChildTop, mlo.y - getNodeRadius(mlo))
+          const top = mlo.y - getNodeRadius(mlo)
+          if (top > sBottom + 4) minChildTop = Math.min(minChildTop, top)
         }
         if (minChildTop > sBottom + 4) {
           const busY = snapToGrid(sBottom + (minChildTop - sBottom) * 0.5)
