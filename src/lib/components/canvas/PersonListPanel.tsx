@@ -16,25 +16,35 @@ export interface PersonListPanelProps {
   onPick: (p: PersonNode) => void
   onClose: () => void
   labelFor?: (index: number, ps: PersonNode[]) => string   // group heading (世代/年)
+  grouped?: boolean                                        // false = flat name-sorted list
 }
 
 const ITEM_H = 30
 const GROUP_H = 26
 
-type Row =
+export type PersonListRow =
   | { kind: 'group'; key: string; label: string }
   | { kind: 'person'; p: PersonNode }
 
-export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelFor }: PersonListPanelProps) {
-  const { t } = useDataContext()
-  const [scrollTop, setScrollTop] = useState(0)
-  const [viewport, setViewport] = useState(360)
-  const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  const { rows, tops, total } = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const list = persons.filter(p =>
-      !q || (p.name || '').toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q))
+// Pure row builder (exported so it can be unit-tested): filter by query, group by the
+// layout row when `grouped`, otherwise a flat name-sorted list; returns pixel offsets.
+export function buildPersonListRows(
+  persons: PersonNode[],
+  query: string,
+  rowOf: (id: string) => number | null,
+  labelFor: ((index: number, ps: PersonNode[]) => string) | undefined,
+  grouped: boolean,
+  t: (en: string, ja: string) => string,
+): { rows: PersonListRow[]; tops: number[]; total: number } {
+  const q = query.trim().toLowerCase()
+  const list = persons.filter(p =>
+    !q || (p.name || '').toLowerCase().includes(q) || (p.title || '').toLowerCase().includes(q))
+  const out: PersonListRow[] = []
+  if (!grouped) {
+    list.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .forEach(p => out.push({ kind: 'person', p }))
+  } else {
     const groups = new Map<number, PersonNode[]>()
     const loose: PersonNode[] = []
     for (const p of list) {
@@ -42,7 +52,6 @@ export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelF
       if (r == null) loose.push(p)
       else (groups.get(r) || groups.set(r, []).get(r)!).push(p)
     }
-    const out: Row[] = []
     const keys = [...groups.keys()].sort((a, b) => a - b)
     keys.forEach((k, i) => {
       const ps = groups.get(k)!.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -54,15 +63,26 @@ export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelF
       out.push({ kind: 'group', key: 'gx', label: t('Others', 'その他') + ` (${loose.length})` })
       loose.sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(p => out.push({ kind: 'person', p }))
     }
-    const offsets: number[] = []
-    let y = 0
-    for (const r of out) { offsets.push(y); y += r.kind === 'group' ? GROUP_H : ITEM_H }
-    return { rows: out, tops: offsets, total: y }
-  }, [persons, query, rowOf, t, labelFor])
+  }
+  const tops: number[] = []
+  let y = 0
+  for (const r of out) { tops.push(y); y += r.kind === 'group' ? GROUP_H : ITEM_H }
+  return { rows: out, tops, total: y }
+}
+
+export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelFor, grouped = true }: PersonListPanelProps) {
+  const { t } = useDataContext()
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewport, setViewport] = useState(360)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const { rows, tops, total } = useMemo(
+    () => buildPersonListRows(persons, query, rowOf, labelFor, grouped, t),
+    [persons, query, rowOf, labelFor, grouped, t])
 
   // Render only the slice around the scroll position (plus an overscan).
   const visible = useMemo(() => {
-    const out: Array<{ row: Row; top: number }> = []
+    const out: Array<{ row: PersonListRow; top: number }> = []
     for (let i = 0; i < rows.length; i++) {
       const top = tops[i], h = rows[i].kind === 'group' ? GROUP_H : ITEM_H
       if (top + h < scrollTop - 90) continue

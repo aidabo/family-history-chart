@@ -533,6 +533,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [searchTerm, setSearchTerm] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [listOpen, setListOpen] = useState(true)   // left-hand people list
+  const [layoutVersion, setLayoutVersion] = useState(0)   // bumps after each draw effect
   const [searchActive, setSearchActive] = useState(0)   // keyboard-highlighted suggestion index
   // A transient pulse ring shown at the viewport center after a search-select, so
   // the matched node is unmistakable. nonce also remounts the element to restart the anim.
@@ -833,7 +834,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const rowOf = useCallback((id: string) => {
     const n = nodesRef.current.find(x => x.id === id)
     return n && Number.isFinite(n.y) ? Math.round(n.y) : null
-  }, [])
+    // layoutVersion re-creates the callback once the draw effect has filled nodesRef
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutVersion])
   const listLabelFor = useCallback((i: number, ps: PersonNode[]) => {
     if (lastLayoutKind === 'tidy') return t('Generation GEN', '第GEN世代').replace('GEN', String(i + 1))
     const first = ps.find(p => p.birth)?.birth
@@ -1028,6 +1031,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     }
     nodesRef.current = nodes
     linksRef.current = links
+    setLayoutVersion(v => v + 1)   // positions are now readable for the people list
 
     // Clip paths (shape-specific for image masking)
     defs.selectAll('.nc').data(nodes).enter()
@@ -3118,7 +3122,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
 
       {!cinemaPlaying && (
       <button onClick={() => setListOpen(o => !o)} aria-expanded={listOpen}
-        className={`absolute top-14 left-14 z-10 flex items-center gap-1 px-2 py-1 rounded shadow text-sm ${listOpen ? 'bg-gray-800 text-white' : 'bg-white/90 text-gray-700 hover:bg-white'}`}
+        className={`absolute top-14 left-14 z-10 hidden items-center gap-1 px-2 py-1 rounded shadow text-sm md:flex ${listOpen ? 'bg-gray-800 text-white' : 'bg-white/90 text-gray-700 hover:bg-white'}`}
         title={t('People list tip', '人物の一覧を開く／閉じる（総数：メモ・結婚ノードを除く）')}>
         <UsersIcon className="w-4 h-4 opacity-70" aria-hidden="true" />
         <span className="font-semibold">{listPeople.length}</span>
@@ -3127,7 +3131,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       )}
       {!cinemaPlaying && listOpen && (
         <PersonListPanel persons={listPeople} query={searchTerm} rowOf={rowOf}
-          onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor} />
+          onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor}
+          grouped={lastLayoutKind === 'tidy'} />
       )}
 
       {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
