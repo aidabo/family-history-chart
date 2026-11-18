@@ -2570,11 +2570,36 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           if (top > sBottom + 4) minChildTop = Math.min(minChildTop, top)
         }
         if (minChildTop > sBottom + 4) {
+          const yMin = sBottom + 3, yMax = minChildTop - 3
           const mid = sBottom + (minChildTop - sBottom) * 0.5
           const lane = (busLane.get(up.id) ?? 0) * busLaneGap
           // Snap first, then clamp, so the grid cannot round a shifted bar back onto its
           // neighbour's line or push it into a row.
-          const busY = Math.min(Math.max(snapToGrid(mid + lane), sBottom + 3), minChildTop - 3)
+          let busY = Math.min(Math.max(snapToGrid(mid + lane), yMin), yMax)
+          // A horizontal bar must not run through another person's card. When it would,
+          // search the free space in the row gap, nearest height first, for a clear line.
+          const barHits = (y: number): boolean => {
+            const x1 = Math.min(sx, cx), x2 = Math.max(sx, cx)
+            for (const n of nodesRef.current) {
+              if (n.id === up.id || n.id === lo.id) continue
+              const r = getNodeRadius(n) + 4
+              if (n.x + r < x1 || n.x - r > x2) continue
+              if (Math.abs(n.y - y) < r) return true
+            }
+            return false
+          }
+          if (barHits(busY)) {
+            const step = showGrid ? Math.max(gridSize, 4) : 4
+            let found: number | null = null
+            for (let k = 1; k * step <= yMax - yMin && found == null; k++) {
+              for (const dir of [1, -1]) {
+                const y = busY + dir * k * step
+                if (y < yMin || y > yMax) continue
+                if (!barHits(y)) { found = y; break }
+              }
+            }
+            if (found != null) busY = found
+          }
           return `M ${sx} ${snapToGrid(sBottom)} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
         }
         // Same row (a horizontal relation): a plain horizontal line, never a diagonal.
