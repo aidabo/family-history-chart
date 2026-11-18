@@ -1383,8 +1383,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       return value
     }
 
+    // 朝代更换（custom + label）は「王朝が変わった」ことを示す線なので、継承の緑と分かる
+    // オレンジで描く。CSV の別名（朝代更替／换代）も同じ色にする。
+    const DYNASTY_CHANGE = new Set(['朝代更换', '朝代更替', '换代'])
     const edgeColor = (d: SimLink): string => d.color || (
       (d.label && ENTITY_EDGE_COLOR[d.label]) ? ENTITY_EDGE_COLOR[d.label] :   // person → entity edge
+      (d.type === 'custom' && d.label && DYNASTY_CHANGE.has(d.label)) ? '#ea580c' :   // 朝代更换
       d.type === 'marriage'     ? '#f97316' :
       d.type === 'remarriage'   ? '#d946ef' :
       d.type === 'partner'      ? '#f97316' :
