@@ -1656,6 +1656,40 @@ export function placeEntityNodes(
   return out
 }
 
+/** 系図(tidy)の段の y 座標を決める（純関数・テスト用）。
+ *
+ *  - 既定の大きさ（半径40）どうしなら `rowGap`（既定160）のまま。
+ *  - 大きなカードがある段は `r1 + r2 + 80` まで広げる（段をまたぐ線が箱にぶつからない）。
+ *  - `stagger` は再婚の互い違い（VST × 段数）の最大のずれ。**広げるときだけ**足すので、
+ *    既定の大きさの図は今までどおりの座標のまま。
+ *  - 人のいない段は `rowGap` ずつ進める。
+ */
+export function computeRowY(
+  rows: Array<{ gen: number; maxR: number; stagger?: number }>,
+  options: { topY?: number; rowGap?: number } = {},
+): Map<number, number> {
+  const topY = options.topY ?? 100
+  const rowGap = options.rowGap ?? 160
+  const VGAP = Math.max(24, rowGap - 80)   // 半径40どうしで rowGap になる余白
+  const sorted = [...rows].sort((a, b) => a.gen - b.gen)
+  const out = new Map<number, number>()
+  if (!sorted.length) return out
+  out.set(sorted[0].gen, topY)
+  let prev = sorted[0]
+  let cy = topY
+  for (const r of sorted) {
+    if (r.gen <= prev.gen) continue
+    for (let k = prev.gen + 1; k < r.gen; k++) cy += rowGap   // 人のいない段
+    const base = prev.maxR + r.maxR + VGAP
+    cy += base > rowGap
+      ? base + (prev.stagger ?? 0) + (r.stagger ?? 0)          // 大きなカードの段（ずれぶんも入れる）
+      : rowGap
+    out.set(r.gen, cy)
+    prev = r
+  }
+  return out
+}
+
 // The person pipeline: Step 1: split into independent components (separate imports /
 // unrelated families) so they never interleave. Step 2: within each component, analyse the
 // relationship graph into lineage clusters and lay each out per the chosen view (系図 tidy
@@ -1722,6 +1756,7 @@ function computeSingleLayout(
   // Vertical: generation rows (tidy) or year axis (timeline).
   const rowValue = new Map<string, number>()   // fractional "row" used only for row grouping in relax
   const yOf = new Map<string, number>()
+  const VST = rowGap * 0.34   // 再婚の互い違い（多婚の段のずらし幅）
 
   if (mode === 'tidy') {
     // 段の間隔は、その段のいちばん大きなカードの半径で広げる。既定の大きさ（半径40）なら
@@ -1734,19 +1769,24 @@ function computeSingleLayout(
     for (const uid of g.partnersOfUnion.keys()) {
       bump(uid, Math.max(0, ...(g.partnersOfUnion.get(uid) || []).map(p => gen.get(p) ?? 0)))
     }
-    const VGAP = Math.max(24, rowGap - 80)   // 半径40どうしで rowGap になる余白
-    const gens = [...maxR.keys()].sort((a, b) => a - b)
-    const rowY = new Map<number, number>()
-    if (gens.length) rowY.set(gens[0], topY)
-    let prev = gens.length ? gens[0] : 0
-    let cy = topY
-    for (const gg of gens) {
-      if (gg <= prev) continue                               // 先頭の段は topY のまま
-      for (let k = prev + 1; k < gg; k++) cy += rowGap       // 人のいない段は既定の間隔
-      cy += Math.max(rowGap, (maxR.get(prev) ?? 40) + (maxR.get(gg) ?? 40) + VGAP)
-      rowY.set(gg, cy)
-      prev = gg
+    // 再婚が多い段は、互い違いのずれ（±(n-1)/2×VST）のぶんも段の間隔に足しておく。
+    // 実際にずらすかどうか（子の範囲が重なるか）は並べ替えの後で決まるため、多婚の段は
+    // 常にこの高さを確保する。既定の大きさの段では足さないので、見た目は変わらない。
+    const unionsPerRow = new Map<number, number>()
+    for (const p of g.persons) {
+      const n = (g.unionsOfPerson.get(p.id) || []).length
+      if (n < 2) continue
+      const gg = gen.get(p.id) ?? 0
+      unionsPerRow.set(gg, Math.max(unionsPerRow.get(gg) ?? 0, n))
     }
+    const staggerOf = (gg: number) => {
+      const n = unionsPerRow.get(gg) ?? 0
+      return n >= 2 ? VST * ((n - 1) / 2) : 0   // 実際の最大のずれ（n本の結婚で ±(n-1)/2×VST）
+    }
+    const rowY = computeRowY(
+      [...maxR.entries()].map(([gg, r]) => ({ gen: gg, maxR: r, stagger: staggerOf(gg) })),
+      { topY, rowGap },
+    )
     const yForGen = (gg: number) => rowY.get(gg) ?? topY + gg * rowGap
     for (const p of g.persons) { const gg = gen.get(p.id) ?? 0; rowValue.set(p.id, gg); yOf.set(p.id, yForGen(gg)) }
     for (const uid of g.partnersOfUnion.keys()) {
@@ -1834,7 +1874,6 @@ function computeSingleLayout(
     // child groups would overlap horizontally; otherwise the spouses stay level (the user
     // prefers a straight horizontal marriage over a decorative offset). Judged on the
     // FINAL x positions, after the reordering above.
-    const VST = rowGap * 0.34
     const childSpan = (u: string): [number, number] | null => {
       const xs = (g.childrenOfUnion.get(u) || []).map(k => px.get(k)).filter((v): v is number => v != null)
       return xs.length ? [Math.min(...xs), Math.max(...xs)] : null

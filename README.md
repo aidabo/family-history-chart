@@ -113,11 +113,12 @@ yarn dev          # vite（:5173）と json-server（:3195、data/db.json）を�
 yarn build        # ライブラリのビルド → dist/（ホストが読むのはこれ）
 yarn build:demo   # デモのビルド → dist-demo/
 yarn preview      # ビルドしたものを vite preview で見る
+yarn test         # 単体テスト（vitest）。テストを監視するときは yarn test:watch
 ```
 
 - `yarn build` の出力: `dist/dynasty-history-chart.es.js`・`dist/dynasty-history-chart.umd.js`・`dist/index.d.ts`・`dist/family-chart.css`。
   `react`・`react-dom`・`d3` は同梱しない（external）。
-- テストは無い。動きはデモか、ホストの `/charts` で確かめる。
+- テストは `tests/`（vitest v3）。`yarn test` で実行する。レイアウトの性質（段の高さ・大きなカード・再婚のずれ）は `tests/familyLayout.test.ts` に固定してある。見た目の確認はデモか、ホストの `/charts` で行う。
 - `yarn lint` は `eslint src` だが、eslint は devDependencies に無く、設定ファイルも無い。
 
 ## ホストでの使われ方
