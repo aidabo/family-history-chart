@@ -523,7 +523,6 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   const [lastLayoutKind, setLastLayoutKind] = useState<'tidy' | 'timeline' | 'force' | null>(null)
   // Parent-child wiring style. 'ortho' draws a shared horizontal "bus" (bracket) per parent
   // so siblings hang from one bar; only takes effect in 系図(tidy). Default straight (unchanged).
-  const [edgeStyle, setEdgeStyle] = useState<'straight' | 'ortho'>('straight')
   // 年表(timeline)の縦軸基準：'lifespan'=生没年（既定） / 'period'=在位期間(person.period)。
   const [timelineBasis, setTimelineBasis] = useState<'lifespan' | 'period'>('lifespan')
   // 年表: 一直線の系譜（皇帝の継承など）を左右に折り返す列数＝表示幅の制御（既定4）。
@@ -739,12 +738,12 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       }
     },
     getViewSettings: (): ViewSettings => ({
-      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols,
+      layoutMode, lastLayoutKind: lastLayoutKind ?? undefined, spacing, showGrid, gridSize, timelineBasis, timelineCols,
       // Always persist the array (even when empty) — omitting it on empty meant "clear all
       // filters" was never saved, so a re-checked relation stayed hidden after reopening.
       hiddenRelations,
     }),
-  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, edgeStyle, timelineBasis, timelineCols, hiddenRelations])
+  }), [dimensions, onAddPerson, computeFit, layoutMode, lastLayoutKind, spacing, showGrid, gridSize, timelineBasis, timelineCols, hiddenRelations])
 
   // Restore saved toolbar/layout settings once when the page loads. Positions are already
   // stored at the saved spacing, so spacing only restores the slider baseline (no re-scale);
@@ -762,7 +761,6 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       if (typeof vs.spacing === 'number') { setSpacing(vs.spacing); spacingRef.current = vs.spacing }
       if (typeof vs.showGrid === 'boolean') setShowGrid(vs.showGrid)
       if (typeof vs.gridSize === 'number') setGridSize(vs.gridSize)
-      if (vs.edgeStyle === 'straight' || vs.edgeStyle === 'ortho') setEdgeStyle(vs.edgeStyle)
       if (vs.timelineBasis === 'lifespan' || vs.timelineBasis === 'period') setTimelineBasis(vs.timelineBasis)
       if (typeof vs.timelineCols === 'number') setTimelineCols(vs.timelineCols)
       // Explicitly clear when absent so a saved-empty (or older) filter reliably restores to
@@ -1214,7 +1212,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // 系図 is drawn with horizontal / vertical / right-angle lines instead of diagonals
     // cutting across the chart; marriages and partners keep their short direct line.
     // Each link stays its own <path> (per-edge click / EdgeCard preserved).
-    const orthoBus = edgeStyle === 'ortho' && lastLayoutKind === 'tidy'
+    const orthoBus = lastLayoutKind === 'tidy'   // 系図 always draws orthogonal buses
     const BUS_EXCLUDED = new Set(['partner', 'marriage', 'remarriage'])
     // Direction comes from the layout module (one source of truth). Peers without a rank
     // (friend/ally/rival/enemy/sibling) use the node higher on screen as the upper end.
@@ -2961,7 +2959,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     // Callbacks are read via cbRef (stable) so they're intentionally NOT deps — otherwise
     // a parent re-render (e.g. Save) with new callback identities rebuilds the canvas (flash).
   }, [persons, relationships, dimensions, showGrid, gridSettled, gridSize, selectedNodeId,
-    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, edgeStyle, drawings, timelineBasis, locale, hiddenRelations])
+    computeFit, initialTransform, background, verticalText, editable, lastLayoutKind, drawings, timelineBasis, locale, hiddenRelations])
 
   // Toggle the drawing capture surface / eraser hit-testing when the active tool changes,
   // without rebuilding the whole canvas (which would flash all nodes).
@@ -3197,16 +3195,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
             <option value="timeline">{t('Timeline', '年表(timeline)')}</option>
           </select>
         </div>
-        {(layoutMode === 'tidy' || lastLayoutKind === 'tidy') && (
-          <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title={t('Wiring tip', '親子の配線（系図のみ）：直線／直交バス')}>
-            <span className="whitespace-nowrap">{t('Wiring', '配線')}</span>
-            <select value={edgeStyle} onChange={e => setEdgeStyle(e.target.value as 'straight' | 'ortho')}
-              className="rounded border border-gray-300 text-sm px-1 py-0.5">
-              <option value="straight">{t('Straight', '直線')}</option>
-              <option value="ortho">{t('Orthogonal', '直交')}</option>
-            </select>
-          </label>
-        )}
+
         {(layoutMode === 'timeline' || lastLayoutKind === 'timeline') && (
           <label className="flex shrink-0 items-center gap-1 text-sm text-gray-700" title={t('Timeline axis tip', '年表の縦軸基準：生没年 / 在位期間(period)')}>
             <span className="whitespace-nowrap">{t('Timeline Axis', '年表')}</span>
