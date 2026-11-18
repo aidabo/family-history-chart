@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildPersonListRows, personTimeOf, type PersonListOrder } from '../src/lib/components/canvas/PersonListPanel'
-import { timelineYearOf } from '../src/lib/utils/familyLayout'
+import { timelineYearOf, timelineYearLabel } from '../src/lib/utils/familyLayout'
 
 const t = (en: string) => en
 const p = (id: string, name: string, birth?: string, death?: string, period?: string) =>
@@ -72,5 +72,24 @@ describe('timelineYearOf（軸と同じ年）', () => {
   })
   it('年が無ければ null', () => {
     expect(timelineYearOf({}, 'period')).toBeNull()
+  })
+})
+
+describe('timelineYearLabel（行に出す年）', () => {
+  const t2 = { birth: '598', death: '649', period: '626-649' }
+  it('在位期間モードは在位期間', () => {
+    expect(timelineYearLabel(t2, 'period')).toBe('626-649')
+  })
+  it('生没年モードは生年–没年', () => {
+    expect(timelineYearLabel(t2, 'lifespan')).toBe('598–649')
+  })
+  it('期間が無ければ生没年、片方だけなら ? で埋める', () => {
+    expect(timelineYearLabel({ birth: '598' }, 'period')).toBe('598–?')
+    expect(timelineYearLabel({ death: '前272' }, 'lifespan')).toBe('?–前272')
+    expect(timelineYearLabel({}, 'period')).toBe('')
+  })
+  it('period が読めない年でも、表示は period の文字列のまま（軸とそろえる）', () => {
+    expect(timelineYearLabel({ birth: '598', period: '在位中' }, 'period')).toBe('在位中')
+    expect(timelineYearOf({ birth: '598', period: '在位中' }, 'period')).toBeNull()
   })
 })

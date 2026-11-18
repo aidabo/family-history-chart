@@ -4,7 +4,7 @@ import * as d3 from 'd3'
 import type { PersonNode, Relationship, VerticalTextMode, NoteShape, ViewSettings, DrawStroke, DrawTool } from '@/types/charts'
 import { isDecorShape, drawShapeArt, decorSize, decorMeta, ensureShapeArtDefs,
   isPortraitShape, drawPortraitFrame, drawPersonSilhouette, portraitMeta } from './shapeArt'
-import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, hierarchyEnds, placeEntityNodes, timelineStart, timelineEnd, timelineYearOf, type LayoutMode } from '@/utils/familyLayout'
+import { computeFamilyLayout, pickAutoMode, parseYear, formatYear, hierarchyEnds, placeEntityNodes, timelineStart, timelineEnd, timelineYearOf, timelineYearLabel, type LayoutMode } from '@/utils/familyLayout'
 import { relationLabel, customEdgeLabel } from '@/utils/relationLabels'
 import { DYNASTY_CHANGE_COLOR, isDynastyChange, edgeWidth } from '@/utils/edgeStyle'
 import { PersonListPanel } from './PersonListPanel'
@@ -568,12 +568,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     (p: { birth?: string; death?: string; period?: string }) => timelineYearOf(p, timelineBasis),
     [timelineBasis],
   )
-  // 一覧の年表示も軸に合わせる（在位期間モードでは在位期間、年表以外は生没年）。
-  const listYearLabel = useCallback((p: PersonNode) => {
-    if (lastLayoutKind === 'timeline' && timelineBasis === 'period' && p.period) return p.period
-    const b = p.birth || '', d = p.death || ''
-    return b || d ? `${b || '?'}–${d || '?'}` : ''
-  }, [lastLayoutKind, timelineBasis])
+  // 一覧の年表示も軸に合わせる（決定は純関数 timelineYearLabel に置いてテストする）。
+  const listYearLabel = useCallback(
+    (p: PersonNode) => timelineYearLabel(p, timelineBasis),
+    [timelineBasis],
+  )
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -3193,7 +3192,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         <PersonListPanel persons={listPeople} query={searchTerm} rowOf={rowOf}
           onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor}
           order={lastLayoutKind === 'tidy' ? 'generation' : lastLayoutKind === 'timeline' ? 'time' : 'name'}
-          timeOf={listTimeOf} yearLabelOf={listYearLabel} />
+          timeOf={listTimeOf}
+          yearLabelOf={lastLayoutKind === 'timeline' ? listYearLabel : undefined} />
       )}
 
       {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
