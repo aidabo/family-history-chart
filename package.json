@@ -21,7 +21,8 @@
     "preview": "vite preview",
     "jsonserver": "npx json-server --watch ./data/db.json --port 3195",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -48,5 +49,8 @@
     "vite": "^6.0.7",
     "vite-plugin-dts": "^4.3.0",
     "vitest": "^3"
+  },
+  "resolutions": {
+    "vite": "^6.0.7"
   }
 }

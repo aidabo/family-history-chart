@@ -35,6 +35,14 @@ describe('computeRowY (系図の段の高さ)', () => {
     expect(y.get(2)).toBe(100 + 160 + 160)             // 空きの段1つ＋段の間隔
   })
 
+  it('結婚3本の段は ±VST ぶんを確保する（(n-1)/2）', () => {
+    const y = computeRowY(
+      [{ gen: 0, maxR: 40 }, { gen: 1, maxR: 120, stagger: 54.4 }, { gen: 2, maxR: 40 }],
+      { topY: 100, rowGap: 160 },
+    )
+    expect(y.get(1)).toBeCloseTo(100 + (40 + 120 + 80) + 54.4, 5)
+  })
+
   it('再婚のずれ（stagger）は、段を広げるときだけ足す', () => {
     const withBig = computeRowY(
       [{ gen: 0, maxR: 40 }, { gen: 1, maxR: 120, stagger: 54 }, { gen: 2, maxR: 40 }],
@@ -76,32 +84,37 @@ describe('computeFamilyLayout (tidy)', () => {
     }
   })
 
-  it('多婚の段＋大きなカードでは、ずれぶんの高さが確保される', () => {
-    // a → p、p は2回結婚（s1/s2）、それぞれに子（c1/c2）
+  it('多婚の段＋大きなカード: 実際にずらした配偶者と子の間にすき間が残る', () => {
+    // 子どうしが結婚して2つの結婚の子の範囲が重なる形（crisscross）。このとき
+    // 設計上、配偶者は ±VST/2 ずらされる。
+    const kids1 = ['a', 'b', 'c'], kids2 = ['d', 'e', 'f']
     const nodes = [
-      { id: 'a', name: 'A' },
-      { id: 'p', name: 'P' },
-      { id: 's1', name: 'S1' },
-      { id: 's2', name: 'S2' },
-      { id: 'u1', name: 'U1', type: 'union' },
-      { id: 'u2', name: 'U2', type: 'union' },
-      { id: 'c1', name: 'C1' },
-      { id: 'c2', name: 'C2' },
+      { id: 'p', name: 'P' }, { id: 's1', name: 'S1' }, { id: 's2', name: 'S2' },
+      { id: 'u1', name: 'U1', type: 'union' }, { id: 'u2', name: 'U2', type: 'union' },
+      ...[...kids1, ...kids2].map(k => ({ id: k, name: k.toUpperCase() })),
+      { id: 'm1', name: 'M1', type: 'union' }, { id: 'm2', name: 'M2', type: 'union' }, { id: 'm3', name: 'M3', type: 'union' },
     ]
     const links = [
-      { source: 'a', target: 'p', type: 'parent-child' },
-      { source: 'p', target: 'u1', type: 'partner' },
-      { source: 's1', target: 'u1', type: 'partner' },
-      { source: 'p', target: 'u2', type: 'partner' },
-      { source: 's2', target: 'u2', type: 'partner' },
-      { source: 'u1', target: 'c1', type: 'parent-child' },
-      { source: 'u2', target: 'c2', type: 'parent-child' },
+      { source: 'p', target: 'u1', type: 'partner' }, { source: 's1', target: 'u1', type: 'partner' },
+      { source: 'p', target: 'u2', type: 'partner' }, { source: 's2', target: 'u2', type: 'partner' },
+      ...kids1.map(k => ({ source: 'u1', target: k, type: 'parent-child' })),
+      ...kids2.map(k => ({ source: 'u2', target: k, type: 'parent-child' })),
+      { source: 'a', target: 'm1', type: 'partner' }, { source: 'e', target: 'm1', type: 'partner' },
+      { source: 'b', target: 'm2', type: 'partner' }, { source: 'd', target: 'm2', type: 'partner' },
+      { source: 'c', target: 'm3', type: 'partner' }, { source: 'f', target: 'm3', type: 'partner' },
     ]
-    const radius = { a: 120, p: 120, s1: 120, s2: 120, u1: 12, u2: 12, c1: 120, c2: 120 }
+    const R = 120, VST = 160 * 0.34
+    const radius = Object.fromEntries(nodes.map(n => [n.id, n.type === 'union' ? 12 : R]))
     const p = computeFamilyLayout(nodes, links, { mode: 'tidy', nodeRadius: radius }).positions
-    const VST = 160 * 0.34
-    // p の段（s1/s2 を含む）と子の段の差は、半径ぶん＋ずれ1段ぶん以上
-    const gapToKids = Math.min(pos(p, 'c1').y, pos(p, 'c2').y) - pos(p, 'p').y
-    expect(gapToKids).toBeGreaterThanOrEqual(120 + 120 + 80 + VST - 0.01)
+    // 1) 実際に互い違いになっている（s1 と s2 の y が VST/2 ずつ違う）
+    expect(Math.abs(p.s1.y - p.s2.y)).toBeCloseTo(VST, 0)
+    // 2) ずらした配偶者の下端と子の上端の間にすき間がある
+    for (const sp of ['s1', 's2']) {
+      for (const k of [...kids1, ...kids2]) {
+        expect(p[k].y - R - (p[sp].y + R)).toBeGreaterThanOrEqual(0)
+      }
+    }
+    // 3) 段の間隔は 半径ぶん＋ずれの確保ぶん（n=2 → VST/2）
+    expect(p.a.y - p.p.y).toBeGreaterThanOrEqual(2 * R + 80 + VST / 2 - 0.01)
   })
 })

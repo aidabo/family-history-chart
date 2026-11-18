@@ -1769,7 +1769,9 @@ function computeSingleLayout(
     for (const uid of g.partnersOfUnion.keys()) {
       bump(uid, Math.max(0, ...(g.partnersOfUnion.get(uid) || []).map(p => gen.get(p) ?? 0)))
     }
-    // 再婚が多い段は、互い違いのずれ（±VST×段数）のぶんも段の間隔に足しておく。
+    // 再婚が多い段は、互い違いのずれ（±(n-1)/2×VST）のぶんも段の間隔に足しておく。
+    // 実際にずらすかどうか（子の範囲が重なるか）は並べ替えの後で決まるため、多婚の段は
+    // 常にこの高さを確保する。既定の大きさの段では足さないので、見た目は変わらない。
     const unionsPerRow = new Map<number, number>()
     for (const p of g.persons) {
       const n = (g.unionsOfPerson.get(p.id) || []).length
@@ -1779,7 +1781,7 @@ function computeSingleLayout(
     }
     const staggerOf = (gg: number) => {
       const n = unionsPerRow.get(gg) ?? 0
-      return n >= 2 ? VST * Math.ceil((n - 1) / 2) : 0
+      return n >= 2 ? VST * ((n - 1) / 2) : 0   // 実際の最大のずれ（n本の結婚で ±(n-1)/2×VST）
     }
     const rowY = computeRowY(
       [...maxR.entries()].map(([gg, r]) => ({ gen: gg, maxR: r, stagger: staggerOf(gg) })),
