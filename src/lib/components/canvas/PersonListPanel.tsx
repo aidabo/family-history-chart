@@ -82,16 +82,21 @@ export function buildPersonListRows(
       else (groups.get(r) || groups.set(r, []).get(r)!).push(p)
     }
     const keys = [...groups.keys()].sort((a, b) => a - b)
+    // 1人だけの世代は見出しを付けない（「第3世代 (1)」のような、ほぼ意味の無い行を
+    // 並べないため）。2人以上の世代だけ見出しを出す。並び順は世代のまま。
     keys.forEach((k, i) => {
       const ps = groups.get(k)!.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-      const head = labelFor ? labelFor(i, ps) : t('Generation GEN', '第GEN世代').replace('GEN', String(i + 1))
-      out.push({ kind: 'group', key: `g${k}`, label: `${head} (${ps.length})` })
+      if (ps.length > 1) {
+        const head = labelFor ? labelFor(i, ps) : t('Generation GEN', '第GEN世代').replace('GEN', String(i + 1))
+        out.push({ kind: 'group', key: `g${k}`, label: `${head} (${ps.length})` })
+      }
       for (const p of ps) out.push({ kind: 'person', p })
     })
-    if (loose.length) {
-      out.push({ kind: 'group', key: 'gx', label: t('Others', 'その他') + ` (${loose.length})` })
-      loose.sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(p => out.push({ kind: 'person', p }))
+    const looseSorted = loose.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    if (looseSorted.length > 1) {
+      out.push({ kind: 'group', key: 'gx', label: t('Others', 'その他') + ` (${looseSorted.length})` })
     }
+    looseSorted.forEach(p => out.push({ kind: 'person', p }))
   }
   const tops: number[] = []
   let y = 0

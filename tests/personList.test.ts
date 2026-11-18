@@ -93,3 +93,25 @@ describe('timelineYearLabel（行に出す年）', () => {
     expect(timelineYearOf({ birth: '598', period: '在位中' }, 'period')).toBeNull()
   })
 })
+
+describe('世代の見出し（generation）', () => {
+  const people = [
+    p('a1', '兄', '1500'), p('a2', '弟', '1510'),   // 同じ世代（2人）→ 見出しあり
+    p('b1', '甥', '1540'),                          // 1人だけの世代 → 見出しなし
+    p('c1', '孫'), p('c2', '孫2'),                   // 世代不明（2人）→ その他の見出し
+  ]
+  const rowsOf = (rowOf: (id: string) => number | null) =>
+    buildPersonListRows(people, '', rowOf, undefined, 'generation', t).rows
+
+  it('1人の世代には見出しを出さない', () => {
+    const rows = rowsOf(id => (id === 'b1' ? 2 : id.startsWith('a') ? 0 : null))
+    const labels = rows.filter(r => r.kind === 'group').map(r => (r as any).label)
+    expect(labels).toEqual(['Generation 1 (2)', 'Others (2)'])
+    const names = rows.filter(r => r.kind === 'person').map(r => (r as any).p.name)
+    expect(names).toEqual(['兄', '弟', '甥', '孫', '孫2'])
+  })
+  it('どの世代も1人なら見出しは出ない', () => {
+    const rows = rowsOf(id => ({ a1: 0, a2: 1, b1: 2, c1: 3, c2: 4 } as Record<string, number>)[id] ?? null)
+    expect(rows.every(r => r.kind === 'person')).toBe(true)
+  })
+})
