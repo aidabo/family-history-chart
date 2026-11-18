@@ -1232,6 +1232,28 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         busGroups.get(k)!.push(l)
       }
     }
+    // Give neighbouring superiors different bus heights. Two people on the same row (e.g.
+    // 如来 above its disciples and 玉皇大帝 above his generals) would otherwise draw their
+    // horizontal bars on the SAME line, so nobody can tell which drop belongs to whom.
+    // A small deterministic ±8px offset per column keeps the bars apart (the manual fix
+    // did the same by hand).
+    const BUS_LANE_GAP = 8
+    // Alternate the bar height between neighbouring superiors in the same row (sorted by
+    // x): 0, +8px, 0, +8px … so the closest neighbour never shares the same line.
+    const busLane = new Map<string, number>()
+    if (orthoBus) {
+      const byRow = new Map<number, Array<{ id: string; x: number }>>()
+      for (const [id, group] of busGroups) {
+        const up = busEnds(group[0])[0]
+        const k = Math.round(up.y)
+        const a = byRow.get(k)
+        if (a) a.push({ id, x: up.x }); else byRow.set(k, [{ id, x: up.x }])
+      }
+      for (const arr of byRow.values()) {
+        arr.sort((p, q) => p.x - q.x)
+        arr.forEach((n, i) => busLane.set(n.id, i % 2))
+      }
+    }
 
     const edgeColor = (d: SimLink): string => d.color || (
       (d.label && ENTITY_EDGE_COLOR[d.label]) ? ENTITY_EDGE_COLOR[d.label] :   // person → entity edge
@@ -2542,7 +2564,10 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           if (top > sBottom + 4) minChildTop = Math.min(minChildTop, top)
         }
         if (minChildTop > sBottom + 4) {
-          const busY = snapToGrid(sBottom + (minChildTop - sBottom) * 0.5)
+          const mid = sBottom + (minChildTop - sBottom) * 0.5
+          const lane = (busLane.get(up.id) ?? 0) * BUS_LANE_GAP
+          // Keep the shifted bar inside the gap so it cannot touch either row.
+          const busY = snapToGrid(Math.min(Math.max(mid + lane, sBottom + 3), minChildTop - 3))
           return `M ${sx} ${snapToGrid(sBottom)} L ${sx} ${busY} L ${cx} ${busY} L ${cx} ${cTop}`
         }
         // Same row (a horizontal relation): a plain horizontal line, never a diagonal.
