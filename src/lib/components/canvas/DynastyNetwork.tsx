@@ -272,6 +272,7 @@ function getNodeRadius(d: SimNode): number {
     return Math.hypot(w / 2, h / 2)
   }
   switch (d.shape) {
+    // Portrait and landscape rects share this radius: hypot(1.5s, s) == hypot(s, 1.5s).
     case 'rect': return Math.hypot(s * 1.5, s)
     case 'band': return Math.hypot((d.bandWidth || 200) / 2, (d.bandHeight || 40) / 2)
     case 'ellipse': return s * 1.4
@@ -1029,6 +1030,9 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       if (verticalText === 'cjk') return isCJK(text)
       return false
     }
+    // Rect cards take their orientation from the NAME's writing mode; keep every caller on
+    // this one helper so the shape, clip, ports and label offsets cannot drift apart.
+    const isRectVertical = (node: SimNode) => resolveVertical(node, node.name)
 
     // Clip paths (shape-specific for image masking)
     defs.selectAll('.nc').data(nodes).enter()
@@ -1041,7 +1045,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           const { w, h } = decorSize(d.shape, s)
           cp.append('rect').attr('x', -w / 2).attr('y', -h / 2).attr('width', w).attr('height', h).attr('rx', 10 * (s / 40))
         } else if (shape === 'rect') {
-          const { hw, hh } = rectExtents(s, resolveVertical(d, d.name))
+          const { hw, hh } = rectExtents(s, isRectVertical(d))
           cp.append('rect').attr('x', -hw).attr('y', -hh).attr('width', hw * 2).attr('height', hh * 2).attr('rx', 8)
         } else if (shape === 'diamond') {
           cp.append('path').attr('d', `M 0 ${-s} L ${s} 0 L 0 ${s} L ${-s} 0 Z`)
@@ -1796,7 +1800,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         }
         drawCenteredName(g as any, d, s)
       } else if (shape === 'rect') {
-        const { hw, hh } = rectExtents(s, resolveVertical(d, d.name))
+        const { hw, hh } = rectExtents(s, isRectVertical(d))
         g.append('rect').attr('class', 'selection-ring')
           .attr('x', -hw - 4).attr('y', -hh - 4)
           .attr('width', (hw + 4) * 2).attr('height', (hh + 4) * 2)
@@ -1971,7 +1975,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         .style('display', connectSourceId === d.id ? null : 'none')
 
       const portG = g.append('g').attr('class', 'port-handles').style('display', 'none')
-      for (const p of getPortPositions(d, resolveVertical(d, d.name))) {
+      for (const p of getPortPositions(d, isRectVertical(d))) {
         portG.append('circle').attr('class', 'port-handle')
           .attr('cx', p.x).attr('cy', p.y).attr('r', 9)
           .attr('fill', '#3b82f6').attr('stroke', 'white').attr('stroke-width', 2)
@@ -2330,6 +2334,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       // rect/band: the name is drawn INSIDE the shape, so stack title + lifespan ABOVE the
       // shape (title on top, lifespan just above the shape edge) — never over the name.
       if (shape === 'rect' || shape === 'band') {
+        // The card's own footprint: rect orientation follows the NAME's writing mode, so the
+        // label positions must use the same extents (mixed-language name/title included).
+        const ext = shape === 'band'
+          ? { hw: (d.bandWidth || 200) / 2, hh: (d.bandHeight || 40) / 2 }
+          : rectExtents(s, isRectVertical(d))
         let lifespan = ''
         if (d.birth && d.death) lifespan = `${d.birth} – ${d.death}`
         else if (d.birth) lifespan = d.birth
@@ -2338,7 +2347,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         // Vertical writing: title + period as columns to the RIGHT of the shape, matching the
         // other shapes' 縦書き layout (name stays inside). Horizontal: stacked above the shape.
         if (resolveVertical(d, d.title || d.name)) {
-          const halfW = shape === 'band' ? (d.bandWidth || 200) / 2 : rectExtents(s, true).hw
+          const halfW = ext.hw
           let x = halfW + fs + 6
           if (hasTitleText(d)) {
             const t = label.append('text').text(displayTitle(d))
@@ -2354,7 +2363,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           }
           return
         }
-        const hh = shape === 'band' ? (d.bandHeight || 40) / 2 : s
+        const hh = ext.hh
         const lines: { text: string; size: number }[] = []
         if (hasTitleText(d)) lines.push({ text: displayTitle(d), size: fs * 0.9 })
         if (lifespan) lines.push({ text: lifespan, size: fs * 0.8 })
