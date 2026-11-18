@@ -29,9 +29,11 @@ export type PersonListOrder = 'generation' | 'name' | 'time'
 
 const ITEM_H = 30
 const GROUP_H = 26
+const SEP_H = 9
 
 export type PersonListRow =
   | { kind: 'group'; key: string; label: string }
+  | { kind: 'sep'; key: string }        // 見出しを出さない世代の境目（細い区切り線）
   | { kind: 'person'; p: PersonNode }
 
 
@@ -83,24 +85,29 @@ export function buildPersonListRows(
     }
     const keys = [...groups.keys()].sort((a, b) => a - b)
     // 1人だけの世代は見出しを付けない（「第3世代 (1)」のような、ほぼ意味の無い行を
-    // 並べないため）。2人以上の世代だけ見出しを出す。並び順は世代のまま。
+    // 並べないため）。代わりに細い区切り線を入れて、直前の世代の続きに見えないようにする。
+    // 2人以上の世代は人数付きの見出し。
     keys.forEach((k, i) => {
       const ps = groups.get(k)!.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       if (ps.length > 1) {
         const head = labelFor ? labelFor(i, ps) : t('Generation GEN', '第GEN世代').replace('GEN', String(i + 1))
         out.push({ kind: 'group', key: `g${k}`, label: `${head} (${ps.length})` })
+      } else if (out.length) {
+        out.push({ kind: 'sep', key: `s${k}` })
       }
       for (const p of ps) out.push({ kind: 'person', p })
     })
     const looseSorted = loose.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     if (looseSorted.length > 1) {
       out.push({ kind: 'group', key: 'gx', label: t('Others', 'その他') + ` (${looseSorted.length})` })
+    } else if (looseSorted.length === 1 && out.length) {
+      out.push({ kind: 'sep', key: 'sx' })
     }
     looseSorted.forEach(p => out.push({ kind: 'person', p }))
   }
   const tops: number[] = []
   let y = 0
-  for (const r of out) { tops.push(y); y += r.kind === 'group' ? GROUP_H : ITEM_H }
+  for (const r of out) { tops.push(y); y += r.kind === 'group' ? GROUP_H : r.kind === 'sep' ? SEP_H : ITEM_H }
   return { rows: out, tops, total: y }
 }
 
@@ -118,7 +125,7 @@ export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelF
   const visible = useMemo(() => {
     const out: Array<{ row: PersonListRow; top: number }> = []
     for (let i = 0; i < rows.length; i++) {
-      const top = tops[i], h = rows[i].kind === 'group' ? GROUP_H : ITEM_H
+      const top = tops[i], h = rows[i].kind === 'group' ? GROUP_H : rows[i].kind === 'sep' ? SEP_H : ITEM_H
       if (top + h < scrollTop - 90) continue
       if (top > scrollTop + viewport + 90) break
       out.push({ row: rows[i], top })
@@ -156,6 +163,10 @@ export function PersonListPanel({ persons, query, rowOf, onPick, onClose, labelF
             <div key={row.key} style={{ position: 'absolute', top, height: GROUP_H }}
               className="w-full px-2 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
               {row.label}
+            </div>
+          ) : row.kind === 'sep' ? (
+            <div key={row.key} style={{ position: 'absolute', top, height: SEP_H }} className="w-full px-2">
+              <div className="h-px w-full bg-gray-200" />
             </div>
           ) : (
             <button key={row.p.id} style={{ position: 'absolute', top, height: ITEM_H }}

@@ -103,15 +103,25 @@ describe('世代の見出し（generation）', () => {
   const rowsOf = (rowOf: (id: string) => number | null) =>
     buildPersonListRows(people, '', rowOf, undefined, 'generation', t).rows
 
-  it('1人の世代には見出しを出さない', () => {
+  it('1人の世代は見出しの代わりに区切り線（直前の世代の続きに見えない）', () => {
     const rows = rowsOf(id => (id === 'b1' ? 2 : id.startsWith('a') ? 0 : null))
-    const labels = rows.filter(r => r.kind === 'group').map(r => (r as any).label)
-    expect(labels).toEqual(['Generation 1 (2)', 'Others (2)'])
-    const names = rows.filter(r => r.kind === 'person').map(r => (r as any).p.name)
-    expect(names).toEqual(['兄', '弟', '甥', '孫', '孫2'])
+    const kinds = rows.map(r => r.kind === 'group' ? `G:${(r as any).label}` : r.kind)
+    expect(kinds).toEqual(['G:Generation 1 (2)', 'person', 'person', 'sep', 'person', 'G:Others (2)', 'person', 'person'])
+    // 見出しの人数と、その下に並ぶ人数が合う
+    const idx = rows.findIndex(r => r.kind === 'group')
+    let n = 0
+    for (let i = idx + 1; i < rows.length && rows[i].kind === 'person'; i++) n++
+    expect(n).toBe(2)
   })
-  it('どの世代も1人なら見出しは出ない', () => {
+  it('どの世代も1人なら見出しは出ず、区切りだけ', () => {
     const rows = rowsOf(id => ({ a1: 0, a2: 1, b1: 2, c1: 3, c2: 4 } as Record<string, number>)[id] ?? null)
-    expect(rows.every(r => r.kind === 'person')).toBe(true)
+    expect(rows.some(r => r.kind === 'group')).toBe(false)
+    expect(rows.filter(r => r.kind === 'person').length).toBe(5)
+    expect(rows[0].kind).toBe('person')   // 先頭に区切りは入れない
+  })
+  it('「その他」が1人でも区切りを出す', () => {
+    const only = [p('a1', '兄', '1500'), p('a2', '弟', '1510'), p('lo', '余')]
+    const rows = buildPersonListRows(only, '', id => (id === 'lo' ? null : 0), undefined, 'generation', t).rows
+    expect(rows.map(r => r.kind)).toEqual(['group', 'person', 'person', 'sep', 'person'])
   })
 })
