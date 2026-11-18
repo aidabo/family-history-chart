@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
+import { chartExportFileName } from '@/utils/exportName'
 import { useDataContext } from '@/context/DataContext'
 import DynastyNetwork, { DynastyNetworkHandle, InlineEditRequest } from '@/components/canvas/DynastyNetwork'
 import { NodeCard } from '@/components/canvas/NodeCard'
@@ -832,7 +833,7 @@ export default function FamilyChartEditor({
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${(currentPage.title || 'chart').replace(/[^a-z0-9]/gi, '_')}.json`
+    a.download = chartExportFileName(currentPage.title, 'json')
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -844,7 +845,7 @@ export default function FamilyChartEditor({
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${(currentPage?.title || 'chart').replace(/[^a-z0-9]/gi, '_')}.csv`
+    a.download = chartExportFileName(currentPage?.title, 'csv')
     a.click()
     URL.revokeObjectURL(url)
   }
