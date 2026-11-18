@@ -563,6 +563,11 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
   // the basis is 'period' (so emperors line up by reign, not birth).
   const tlBirth = (n: { birth?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodStart(n.period) : n.birth
   const tlDeath = (n: { death?: string; period?: string }) => timelineBasis === 'period' && n.period ? periodEnd(n.period) : n.death
+  // People list ordering uses the SAME year basis as the timeline axis (生没年 / 在位期間).
+  const listTimeOf = useCallback(
+    (p: { birth?: string; death?: string; period?: string }) => parseYear(tlBirth(p)) ?? parseYear(tlDeath(p)),
+    [timelineBasis],
+  )
 
   const handleZoomIn = useCallback(() => {
     if (svgRef.current && zoomRef.current)
@@ -3181,7 +3186,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       {!cinemaPlaying && listOpen && (
         <PersonListPanel persons={listPeople} query={searchTerm} rowOf={rowOf}
           onPick={handleSearchSelect} onClose={() => setListOpen(false)} labelFor={listLabelFor}
-          grouped={lastLayoutKind === 'tidy'} sortByTime={lastLayoutKind === 'timeline'} />
+          order={lastLayoutKind === 'tidy' ? 'generation' : lastLayoutKind === 'timeline' ? 'time' : 'name'}
+          timeOf={listTimeOf} />
       )}
 
       {/* Search-hit pulse: a ring at viewport center (where panToNode centered the node). */}
