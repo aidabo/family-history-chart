@@ -348,7 +348,11 @@ function relaxTimelinePositions(nodes: SimNode[], base: Record<string, { x: numb
   return positions
 }
 
-function getPortPositions(d: SimNode): Array<{ x: number; y: number }> {
+// Rect cards: landscape for horizontal text, portrait for vertical (縦書き) names —
+// the long side follows the writing direction.
+const rectExtents = (s: number, vertical: boolean) => vertical ? { hw: s, hh: s * 1.5 } : { hw: s * 1.5, hh: s }
+
+function getPortPositions(d: SimNode, vertical = false): Array<{ x: number; y: number }> {
   if (d.type === 'union') {
     return [{ x: 0, y: -17 }, { x: 0, y: 17 }, { x: 17, y: 0 }, { x: -17, y: 0 }]
   }
@@ -360,7 +364,7 @@ function getPortPositions(d: SimNode): Array<{ x: number; y: number }> {
   }
   switch (d.shape) {
     case 'rect': {
-      const hw = s * 1.5; const hh = s
+      const { hw, hh } = rectExtents(s, vertical)
       return [{ x: 0, y: -hh - 5 }, { x: 0, y: hh + 5 }, { x: hw + 5, y: 0 }, { x: -hw - 5, y: 0 }]
     }
     case 'band': {
@@ -1013,6 +1017,19 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
     nodesRef.current = nodes
     linksRef.current = links
 
+    // ── Vertical writing (縦書き) helpers ────────────────────────────────────────
+    // CJK detection covers Hiragana, Katakana (incl. halfwidth), and Han (Japanese
+    // kanji + Chinese hanzi) so 'cjk' auto-mode triggers on Japanese/Chinese text.
+    const CJK_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/
+    const isCJK = (t?: string) => !!t && CJK_RE.test(t)
+    const resolveVertical = (d: SimNode, text?: string): boolean => {
+      if (d.vertical === 'on') return true
+      if (d.vertical === 'off') return false
+      if (verticalText === 'on') return true
+      if (verticalText === 'cjk') return isCJK(text)
+      return false
+    }
+
     // Clip paths (shape-specific for image masking)
     defs.selectAll('.nc').data(nodes).enter()
       .append('clipPath').attr('id', d => `clip-${d.id}`).attr('class', 'nc')
@@ -1024,7 +1041,8 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
           const { w, h } = decorSize(d.shape, s)
           cp.append('rect').attr('x', -w / 2).attr('y', -h / 2).attr('width', w).attr('height', h).attr('rx', 10 * (s / 40))
         } else if (shape === 'rect') {
-          cp.append('rect').attr('x', -s * 1.5).attr('y', -s).attr('width', s * 3).attr('height', s * 2).attr('rx', 8)
+          const { hw, hh } = rectExtents(s, resolveVertical(d, d.name))
+          cp.append('rect').attr('x', -hw).attr('y', -hh).attr('width', hw * 2).attr('height', hh * 2).attr('rx', 8)
         } else if (shape === 'diamond') {
           cp.append('path').attr('d', `M 0 ${-s} L ${s} 0 L 0 ${s} L ${-s} 0 Z`)
         } else if (shape === 'hexagon') {
@@ -1533,18 +1551,6 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
       .call(drag)
 
     // Centered name drawn ON the shape (all shapes). halfW = half-width used for the readable band.
-    // ── Vertical writing (縦書き) helpers ────────────────────────────────────────
-    // CJK detection covers Hiragana, Katakana (incl. halfwidth), and Han (Japanese
-    // kanji + Chinese hanzi) so 'cjk' auto-mode triggers on Japanese/Chinese text.
-    const CJK_RE = /[぀-ヿ㐀-䶿一-鿿豈-﫿ｦ-ﾟ]/
-    const isCJK = (t?: string) => !!t && CJK_RE.test(t)
-    const resolveVertical = (d: SimNode, text?: string): boolean => {
-      if (d.vertical === 'on') return true
-      if (d.vertical === 'off') return false
-      if (verticalText === 'on') return true
-      if (verticalText === 'cjk') return isCJK(text)
-      return false
-    }
     // Apply vertical-rl writing mode (inline styles so it survives thumbnail/PDF rasterization).
     const applyVertical = (sel: d3.Selection<any, unknown, null, undefined>) => {
       sel.style('writing-mode', 'vertical-rl').style('text-orientation', 'mixed')
@@ -1790,7 +1796,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         }
         drawCenteredName(g as any, d, s)
       } else if (shape === 'rect') {
-        const hw = s * 1.5; const hh = s
+        const { hw, hh } = rectExtents(s, resolveVertical(d, d.name))
         g.append('rect').attr('class', 'selection-ring')
           .attr('x', -hw - 4).attr('y', -hh - 4)
           .attr('width', (hw + 4) * 2).attr('height', (hh + 4) * 2)
@@ -1965,7 +1971,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         .style('display', connectSourceId === d.id ? null : 'none')
 
       const portG = g.append('g').attr('class', 'port-handles').style('display', 'none')
-      for (const p of getPortPositions(d)) {
+      for (const p of getPortPositions(d, resolveVertical(d, d.name))) {
         portG.append('circle').attr('class', 'port-handle')
           .attr('cx', p.x).attr('cy', p.y).attr('r', 9)
           .attr('fill', '#3b82f6').attr('stroke', 'white').attr('stroke-width', 2)
@@ -2332,7 +2338,7 @@ const DynastyNetwork = forwardRef<DynastyNetworkHandle, DynastyNetworkProps>(fun
         // Vertical writing: title + period as columns to the RIGHT of the shape, matching the
         // other shapes' 縦書き layout (name stays inside). Horizontal: stacked above the shape.
         if (resolveVertical(d, d.title || d.name)) {
-          const halfW = shape === 'band' ? (d.bandWidth || 200) / 2 : s * 1.5
+          const halfW = shape === 'band' ? (d.bandWidth || 200) / 2 : rectExtents(s, true).hw
           let x = halfW + fs + 6
           if (hasTitleText(d)) {
             const t = label.append('text').text(displayTitle(d))
