@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { chartExportFileName } from '@/utils/exportName'
 import { useDataContext } from '@/context/DataContext'
 import { PageProps } from '@/types/charts'
 import {
@@ -79,7 +80,7 @@ export default function FamilyChartList({ onOpen, onView, canChangeAuthor = fals
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${(page.title || 'chart').replace(/[^a-z0-9]/gi, '_')}.json`
+    a.download = chartExportFileName(page.title, 'json')
     a.click()
     URL.revokeObjectURL(url)
   }
