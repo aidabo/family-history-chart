@@ -45,7 +45,7 @@ export interface LayoutOptions {
   topY?: number      // y of the first (oldest) generation
   colGap?: number    // horizontal distance between adjacent people
   rowGap?: number    // vertical distance between generations
-  timelineCols?: number  // timeline: max columns a chain-like line snakes across (width control)
+  timelineCols?: number  // timeline: max columns a chain may use when cards would touch (width control)
   /** ノード id → 描画時の半径（四角・装飾形は円より大きい）。関連ノードの重なり判定に使う。 */
   nodeRadius?: Record<string, number>
 }
@@ -1353,13 +1353,15 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
     const sub = nodes.filter(n => set.has(n.id))
     const subLinks = links.filter(l => set.has(l.source) && set.has(l.target))
 
-    // Chain-like line (e.g. an emperor succession): snake it left↔right across a bounded
-    // number of columns (options.timelineCols), ordered by year down the axis, so a long
-    // temporal chain stays readable instead of drifting ever rightwards.
+    // Chain-like line (e.g. an emperor succession): place it down the time axis and keep it
+    // in ONE column while the vertical gap allows, so a successor sits directly below the
+    // predecessor and the line is straight/vertical. Only when two cards would touch does
+    // the chain step sideways (within options.timelineCols columns, nearest free column),
+    // which keeps crowded stretches (五代十国・五胡など) readable without tilting every line.
     if (isChainLike(sub, subLinks)) {
       const C = Math.max(2, Math.round(options.timelineCols ?? 4))
-      const period = 2 * (C - 1)
-      const boustro = (i: number) => { const c = i % period; return c < C ? c : period - c }   // 0..C-1..1
+      const rOf = (id: string) => options.nodeRadius?.[id] ?? 40
+      const VGAP = 16   // 縦に並べるときのカードの余白
 
       // Split into ROOT lineages by succession/血縁 only — a 朝代更换(custom) does NOT merge
       // two lineages — so each dynasty/root line is separate, ordered along its own chain.
@@ -1380,13 +1382,41 @@ function layoutTimeline(nodes: LayoutNode[], links: LayoutLink[], options: Layou
       // Total width = the MAX number of concurrent lineages, not the total node count.
       const laneStride = (C - 1) * col + laneGap
       const laneEnd: number[] = []
+      // 列ごとのカード（y と半径）と、最後に使った列は**レーン単位**で覚える。レーンは
+      // 前の系統が終わったあと再利用されるので、系統ごとに作り直すと、境目の同じ年で
+      // 前の系統の最後のカードと重なる。
+      const laneCols: Array<Array<Array<{ y: number; r: number }>>> = []
+      const lanePrevCol: number[] = []
       for (const g of groups) {
         let lane = laneEnd.findIndex(end => end <= g.minY)
-        if (lane === -1) { lane = laneEnd.length; laneEnd.push(-Infinity) }
+        if (lane === -1) {
+          lane = laneEnd.length
+          laneEnd.push(-Infinity)
+          laneCols.push(Array.from({ length: C }, () => []))
+          lanePrevCol.push(0)
+        }
         laneEnd[lane] = g.maxY
         const baseX = laneX + lane * laneStride
-        g.order.forEach((id, i) => { out[id] = { x: baseX + boustro(i) * col, y: yForYear(year.get(id)!) } })
+        const cols = laneCols[lane]
+        let prevCol = lanePrevCol[lane]
+        g.order.forEach(id => {
+          const y = yForYear(year.get(id)!)
+          const r = rOf(id)
+          const fits = (c: number) => cols[c].every(q => Math.abs(q.y - y) >= q.r + r + VGAP)
+          let chosen: number | null = null
+          for (let d = 0; d < C && chosen == null; d++) {
+            for (const c of d === 0 ? [prevCol] : [prevCol - d, prevCol + d]) {
+              if (c < 0 || c >= C) continue
+              if (fits(c)) { chosen = c; break }
+            }
+          }
+          const c = chosen ?? prevCol   // どこにも入らない（よほど詰まった）ときは現在の列
+          cols[c].push({ y, r })
+          out[id] = { x: baseX + c * col, y }
+          prevCol = c
+        })
         for (const id of g.undated) if (out[id] == null) out[id] = { x: baseX, y: NaN }
+        lanePrevCol[lane] = prevCol
       }
       for (const n of sub) if (out[n.id] == null) out[n.id] = { x: laneX, y: NaN }
       laneX += Math.max(1, laneEnd.length) * laneStride
